@@ -47,7 +47,7 @@ static inline int debug_locks_off(void)
 
 #define task_pid_nr(tsk) ((tsk)->pid)
 
-#define KSYM_NAME_LEN 128
+#define KSYM_NAME_LEN 512
 #define printk(...) dprintf(STDOUT_FILENO, __VA_ARGS__)
 #define pr_err(format, ...) fprintf (stderr, format, ## __VA_ARGS__)
 #define pr_warn pr_err

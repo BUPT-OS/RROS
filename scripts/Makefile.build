@@ -26,6 +26,7 @@ EXTRA_CPPFLAGS :=
 EXTRA_LDFLAGS  :=
 asflags-y  :=
 ccflags-y  :=
+rustflags-y :=
 cppflags-y :=
 ldflags-y  :=
 
@@ -287,6 +288,27 @@ quiet_cmd_cc_lst_c = MKLST   $@
 
 $(obj)/%.lst: $(src)/%.c FORCE
 	$(call if_changed_dep,cc_lst_c)
+
+# Compile Rust sources (.rs)
+# ---------------------------------------------------------------------------
+
+# Need to use absolute path here and have symbolic links resolved;
+# otherwise rustdoc and rustc compute different hashes for the target.
+rust_cross_flags := --target=$(realpath $(KBUILD_RUST_TARGET))
+
+quiet_cmd_rustc_o_rs = $(RUSTC_OR_CLIPPY_QUIET) $(quiet_modtag) $@
+      cmd_rustc_o_rs = \
+	RUST_MODFILE=$(modfile) \
+	$(RUSTC_OR_CLIPPY) $(rust_flags) $(rust_cross_flags) \
+		-Zallow-features=allocator_api,bench_black_box,concat_idents,global_asm,try_reserve \
+		--extern alloc --extern kernel \
+		--crate-type rlib --out-dir $(obj) -L $(objtree)/rust/ \
+		--crate-name $(patsubst %.o,%,$(notdir $@)) $<; \
+	mv $(obj)/$(subst .o,,$(notdir $@)).d $(depfile); \
+	sed -i '/^\#/d' $(depfile)
+
+$(obj)/%.o: $(src)/%.rs FORCE
+	$(call if_changed_dep,rustc_o_rs)
 
 # Compile assembler sources (.S)
 # ---------------------------------------------------------------------------

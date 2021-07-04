@@ -37,6 +37,7 @@
 *.o
 *.o.*
 *.patch
+*.rmeta
 *.s
 *.so
 *.so.dbg
@@ -96,6 +97,7 @@ modules.order
 !.gitattributes
 !.gitignore
 !.mailmap
+!.rustfmt.toml
 
 #
 # Generated include files
@@ -161,3 +163,6 @@ x509.genkey
 
 # Documentation toolchain
 sphinx_*/
+
+# Rust analyzer configuration
+/rust-project.json

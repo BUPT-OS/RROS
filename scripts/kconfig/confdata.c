@@ -652,6 +652,56 @@ static struct conf_printer kconfig_printer_cb =
 };
 
 /*
+ * rustc cfg printer
+ *
+ * This printer is used when generating the resulting rustc configuration
+ * after kconfig invocation and `defconfig` files.
+ */
+static void rustc_cfg_print_symbol(FILE *fp, struct symbol *sym, const char *value, void *arg)
+{
+	const char *str;
+
+	switch (sym->type) {
+	case S_INT:
+	case S_HEX:
+	case S_BOOLEAN:
+	case S_TRISTATE:
+		str = sym_escape_string_value(value);
+
+		/*
+		 * We don't care about disabled ones, i.e. no need for
+		 * what otherwise are "comments" in other printers.
+		 */
+		if (*value == 'n')
+			return;
+
+		/*
+		 * To have similar functionality to the C macro `IS_ENABLED()`
+		 * we provide an empty `--cfg CONFIG_X` here in both `y`
+		 * and `m` cases.
+		 *
+		 * Then, the common `fprintf()` below will also give us
+		 * a `--cfg CONFIG_X="y"` or `--cfg CONFIG_X="m"`, which can
+		 * be used as the equivalent of `IS_BUILTIN()`/`IS_MODULE()`.
+		 */
+		if (*value == 'y' || *value == 'm')
+			fprintf(fp, "--cfg=%s%s\n", CONFIG_, sym->name);
+
+		break;
+	default:
+		str = value;
+		break;
+	}
+
+	fprintf(fp, "--cfg=%s%s=%s\n", CONFIG_, sym->name, str);
+}
+
+static struct conf_printer rustc_cfg_printer_cb =
+{
+	.print_symbol = rustc_cfg_print_symbol,
+};
+
+/*
  * Header printer
  *
  * This printer is used when generating the `include/generated/autoconf.h' file.
@@ -1058,7 +1108,7 @@ int conf_write_autoconf(int overwrite)
 	struct symbol *sym;
 	const char *name;
 	const char *autoconf_name = conf_get_autoconfig_name();
-	FILE *out, *out_h;
+	FILE *out, *out_h, *out_rustc_cfg;
 	int i;
 
 	if (!overwrite && is_present(autoconf_name))
@@ -1079,6 +1129,13 @@ int conf_write_autoconf(int overwrite)
 		return 1;
 	}
 
+	out_rustc_cfg = fopen(".tmp_rustc_cfg", "w");
+	if (!out_rustc_cfg) {
+		fclose(out);
+		fclose(out_h);
+		return 1;
+	}
+
 	conf_write_heading(out, &kconfig_printer_cb, NULL);
 	conf_write_heading(out_h, &header_printer_cb, NULL);
 
@@ -1090,9 +1147,11 @@ int conf_write_autoconf(int overwrite)
 		/* write symbols to auto.conf and autoconf.h */
 		conf_write_symbol(out, sym, &kconfig_printer_cb, (void *)1);
 		conf_write_symbol(out_h, sym, &header_printer_cb, NULL);
+		conf_write_symbol(out_rustc_cfg, sym, &rustc_cfg_printer_cb, NULL);
 	}
 	fclose(out);
 	fclose(out_h);
+	fclose(out_rustc_cfg);
 
 	name = getenv("KCONFIG_AUTOHEADER");
 	if (!name)
@@ -1109,6 +1168,12 @@ int conf_write_autoconf(int overwrite)
 	 * and this marks the successful completion of the previous steps.
 	 */
 	if (rename(".tmpconfig", autoconf_name))
+		return 1;
+
+	name = "include/generated/rustc_cfg";
+	if (make_parent_dir(name))
+		return 1;
+	if (rename(".tmp_rustc_cfg", name))
 		return 1;
 
 	return 0;

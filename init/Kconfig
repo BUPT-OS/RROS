@@ -60,6 +60,15 @@ config LLD_VERSION
 	default $(ld-version) if LD_IS_LLD
 	default 0
 
+config HAS_RUST
+	depends on ARM64 || CPU_32v6 || CPU_32v6K || (PPC64 && CPU_LITTLE_ENDIAN) || X86_64 || RISCV
+	def_bool $(success,$(RUSTC) --version)
+
+config RUSTC_VERSION
+	depends on HAS_RUST
+	int
+	default $(shell,$(srctree)/scripts/rust-version.sh $(RUSTC))
+
 config CC_CAN_LINK
 	bool
 	default $(success,$(srctree)/scripts/cc-can-link.sh $(CC) $(CLANG_FLAGS) $(m64-flag)) if 64BIT
@@ -2022,6 +2031,25 @@ config PROFILING
 	help
 	  Say Y here to enable the extended profiling support mechanisms used
 	  by profilers.
+
+config RUST
+	bool "Rust support"
+	depends on HAS_RUST
+	depends on !COMPILE_TEST
+	depends on !MODVERSIONS
+	default n
+	help
+	  Enables Rust support in the kernel.
+
+	  This allows other Rust-related options, like drivers written in Rust,
+	  to be selected.
+
+	  It is also required to be able to load external kernel modules
+	  written in Rust.
+
+	  See Documentation/rust/ for more information.
+
+	  If unsure, say N.
 
 #
 # Place an empty function call at each tracepoint site. Can be

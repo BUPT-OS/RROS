@@ -73,6 +73,13 @@ static unsigned int kallsyms_expand_symbol(unsigned int off,
 	 */
 	off += len + 1;
 
+	/* If zero, it is a "big" symbol, so a two byte length follows. */
+	if (len == 0) {
+		len = (data[0] << 8) | data[1];
+		data += 2;
+		off += len + 2;
+	}
+
 	/*
 	 * For every byte on the compressed symbol data, copy the table
 	 * entry for that byte.

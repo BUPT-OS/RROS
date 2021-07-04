@@ -470,12 +470,37 @@ static void write_src(void)
 		if ((i & 0xFF) == 0)
 			markers[i >> 8] = off;
 
-		printf("\t.byte 0x%02x", table[i]->len);
+		/*
+		 * There cannot be any symbol of length zero -- we use that
+		 * to mark a "big" symbol (and it doesn't make sense anyway).
+		 */
+		if (table[i]->len == 0) {
+			fprintf(stderr, "kallsyms failure: "
+				"unexpected zero symbol length\n");
+			exit(EXIT_FAILURE);
+		}
+
+		/* Only lengths that fit in up to two bytes are supported. */
+		if (table[i]->len > 0xFFFF) {
+			fprintf(stderr, "kallsyms failure: "
+				"unexpected huge symbol length\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (table[i]->len <= 0xFF) {
+			/* Most symbols use a single byte for the length. */
+			printf("\t.byte 0x%02x", table[i]->len);
+			off += table[i]->len + 1;
+		} else {
+			/* "Big" symbols use a zero and then two bytes. */
+			printf("\t.byte 0x00, 0x%02x, 0x%02x",
+				(table[i]->len >> 8) & 0xFF,
+				table[i]->len & 0xFF);
+			off += table[i]->len + 3;
+		}
 		for (k = 0; k < table[i]->len; k++)
 			printf(", 0x%02x", table[i]->sym[k]);
 		printf("\n");
-
-		off += table[i]->len + 1;
 	}
 	printf("\n");
 

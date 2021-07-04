@@ -2182,6 +2182,10 @@ char *fwnode_string(char *buf, char *end, struct fwnode_handle *fwnode,
 	return widen_string(buf, buf - buf_start, end, spec);
 }
 
+#ifdef CONFIG_RUST
+char *rust_fmt_argument(char* buf, char* end, void *ptr);
+#endif
+
 /* Disable pointer hashing if requested */
 bool no_hash_pointers __ro_after_init;
 EXPORT_SYMBOL_GPL(no_hash_pointers);
@@ -2335,6 +2339,10 @@ early_param("no_hash_pointers", no_hash_pointers_enable);
  *
  * Note: The default behaviour (unadorned %p) is to hash the address,
  * rendering it useful as a unique identifier.
+ *
+ * There is also a '%pA' format specifier, but it is only intended to be used
+ * from Rust code to format core::fmt::Arguments. Do *not* use it from C.
+ * See rust/kernel/print.rs for details.
  */
 static noinline_for_stack
 char *pointer(const char *fmt, char *buf, char *end, void *ptr,
@@ -2407,6 +2415,10 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
 		return device_node_string(buf, end, ptr, spec, fmt + 1);
 	case 'f':
 		return fwnode_string(buf, end, ptr, spec, fmt + 1);
+#ifdef CONFIG_RUST
+	case 'A':
+		return rust_fmt_argument(buf, end, ptr);
+#endif
 	case 'x':
 		return pointer_string(buf, end, ptr, spec);
 	case 'e':

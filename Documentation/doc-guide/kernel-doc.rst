@@ -11,6 +11,9 @@ when it is embedded in source files.
    reasons. The kernel source contains tens of thousands of kernel-doc
    comments. Please stick to the style described here.
 
+.. note:: kernel-doc does not cover Rust code: please see
+   Documentation/rust/docs.rst instead.
+
 The kernel-doc structure is extracted from the comments, and proper
 `Sphinx C Domain`_ function and type descriptions with anchors are
 generated from them. The descriptions are filtered for special kernel-doc

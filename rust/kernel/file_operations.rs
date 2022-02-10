@@ -367,6 +367,11 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
         } else {
             None
         },
+        oob_read: None,
+        oob_write: None,
+        oob_ioctl: None,
+        compat_oob_ioctl: None,
+        oob_poll: None,
     };
 
     /// Builds an instance of [`struct file_operations`].

@@ -74,6 +74,34 @@ pub mod platdev;
 mod types;
 pub mod user_ptr;
 
+pub mod bitmap;
+pub mod class;
+pub mod cpumask;
+pub mod clockchips;
+pub mod double_linked_list;
+pub mod double_linked_list2;
+pub mod device;
+pub mod endian;
+pub mod fs;
+pub mod irq_work;
+pub mod irqstage;
+pub mod irq_pipeline;
+pub mod mm;
+pub mod percpu;
+pub mod percpu_defs;
+pub mod premmpt;
+pub mod sysfs;
+pub mod timekeeping;
+pub mod uidgid;
+pub mod vmalloc;
+pub mod workqueue;
+pub mod kthread;
+pub mod ktime;
+pub mod dovetail;
+pub mod completion;
+#[cfg(CONFIG_NET)]
+pub mod net;
+
 #[doc(hidden)]
 pub use build_error::build_error;
 

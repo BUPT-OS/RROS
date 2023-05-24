@@ -28,6 +28,12 @@ config POWER_SUPPLY_HWMON
 	  Say 'Y' here if you want power supplies to
 	  have hwmon sysfs interface too.
 
+config RPI_POE_POWER
+	tristate "Raspberry Pi PoE+ HAT power supply driver"
+	depends on RASPBERRYPI_FIRMWARE
+	help
+	  Say Y here to enable support for Raspberry Pi PoE+ (Power over Ethernet
+	  Plus) HAT current measurement.
 
 config PDA_POWER
 	tristate "Generic PDA/phone power driver"
@@ -712,7 +718,8 @@ config BATTERY_GOLDFISH
 
 config BATTERY_RT5033
 	tristate "RT5033 fuel gauge support"
-	depends on MFD_RT5033
+	depends on I2C
+	select REGMAP_I2C
 	help
 	  This adds support for battery fuel gauge in Richtek RT5033 PMIC.
 	  The fuelgauge calculates and determines the battery state of charge

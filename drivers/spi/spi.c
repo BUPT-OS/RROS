@@ -2057,6 +2057,7 @@ of_register_spi_device(struct spi_controller *ctlr, struct device_node *nc)
 	/* Store a pointer to the node in the device structure */
 	of_node_get(nc);
 	spi->dev.of_node = nc;
+	spi->dev.fwnode = of_fwnode_handle(nc);
 
 	/* Register the new device */
 	rc = spi_add_device(spi);
@@ -2621,9 +2622,10 @@ static int spi_get_gpio_descs(struct spi_controller *ctlr)
 		native_cs_mask |= BIT(i);
 	}
 
-	ctlr->unused_native_cs = ffz(native_cs_mask);
-	if (num_cs_gpios && ctlr->max_native_cs &&
-	    ctlr->unused_native_cs >= ctlr->max_native_cs) {
+	ctlr->unused_native_cs = ffs(~native_cs_mask) - 1;
+
+	if ((ctlr->flags & SPI_MASTER_GPIO_SS) && num_cs_gpios &&
+	    ctlr->max_native_cs && ctlr->unused_native_cs >= ctlr->max_native_cs) {
 		dev_err(dev, "No unused native chip select available\n");
 		return -EINVAL;
 	}
@@ -3337,6 +3339,7 @@ static int __spi_validate_bits_per_word(struct spi_controller *ctlr,
  */
 int spi_setup(struct spi_device *spi)
 {
+	struct spi_controller *ctlr = spi->controller;
 	unsigned	bad_bits, ugly_bits;
 	int		status;
 
@@ -3358,6 +3361,14 @@ int spi_setup(struct spi_device *spi)
 		(SPI_TX_DUAL | SPI_TX_QUAD | SPI_TX_OCTAL |
 		 SPI_RX_DUAL | SPI_RX_QUAD | SPI_RX_OCTAL)))
 		return -EINVAL;
+
+	if (ctlr->use_gpio_descriptors && ctlr->cs_gpiods &&
+	    ctlr->cs_gpiods[spi->chip_select] && !(spi->mode & SPI_CS_HIGH)) {
+		dev_dbg(&spi->dev,
+			"setup: forcing CS_HIGH (use_gpio_descriptors)\n");
+		spi->mode |= SPI_CS_HIGH;
+	}
+
 	/* help drivers fail *cleanly* when they need options
 	 * that aren't supported with their current controller
 	 * SPI_CS_WORD has a fallback software implementation,

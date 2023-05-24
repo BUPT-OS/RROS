@@ -397,7 +397,7 @@ int mlx5_register_device(struct mlx5_core_dev *dev)
 void mlx5_unregister_device(struct mlx5_core_dev *dev)
 {
 	mutex_lock(&mlx5_intf_mutex);
-	dev->priv.flags |= MLX5_PRIV_FLAGS_DISABLE_ALL_ADEV;
+	dev->priv.flags = MLX5_PRIV_FLAGS_DISABLE_ALL_ADEV;
 	mlx5_rescan_drivers_locked(dev);
 	mutex_unlock(&mlx5_intf_mutex);
 }
@@ -500,10 +500,7 @@ static int next_phys_dev(struct device *dev, const void *data)
 	return 1;
 }
 
-/* This function is called with two flows:
- * 1. During initialization of mlx5_core_dev and we don't need to lock it.
- * 2. During LAG configure stage and caller holds &mlx5_intf_mutex.
- */
+/* Must be called with intf_mutex held */
 struct mlx5_core_dev *mlx5_get_next_phys_dev(struct mlx5_core_dev *dev)
 {
 	struct auxiliary_device *adev;

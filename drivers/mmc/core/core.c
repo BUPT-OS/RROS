@@ -937,11 +937,14 @@ int mmc_execute_tuning(struct mmc_card *card)
 
 	err = host->ops->execute_tuning(host, opcode);
 
-	if (err)
+	if (err) {
 		pr_err("%s: tuning execution failed: %d\n",
 			mmc_hostname(host), err);
-	else
+	} else {
+		host->retune_now = 0;
+		host->need_retune = 0;
 		mmc_retune_enable(host);
+	}
 
 	return err;
 }
@@ -1813,7 +1816,8 @@ EXPORT_SYMBOL(mmc_erase);
 
 int mmc_can_erase(struct mmc_card *card)
 {
-	if (card->csd.cmdclass & CCC_ERASE && card->erase_size)
+	if (card->csd.cmdclass & CCC_ERASE && card->erase_size &&
+	    !(card->quirks & MMC_QUIRK_ERASE_BROKEN))
 		return 1;
 	return 0;
 }

@@ -1361,12 +1361,17 @@ static void xhci_unmap_temp_buf(struct usb_hcd *hcd, struct urb *urb)
 				 urb->transfer_buffer_length,
 				 dir);
 
-	if (usb_urb_dir_in(urb))
+	if (usb_urb_dir_in(urb)) {
 		len = sg_pcopy_from_buffer(urb->sg, urb->num_sgs,
 					   urb->transfer_buffer,
 					   buf_len,
 					   0);
-
+		if (len != buf_len) {
+			xhci_dbg(hcd_to_xhci(hcd),
+				 "Copy from tmp buf to urb sg list failed\n");
+			urb->actual_length = len;
+		}
+	}
 	urb->transfer_flags &= ~URB_DMA_MAP_SINGLE;
 	kfree(urb->transfer_buffer);
 	urb->transfer_buffer = NULL;
@@ -1581,6 +1586,109 @@ command_cleanup:
 		kfree(command);
 	}
 	return ret;
+}
+
+/*
+ * RPI: Fixup endpoint intervals when requested
+ * - Check interval versus the (cached) endpoint context
+ * - set the endpoint interval to the new value
+ * - force an endpoint configure command
+ * XXX: bandwidth is not recalculated. We should probably do that.
+ */
+
+static unsigned int xhci_get_endpoint_flag_from_index(unsigned int ep_index)
+{
+	return 1 << (ep_index + 1);
+}
+
+static void xhci_fixup_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
+				struct usb_host_endpoint *ep, int interval)
+{
+	struct xhci_hcd *xhci;
+	struct xhci_ep_ctx *ep_ctx_out, *ep_ctx_in;
+	struct xhci_command *command;
+	struct xhci_input_control_ctx *ctrl_ctx;
+	struct xhci_virt_device *vdev;
+	int xhci_interval;
+	int ret;
+	int ep_index;
+	unsigned long flags;
+	u32 ep_info_tmp;
+
+	xhci = hcd_to_xhci(hcd);
+	ep_index = xhci_get_endpoint_index(&ep->desc);
+
+	/* FS/LS interval translations */
+	if ((udev->speed == USB_SPEED_FULL ||
+	     udev->speed == USB_SPEED_LOW))
+		interval *= 8;
+
+	mutex_lock(&xhci->mutex);
+
+	spin_lock_irqsave(&xhci->lock, flags);
+
+	vdev = xhci->devs[udev->slot_id];
+	/* Get context-derived endpoint interval */
+	ep_ctx_out = xhci_get_ep_ctx(xhci, vdev->out_ctx, ep_index);
+	ep_ctx_in = xhci_get_ep_ctx(xhci, vdev->in_ctx, ep_index);
+	xhci_interval = EP_INTERVAL_TO_UFRAMES(le32_to_cpu(ep_ctx_out->ep_info));
+
+	if (interval == xhci_interval) {
+		spin_unlock_irqrestore(&xhci->lock, flags);
+		mutex_unlock(&xhci->mutex);
+		return;
+	}
+
+	xhci_dbg(xhci, "Fixup interval=%d xhci_interval=%d\n",
+		 interval, xhci_interval);
+	command = xhci_alloc_command_with_ctx(xhci, true, GFP_ATOMIC);
+	if (!command) {
+		/* Failure here is benign, poll at the original rate */
+		spin_unlock_irqrestore(&xhci->lock, flags);
+		mutex_unlock(&xhci->mutex);
+		return;
+	}
+
+	/* xHCI uses exponents for intervals... */
+	xhci_interval = fls(interval) - 1;
+	xhci_interval = clamp_val(xhci_interval, 3, 10);
+	ep_info_tmp = le32_to_cpu(ep_ctx_out->ep_info);
+	ep_info_tmp &= ~EP_INTERVAL(255);
+	ep_info_tmp |= EP_INTERVAL(xhci_interval);
+
+	/* Keep the endpoint context up-to-date while issuing the command. */
+	xhci_endpoint_copy(xhci, vdev->in_ctx,
+			   vdev->out_ctx, ep_index);
+	ep_ctx_in->ep_info = cpu_to_le32(ep_info_tmp);
+
+	/*
+	 * We need to drop the lock, so take an explicit copy
+	 * of the ep context.
+	 */
+	xhci_endpoint_copy(xhci, command->in_ctx, vdev->in_ctx, ep_index);
+
+	ctrl_ctx = xhci_get_input_control_ctx(command->in_ctx);
+	if (!ctrl_ctx) {
+		xhci_warn(xhci,
+			  "%s: Could not get input context, bad type.\n",
+			  __func__);
+		spin_unlock_irqrestore(&xhci->lock, flags);
+		xhci_free_command(xhci, command);
+		mutex_unlock(&xhci->mutex);
+		return;
+	}
+	ctrl_ctx->add_flags = xhci_get_endpoint_flag_from_index(ep_index);
+	ctrl_ctx->drop_flags = 0;
+
+	spin_unlock_irqrestore(&xhci->lock, flags);
+
+	ret = xhci_configure_endpoint(xhci, udev, command,
+				      false, false);
+	if (ret)
+		xhci_warn(xhci, "%s: Configure endpoint failed: %d\n",
+			  __func__, ret);
+	xhci_free_command(xhci, command);
+	mutex_unlock(&xhci->mutex);
 }
 
 /*
@@ -3206,10 +3314,13 @@ static void xhci_endpoint_reset(struct usb_hcd *hcd,
 		return;
 
 	/* Bail out if toggle is already being cleared by a endpoint reset */
+	spin_lock_irqsave(&xhci->lock, flags);
 	if (ep->ep_state & EP_HARD_CLEAR_TOGGLE) {
 		ep->ep_state &= ~EP_HARD_CLEAR_TOGGLE;
+		spin_unlock_irqrestore(&xhci->lock, flags);
 		return;
 	}
+	spin_unlock_irqrestore(&xhci->lock, flags);
 	/* Only interrupt and bulk ep's use data toggle, USB2 spec 5.5.4-> */
 	if (usb_endpoint_xfer_control(&host_ep->desc) ||
 	    usb_endpoint_xfer_isoc(&host_ep->desc))
@@ -3295,8 +3406,10 @@ static void xhci_endpoint_reset(struct usb_hcd *hcd,
 	xhci_free_command(xhci, cfg_cmd);
 cleanup:
 	xhci_free_command(xhci, stop_cmd);
+	spin_lock_irqsave(&xhci->lock, flags);
 	if (ep->ep_state & EP_SOFT_CLEAR_TOGGLE)
 		ep->ep_state &= ~EP_SOFT_CLEAR_TOGGLE;
+	spin_unlock_irqrestore(&xhci->lock, flags);
 }
 
 static int xhci_check_streams_endpoint(struct xhci_hcd *xhci,
@@ -4700,18 +4813,18 @@ static u16 xhci_calculate_u1_timeout(struct xhci_hcd *xhci,
 {
 	unsigned long long timeout_ns;
 
-	if (xhci->quirks & XHCI_INTEL_HOST)
-		timeout_ns = xhci_calculate_intel_u1_timeout(udev, desc);
-	else
-		timeout_ns = udev->u1_params.sel;
-
 	/* Prevent U1 if service interval is shorter than U1 exit latency */
 	if (usb_endpoint_xfer_int(desc) || usb_endpoint_xfer_isoc(desc)) {
-		if (xhci_service_interval_to_ns(desc) <= timeout_ns) {
+		if (xhci_service_interval_to_ns(desc) <= udev->u1_params.mel) {
 			dev_dbg(&udev->dev, "Disable U1, ESIT shorter than exit latency\n");
 			return USB3_LPM_DISABLED;
 		}
 	}
+
+	if (xhci->quirks & XHCI_INTEL_HOST)
+		timeout_ns = xhci_calculate_intel_u1_timeout(udev, desc);
+	else
+		timeout_ns = udev->u1_params.sel;
 
 	/* The U1 timeout is encoded in 1us intervals.
 	 * Don't return a timeout of zero, because that's USB3_LPM_DISABLED.
@@ -4764,18 +4877,18 @@ static u16 xhci_calculate_u2_timeout(struct xhci_hcd *xhci,
 {
 	unsigned long long timeout_ns;
 
-	if (xhci->quirks & XHCI_INTEL_HOST)
-		timeout_ns = xhci_calculate_intel_u2_timeout(udev, desc);
-	else
-		timeout_ns = udev->u2_params.sel;
-
 	/* Prevent U2 if service interval is shorter than U2 exit latency */
 	if (usb_endpoint_xfer_int(desc) || usb_endpoint_xfer_isoc(desc)) {
-		if (xhci_service_interval_to_ns(desc) <= timeout_ns) {
+		if (xhci_service_interval_to_ns(desc) <= udev->u2_params.mel) {
 			dev_dbg(&udev->dev, "Disable U2, ESIT shorter than exit latency\n");
 			return USB3_LPM_DISABLED;
 		}
 	}
+
+	if (xhci->quirks & XHCI_INTEL_HOST)
+		timeout_ns = xhci_calculate_intel_u2_timeout(udev, desc);
+	else
+		timeout_ns = udev->u2_params.sel;
 
 	/* The U2 timeout is encoded in 256us intervals */
 	timeout_ns = DIV_ROUND_UP_ULL(timeout_ns, 256 * 1000);
@@ -5398,6 +5511,7 @@ static const struct hc_driver xhci_hc_driver = {
 	.endpoint_reset =	xhci_endpoint_reset,
 	.check_bandwidth =	xhci_check_bandwidth,
 	.reset_bandwidth =	xhci_reset_bandwidth,
+	.fixup_endpoint =	xhci_fixup_endpoint,
 	.address_device =	xhci_address_device,
 	.enable_device =	xhci_enable_device,
 	.update_hub_device =	xhci_update_hub_device,

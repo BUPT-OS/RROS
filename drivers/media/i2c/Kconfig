@@ -801,6 +801,17 @@ config VIDEO_IMX290
 	  To compile this driver as a module, choose M here: the
 	  module will be called imx290.
 
+config VIDEO_IMX477
+	tristate "Sony IMX477 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX477 camera. Also supports the Sony IMX378.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called imx477.
+
 config VIDEO_IMX319
 	tristate "Sony IMX319 sensor support"
 	depends on I2C && VIDEO_V4L2
@@ -1095,6 +1106,17 @@ config VIDEO_OV9640
 	  This is a Video4Linux2 sensor driver for the OmniVision
 	  OV9640 camera sensor.
 
+config VIDEO_OV9281
+	tristate "OmniVision OV9281 sensor support"
+	depends on I2C && VIDEO_V4L2
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor-level driver for the OmniVision
+	  OV9281 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ov9281.
+
 config VIDEO_OV9650
 	tristate "OmniVision OV9650/OV9652 sensor support"
 	depends on I2C && VIDEO_V4L2
@@ -1128,6 +1150,18 @@ config VIDEO_OV13858
 	help
 	  This is a Video4Linux2 sensor driver for the OmniVision
 	  OV13858 camera.
+
+config VIDEO_IRS1125
+	tristate "Infineon IRS1125 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor-level driver for the Infineon
+	  IRS1125 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called irs1125.
 
 config VIDEO_VS6624
 	tristate "ST VS6624 sensor support"

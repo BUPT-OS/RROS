@@ -1248,6 +1248,7 @@ static const struct adv7180_chip_info adv7282_m_info = {
 		BIT(ADV7182_INPUT_SVIDEO_AIN1_AIN2) |
 		BIT(ADV7182_INPUT_SVIDEO_AIN3_AIN4) |
 		BIT(ADV7182_INPUT_SVIDEO_AIN7_AIN8) |
+		BIT(ADV7182_INPUT_YPRPB_AIN1_AIN2_AIN3) |
 		BIT(ADV7182_INPUT_DIFF_CVBS_AIN1_AIN2) |
 		BIT(ADV7182_INPUT_DIFF_CVBS_AIN3_AIN4) |
 		BIT(ADV7182_INPUT_DIFF_CVBS_AIN7_AIN8),
@@ -1259,6 +1260,7 @@ static const struct adv7180_chip_info adv7282_m_info = {
 static int init_device(struct adv7180_state *state)
 {
 	int ret;
+	int i;
 
 	mutex_lock(&state->mutex);
 
@@ -1303,6 +1305,18 @@ static int init_device(struct adv7180_state *state)
 		ret = adv7180_write(state, ADV7180_REG_IMR4, 0);
 		if (ret < 0)
 			goto out_unlock;
+	}
+
+	/* Select first valid input */
+	for (i = 0; i < 32; i++) {
+		if (BIT(i) & state->chip_info->valid_input_mask) {
+			ret = state->chip_info->select_input(state, i);
+
+			if (ret == 0) {
+				state->input = i;
+				break;
+			}
+		}
 	}
 
 out_unlock:

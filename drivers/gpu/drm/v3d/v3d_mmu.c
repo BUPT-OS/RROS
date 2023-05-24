@@ -18,6 +18,8 @@
  * each client.  This is not yet implemented.
  */
 
+#include <linux/pm_runtime.h>
+
 #include "v3d_drv.h"
 #include "v3d_regs.h"
 

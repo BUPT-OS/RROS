@@ -402,12 +402,12 @@ void disk_uevent(struct gendisk *disk, enum kobject_action action)
 	xa_for_each(&disk->part_tbl, idx, part) {
 		if (bdev_is_partition(part) && !bdev_nr_sectors(part))
 			continue;
-		if (!bdgrab(part))
+		if (!kobject_get_unless_zero(&part->bd_device.kobj))
 			continue;
 
 		rcu_read_unlock();
 		kobject_uevent(bdev_kobj(part), action);
-		bdput(part);
+		put_device(&part->bd_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1124,10 +1124,9 @@ static void disk_release(struct device *dev)
 	disk_release_events(disk);
 	kfree(disk->random);
 	xa_destroy(&disk->part_tbl);
-	bdput(disk->part0);
 	if (disk->queue)
 		blk_put_queue(disk->queue);
-	kfree(disk);
+	bdput(disk->part0);	/* frees the disk */
 }
 struct class block_class = {
 	.name		= "block",

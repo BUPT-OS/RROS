@@ -293,6 +293,8 @@ int bcmgenet_mii_probe(struct net_device *dev)
 	/* Communicate the integrated PHY revision */
 	if (priv->internal_phy)
 		phy_flags = priv->gphy_rev;
+	else
+		phy_flags = PHY_BRCM_AUTO_PWRDWN_ENABLE;
 
 	/* Initialize link state variables that bcmgenet_mii_setup() uses */
 	priv->old_link = -1;
@@ -423,6 +425,10 @@ static int bcmgenet_mii_register(struct bcmgenet_priv *priv)
 	int id, ret;
 
 	pres = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!pres) {
+		dev_err(&pdev->dev, "Invalid resource\n");
+		return -EINVAL;
+	}
 	memset(&res, 0, sizeof(res));
 	memset(&ppd, 0, sizeof(ppd));
 

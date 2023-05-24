@@ -43,9 +43,12 @@
 #include <linux/irqdomain.h>
 
 #include <asm/exception.h>
+#ifndef CONFIG_ARM64
+#include <asm/mach/irq.h>
+#endif
 
 /* Put the bank and irq (32 bits) into the hwirq */
-#define MAKE_HWIRQ(b, n)	((b << 5) | (n))
+#define MAKE_HWIRQ(b, n)	(((b) << 5) | (n))
 #define HWIRQ_BANK(i)		(i >> 5)
 #define HWIRQ_BIT(i)		BIT(i & 0x1f)
 
@@ -60,11 +63,17 @@
 #define BANK0_VALID_MASK	(BANK0_HWIRQ_MASK | BANK1_HWIRQ | BANK2_HWIRQ \
 					| SHORTCUT1_MASK | SHORTCUT2_MASK)
 
+#undef ARM_LOCAL_GPU_INT_ROUTING
+#define ARM_LOCAL_GPU_INT_ROUTING 0x0c
+
 #define REG_FIQ_CONTROL		0x0c
 #define FIQ_CONTROL_ENABLE	BIT(7)
+#define REG_FIQ_ENABLE		FIQ_CONTROL_ENABLE
+#define REG_FIQ_DISABLE	0
 
 #define NR_BANKS		3
 #define IRQS_PER_BANK		32
+#define NUMBER_IRQS		MAKE_HWIRQ(NR_BANKS, 0)
 
 static const int reg_pending[] __initconst = { 0x00, 0x04, 0x08 };
 static const int reg_enable[] __initconst = { 0x18, 0x10, 0x14 };
@@ -82,6 +91,7 @@ struct armctrl_ic {
 	void __iomem *enable[NR_BANKS];
 	void __iomem *disable[NR_BANKS];
 	struct irq_domain *domain;
+	void __iomem *local_base;
 };
 
 static struct armctrl_ic intc __read_mostly;
@@ -136,15 +146,16 @@ static int __init armctrl_of_init(struct device_node *node,
 				  bool is_2836)
 {
 	void __iomem *base;
-	int irq, b, i;
+	int irq = 0, last_irq, b, i;
 	u32 reg;
 
 	base = of_iomap(node, 0);
 	if (!base)
 		panic("%pOF: unable to map IC registers\n", node);
 
-	intc.domain = irq_domain_add_linear(node, MAKE_HWIRQ(NR_BANKS, 0),
-			&armctrl_ops, NULL);
+	intc.base = base;
+	intc.domain = irq_domain_add_linear(node, NUMBER_IRQS * 2,
+					    &armctrl_ops, NULL);
 	if (!intc.domain)
 		panic("%pOF: unable to create IRQ domain\n", node);
 
@@ -175,6 +186,8 @@ static int __init armctrl_of_init(struct device_node *node,
 		pr_err(FW_BUG "Bootloader left fiq enabled\n");
 	}
 
+	last_irq = irq;
+
 	if (is_2836) {
 		int parent_irq = irq_of_parse_and_map(node, 0);
 
@@ -186,6 +199,27 @@ static int __init armctrl_of_init(struct device_node *node,
 	} else {
 		set_handle_irq(bcm2835_handle_irq);
 	}
+
+	if (is_2836) {
+		extern void __iomem * __attribute__((weak)) arm_local_intc;
+		intc.local_base = arm_local_intc;
+		if (!intc.local_base)
+			pr_err("Failed to get local intc base. FIQ is disabled for cpus > 1\n");
+	}
+
+	/* Make a duplicate irq range which is used to enable FIQ */
+	for (b = 0; b < NR_BANKS; b++) {
+		for (i = 0; i < bank_irqs[b]; i++) {
+			irq = irq_create_mapping(intc.domain,
+					MAKE_HWIRQ(b, i) + NUMBER_IRQS);
+			BUG_ON(irq <= 0);
+			irq_set_chip(irq, &armctrl_chip);
+			irq_set_probe(irq);
+		}
+	}
+#ifndef CONFIG_ARM64
+	init_FIQ(irq - last_irq);
+#endif
 
 	return 0;
 }

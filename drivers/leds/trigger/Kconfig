@@ -114,6 +114,13 @@ config LEDS_TRIGGER_CAMERA
 	  This enables direct flash/torch on/off by the driver, kernel space.
 	  If unsure, say Y.
 
+config LEDS_TRIGGER_INPUT
+	tristate "LED Input Trigger"
+	depends on LEDS_TRIGGERS
+	help
+	  This allows the GPIOs assigned to be LEDs to be initialised to inputs.
+	  If unsure, say Y.
+
 config LEDS_TRIGGER_PANIC
 	bool "LED Panic Trigger"
 	help
@@ -152,5 +159,16 @@ config LEDS_TRIGGER_TTY
 	  serial devices like /dev/ttyS0.
 
 	  When build as a module this driver will be called ledtrig-tty.
+
+config LEDS_TRIGGER_ACTPWR
+	tristate "ACT/PWR Input Trigger"
+	depends on LEDS_TRIGGERS
+	help
+	  This trigger is intended for platforms that have one software-
+	  controllable LED and no dedicated activity or power LEDs, hence the
+	  need to make the one LED perform both functions. It cycles between
+	  default-on and an inverted mmc0 every 500ms, guaranteeing that it is
+	  on for at least half of the time.
+	  If unsure, say N.
 
 endif # LEDS_TRIGGERS

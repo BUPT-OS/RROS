@@ -95,6 +95,45 @@ static int vc4_hvs_debugfs_underrun(struct seq_file *m, void *data)
 	return 0;
 }
 
+static int vc4_hvs_debugfs_dlist(struct seq_file *m, void *data)
+{
+	struct drm_info_node *node = m->private;
+	struct drm_device *dev = node->minor->dev;
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct drm_printer p = drm_seq_file_printer(m);
+	unsigned int next_entry_start = 0;
+	unsigned int i, j;
+	u32 dlist_word, dispstat;
+
+	for (i = 0; i < SCALER_CHANNELS_COUNT; i++) {
+		dispstat = VC4_GET_FIELD(HVS_READ(SCALER_DISPSTATX(i)),
+					 SCALER_DISPSTATX_MODE);
+		if (dispstat == SCALER_DISPSTATX_MODE_DISABLED ||
+		    dispstat == SCALER_DISPSTATX_MODE_EOF) {
+			drm_printf(&p, "HVS chan %u disabled\n", i);
+			continue;
+		}
+
+		drm_printf(&p, "HVS chan %u:\n", i);
+
+		for (j = HVS_READ(SCALER_DISPLISTX(i)); j < 256; j++) {
+			dlist_word = readl((u32 __iomem *)vc4->hvs->dlist + j);
+			drm_printf(&p, "dlist: %02d: 0x%08x\n", j,
+				   dlist_word);
+			if (!next_entry_start ||
+			    next_entry_start == j) {
+				if (dlist_word & SCALER_CTL0_END)
+					break;
+				next_entry_start = j +
+					VC4_GET_FIELD(dlist_word,
+						      SCALER_CTL0_SIZE);
+			}
+		}
+	}
+
+	return 0;
+}
+
 /* The filter kernel is composed of dwords each containing 3 9-bit
  * signed integers packed next to each other.
  */
@@ -365,17 +404,16 @@ static void vc4_hvs_update_dlist(struct drm_crtc *crtc)
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
 	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc->state);
+	unsigned long flags;
 
 	if (crtc->state->event) {
-		unsigned long flags;
-
 		crtc->state->event->pipe = drm_crtc_index(crtc);
 
 		WARN_ON(drm_crtc_vblank_get(crtc) != 0);
 
 		spin_lock_irqsave(&dev->event_lock, flags);
 
-		if (!vc4_state->feed_txp || vc4_state->txp_armed) {
+		if (!vc4_crtc->feeds_txp || vc4_state->txp_armed) {
 			vc4_crtc->event = crtc->state->event;
 			crtc->state->event = NULL;
 		}
@@ -388,6 +426,22 @@ static void vc4_hvs_update_dlist(struct drm_crtc *crtc)
 		HVS_WRITE(SCALER_DISPLISTX(vc4_state->assigned_channel),
 			  vc4_state->mm.start);
 	}
+
+	spin_lock_irqsave(&vc4_crtc->irq_lock, flags);
+	vc4_crtc->current_dlist = vc4_state->mm.start;
+	spin_unlock_irqrestore(&vc4_crtc->irq_lock, flags);
+}
+
+void vc4_hvs_atomic_begin(struct drm_crtc *crtc,
+			  struct drm_atomic_state *state)
+{
+	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
+	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(crtc->state);
+	unsigned long flags;
+
+	spin_lock_irqsave(&vc4_crtc->irq_lock, flags);
+	vc4_crtc->current_hvs_channel = vc4_state->assigned_channel;
+	spin_unlock_irqrestore(&vc4_crtc->irq_lock, flags);
 }
 
 void vc4_hvs_atomic_enable(struct drm_crtc *crtc,
@@ -395,10 +449,9 @@ void vc4_hvs_atomic_enable(struct drm_crtc *crtc,
 {
 	struct drm_device *dev = crtc->dev;
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
-	struct drm_crtc_state *new_crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
-	struct vc4_crtc_state *vc4_state = to_vc4_crtc_state(new_crtc_state);
 	struct drm_display_mode *mode = &crtc->state->adjusted_mode;
-	bool oneshot = vc4_state->feed_txp;
+	struct vc4_crtc *vc4_crtc = to_vc4_crtc(crtc);
+	bool oneshot = vc4_crtc->feeds_txp;
 
 	vc4_hvs_update_dlist(crtc);
 	vc4_hvs_init_channel(vc4, crtc, mode, oneshot);
@@ -674,6 +727,8 @@ static int vc4_hvs_bind(struct device *dev, struct device *master, void *data)
 
 	vc4_debugfs_add_regset32(drm, "hvs_regs", &hvs->regset);
 	vc4_debugfs_add_file(drm, "hvs_underrun", vc4_hvs_debugfs_underrun,
+			     NULL);
+	vc4_debugfs_add_file(drm, "hvs_dlists", vc4_hvs_debugfs_dlist,
 			     NULL);
 
 	return 0;

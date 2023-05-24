@@ -6,13 +6,14 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/of.h>
 
 #include "bcm2835.h"
+#include <soc/bcm2835/raspberrypi-firmware.h>
 
-static bool enable_hdmi;
+static bool enable_hdmi, enable_hdmi0, enable_hdmi1;
 static bool enable_headphones;
 static bool enable_compat_alsa = true;
-static int num_channels = MAX_SUBSTREAMS;
 
 module_param(enable_hdmi, bool, 0444);
 MODULE_PARM_DESC(enable_hdmi, "Enables HDMI virtual audio device");
@@ -21,8 +22,6 @@ MODULE_PARM_DESC(enable_headphones, "Enables Headphones virtual audio device");
 module_param(enable_compat_alsa, bool, 0444);
 MODULE_PARM_DESC(enable_compat_alsa,
 		 "Enables ALSA compatibility virtual audio device");
-module_param(num_channels, int, 0644);
-MODULE_PARM_DESC(num_channels, "Number of audio channels (default: 8)");
 
 static void bcm2835_devm_free_vchi_ctx(struct device *dev, void *res)
 {
@@ -81,7 +80,11 @@ static int bcm2835_audio_alsa_newpcm(struct bcm2835_chip *chip,
 	if (err)
 		return err;
 
-	err = snd_bcm2835_new_pcm(chip, "bcm2835 IEC958/HDMI", 1, 0, 1, true);
+	err = snd_bcm2835_new_pcm(chip, "bcm2835 IEC958/HDMI", 1, AUDIO_DEST_HDMI0, 1, true);
+	if (err)
+		return err;
+
+	err = snd_bcm2835_new_pcm(chip, "bcm2835 IEC958/HDMI1", 2, AUDIO_DEST_HDMI1, 1, true);
 	if (err)
 		return err;
 
@@ -108,17 +111,30 @@ static struct bcm2835_audio_driver bcm2835_audio_alsa = {
 	.newctl = snd_bcm2835_new_ctl,
 };
 
-static struct bcm2835_audio_driver bcm2835_audio_hdmi = {
+static struct bcm2835_audio_driver bcm2835_audio_hdmi0 = {
 	.driver = {
 		.name = "bcm2835_hdmi",
 		.owner = THIS_MODULE,
 	},
-	.shortname = "bcm2835 HDMI",
-	.longname  = "bcm2835 HDMI",
+	.shortname = "bcm2835 HDMI 1",
+	.longname  = "bcm2835 HDMI 1",
 	.minchannels = 1,
 	.newpcm = bcm2835_audio_simple_newpcm,
 	.newctl = snd_bcm2835_new_hdmi_ctl,
-	.route = AUDIO_DEST_HDMI
+	.route = AUDIO_DEST_HDMI0
+};
+
+static struct bcm2835_audio_driver bcm2835_audio_hdmi1 = {
+	.driver = {
+		.name = "bcm2835_hdmi",
+		.owner = THIS_MODULE,
+	},
+	.shortname = "bcm2835 HDMI 2",
+	.longname  = "bcm2835 HDMI 2",
+	.minchannels = 1,
+	.newpcm = bcm2835_audio_simple_newpcm,
+	.newctl = snd_bcm2835_new_hdmi_ctl,
+	.route = AUDIO_DEST_HDMI1
 };
 
 static struct bcm2835_audio_driver bcm2835_audio_headphones = {
@@ -145,8 +161,12 @@ static struct bcm2835_audio_drivers children_devices[] = {
 		.is_enabled = &enable_compat_alsa,
 	},
 	{
-		.audio_driver = &bcm2835_audio_hdmi,
-		.is_enabled = &enable_hdmi,
+		.audio_driver = &bcm2835_audio_hdmi0,
+		.is_enabled = &enable_hdmi0,
+	},
+	{
+		.audio_driver = &bcm2835_audio_hdmi1,
+		.is_enabled = &enable_hdmi1,
 	},
 	{
 		.audio_driver = &bcm2835_audio_headphones,
@@ -293,22 +313,93 @@ static int snd_add_child_devices(struct device *device, u32 numchans)
 	return 0;
 }
 
+static void set_hdmi_enables(struct device *dev)
+{
+	struct device_node *firmware_node;
+	struct rpi_firmware *firmware;
+	u32 num_displays, i, display_id;
+	int ret;
+
+	firmware_node = of_parse_phandle(dev->of_node, "brcm,firmware", 0);
+	firmware = rpi_firmware_get(firmware_node);
+
+	if (!firmware)
+		return;
+
+	of_node_put(firmware_node);
+
+	ret = rpi_firmware_property(firmware,
+				    RPI_FIRMWARE_FRAMEBUFFER_GET_NUM_DISPLAYS,
+				    &num_displays, sizeof(u32));
+
+	if (ret)
+		return;
+
+	for (i = 0; i < num_displays; i++) {
+		display_id = i;
+		ret = rpi_firmware_property(firmware,
+				RPI_FIRMWARE_FRAMEBUFFER_GET_DISPLAY_ID,
+				&display_id, sizeof(display_id));
+		if (!ret) {
+			if (display_id == 2)
+				enable_hdmi0 = true;
+			if (display_id == 7)
+				enable_hdmi1 = true;
+		}
+	}
+
+	if (!enable_hdmi0 && enable_hdmi1) {
+		/* Swap them over and reassign route. This means
+		 * that if we only have one connected, it is always named
+		 *  HDMI1, irrespective of if its on port HDMI0 or HDMI1.
+		 *  This should match with the naming of HDMI ports in DRM
+		 */
+		enable_hdmi0 = true;
+		enable_hdmi1 = false;
+		bcm2835_audio_hdmi0.route = AUDIO_DEST_HDMI1;
+	}
+}
+
 static int snd_bcm2835_alsa_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	u32 numchans;
 	int err;
 
-	if (num_channels <= 0 || num_channels > MAX_SUBSTREAMS) {
-		num_channels = MAX_SUBSTREAMS;
-		dev_warn(dev, "Illegal num_channels value, will use %u\n",
-			 num_channels);
+	err = of_property_read_u32(dev->of_node, "brcm,pwm-channels",
+				   &numchans);
+	if (err) {
+		dev_err(dev, "Failed to get DT property 'brcm,pwm-channels'");
+		return err;
+	}
+
+	if (numchans == 0 || numchans > MAX_SUBSTREAMS) {
+		numchans = MAX_SUBSTREAMS;
+		dev_warn(dev,
+			 "Illegal 'brcm,pwm-channels' value, will use %u\n",
+			 numchans);
+	}
+
+	if (!enable_compat_alsa) {
+		// In this mode, enable analog output by default
+		u32 disable_headphones = 0;
+
+		if (!of_property_read_bool(dev->of_node, "brcm,disable-hdmi"))
+			set_hdmi_enables(dev);
+
+		of_property_read_u32(dev->of_node,
+				     "brcm,disable-headphones",
+				     &disable_headphones);
+		enable_headphones = !disable_headphones;
+	} else {
+		enable_hdmi0 = enable_hdmi;
 	}
 
 	err = bcm2835_devm_add_vchi_ctx(dev);
 	if (err)
 		return err;
 
-	err = snd_add_child_devices(dev, num_channels);
+	err = snd_add_child_devices(dev, numchans);
 	if (err)
 		return err;
 
@@ -330,6 +421,12 @@ static int snd_bcm2835_alsa_resume(struct platform_device *pdev)
 
 #endif
 
+static const struct of_device_id snd_bcm2835_of_match_table[] = {
+	{ .compatible = "brcm,bcm2835-audio",},
+	{},
+};
+MODULE_DEVICE_TABLE(of, snd_bcm2835_of_match_table);
+
 static struct platform_driver bcm2835_alsa_driver = {
 	.probe = snd_bcm2835_alsa_probe,
 #ifdef CONFIG_PM
@@ -338,6 +435,7 @@ static struct platform_driver bcm2835_alsa_driver = {
 #endif
 	.driver = {
 		.name = "bcm2835_audio",
+		.of_match_table = snd_bcm2835_of_match_table,
 	},
 };
 module_platform_driver(bcm2835_alsa_driver);

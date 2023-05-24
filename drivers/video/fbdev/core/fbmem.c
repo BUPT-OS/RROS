@@ -962,6 +962,7 @@ fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
 	struct fb_var_screeninfo old_var;
 	struct fb_videomode mode;
 	struct fb_event event;
+	u32 unused;
 
 	if (var->activate & FB_ACTIVATE_INV_MODE) {
 		struct fb_videomode mode1, mode2;
@@ -970,13 +971,11 @@ fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
 		fb_var_to_videomode(&mode2, &info->var);
 		/* make sure we don't delete the videomode of current var */
 		ret = fb_mode_is_equal(&mode1, &mode2);
-
-		if (!ret)
-			fbcon_mode_deleted(info, &mode1);
-
-		if (!ret)
-			fb_delete_videomode(&mode1, &info->modelist);
-
+		if (!ret) {
+			ret = fbcon_mode_deleted(info, &mode1);
+			if (!ret)
+				fb_delete_videomode(&mode1, &info->modelist);
+		}
 
 		return ret ? -EINVAL : 0;
 	}
@@ -1008,6 +1007,11 @@ fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
 
 	/* bitfill_aligned() assumes that it's at least 8x8 */
 	if (var->xres < 8 || var->yres < 8)
+		return -EINVAL;
+
+	/* Too huge resolution causes multiplication overflow. */
+	if (check_mul_overflow(var->xres, var->yres, &unused) ||
+	    check_mul_overflow(var->xres_virtual, var->yres_virtual, &unused))
 		return -EINVAL;
 
 	ret = info->fbops->fb_check_var(var, info);
@@ -1081,6 +1085,30 @@ fb_blank(struct fb_info *info, int blank)
 }
 EXPORT_SYMBOL(fb_blank);
 
+static int fb_copyarea_user(struct fb_info *info,
+			    struct fb_copyarea *copy)
+{
+	int ret = 0;
+	lock_fb_info(info);
+	if (copy->dx >= info->var.xres ||
+	    copy->sx >= info->var.xres ||
+	    copy->width > info->var.xres ||
+	    copy->dy >= info->var.yres ||
+	    copy->sy >= info->var.yres ||
+	    copy->height > info->var.yres ||
+	    copy->dx + copy->width > info->var.xres ||
+	    copy->sx + copy->width > info->var.xres ||
+	    copy->dy + copy->height > info->var.yres ||
+	    copy->sy + copy->height > info->var.yres) {
+		ret = -EINVAL;
+		goto out;
+	}
+	info->fbops->fb_copyarea(info, copy);
+out:
+	unlock_fb_info(info);
+	return ret;
+}
+
 static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -1089,6 +1117,7 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	struct fb_fix_screeninfo fix;
 	struct fb_cmap cmap_from;
 	struct fb_cmap_user cmap;
+	struct fb_copyarea copy;
 	void __user *argp = (void __user *)arg;
 	long ret = 0;
 
@@ -1164,6 +1193,15 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		unlock_fb_info(info);
 		console_unlock();
 		break;
+	case FBIOCOPYAREA:
+		if (info->flags & FBINFO_HWACCEL_COPYAREA) {
+			/* only provide this ioctl if it is accelerated */
+			if (copy_from_user(&copy, argp, sizeof(copy)))
+				return -EFAULT;
+			ret = fb_copyarea_user(info, &copy);
+			break;
+		}
+		/* fall through */
 	default:
 		lock_fb_info(info);
 		fb = info->fbops;
@@ -1303,6 +1341,7 @@ static long fb_compat_ioctl(struct file *file, unsigned int cmd,
 	case FBIOPAN_DISPLAY:
 	case FBIOGET_CON2FBMAP:
 	case FBIOPUT_CON2FBMAP:
+	case FBIOCOPYAREA:
 		arg = (unsigned long) compat_ptr(arg);
 		fallthrough;
 	case FBIOBLANK:

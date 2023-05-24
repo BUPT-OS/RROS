@@ -35,6 +35,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <dt-bindings/clock/bcm2835.h>
+#include <soc/bcm2835/raspberrypi-firmware.h>
 
 #define CM_PASSWORD		0x5a000000
 
@@ -295,6 +296,8 @@
 #define SOC_BCM2711		BIT(1)
 #define SOC_ALL			(SOC_BCM2835 | SOC_BCM2711)
 
+#define VCMSG_ID_CORE_CLOCK     4
+
 /*
  * Names of clocks used within the driver that need to be replaced
  * with an external parent's name.  This array is in the order that
@@ -313,6 +316,7 @@ static const char *const cprman_parent_names[] = {
 struct bcm2835_cprman {
 	struct device *dev;
 	void __iomem *regs;
+	struct rpi_firmware *fw;
 	spinlock_t regs_lock; /* spinlock for all clocks */
 	unsigned int soc;
 
@@ -640,15 +644,17 @@ static int bcm2835_pll_on(struct clk_hw *hw)
 	spin_unlock(&cprman->regs_lock);
 
 	/* Wait for the PLL to lock. */
-	timeout = ktime_add_ns(ktime_get(), LOCK_TIMEOUT_NS);
-	while (!(cprman_read(cprman, CM_LOCK) & data->lock_mask)) {
-		if (ktime_after(ktime_get(), timeout)) {
-			dev_err(cprman->dev, "%s: couldn't lock PLL\n",
-				clk_hw_get_name(hw));
-			return -ETIMEDOUT;
-		}
+	if (strcmp(data->name, "pllh")) {
+		timeout = ktime_add_ns(ktime_get(), LOCK_TIMEOUT_NS);
+		while (!(cprman_read(cprman, CM_LOCK) & data->lock_mask)) {
+			if (ktime_after(ktime_get(), timeout)) {
+				dev_err(cprman->dev, "%s: couldn't lock PLL\n",
+					clk_hw_get_name(hw));
+				return -ETIMEDOUT;
+			}
 
-		cpu_relax();
+			cpu_relax();
+		}
 	}
 
 	cprman_write(cprman, data->a2w_ctrl_reg,
@@ -1016,6 +1022,30 @@ static unsigned long bcm2835_clock_get_rate(struct clk_hw *hw,
 	return bcm2835_clock_rate_from_divisor(clock, parent_rate, div);
 }
 
+static unsigned long bcm2835_clock_get_rate_vpu(struct clk_hw *hw,
+						unsigned long parent_rate)
+{
+	struct bcm2835_clock *clock = bcm2835_clock_from_hw(hw);
+	struct bcm2835_cprman *cprman = clock->cprman;
+
+	if (cprman->fw) {
+		struct {
+			u32 id;
+			u32 val;
+		} packet;
+
+		packet.id = VCMSG_ID_CORE_CLOCK;
+		packet.val = 0;
+
+		if (!rpi_firmware_property(cprman->fw,
+					   RPI_FIRMWARE_GET_MAX_CLOCK_RATE,
+					   &packet, sizeof(packet)))
+			return packet.val;
+	}
+
+	return bcm2835_clock_get_rate(hw, parent_rate);
+}
+
 static void bcm2835_clock_wait_busy(struct bcm2835_clock *clock)
 {
 	struct bcm2835_cprman *cprman = clock->cprman;
@@ -1074,8 +1104,10 @@ static int bcm2835_clock_on(struct clk_hw *hw)
 	return 0;
 }
 
-static int bcm2835_clock_set_rate(struct clk_hw *hw,
-				  unsigned long rate, unsigned long parent_rate)
+static int bcm2835_clock_set_rate_and_parent(struct clk_hw *hw,
+					     unsigned long rate,
+					     unsigned long parent_rate,
+					     u8 parent)
 {
 	struct bcm2835_clock *clock = bcm2835_clock_from_hw(hw);
 	struct bcm2835_cprman *cprman = clock->cprman;
@@ -1085,15 +1117,24 @@ static int bcm2835_clock_set_rate(struct clk_hw *hw,
 
 	spin_lock(&cprman->regs_lock);
 
-	/*
-	 * Setting up frac support
-	 *
-	 * In principle it is recommended to stop/start the clock first,
-	 * but as we set CLK_SET_RATE_GATE during registration of the
-	 * clock this requirement should be take care of by the
-	 * clk-framework.
+	ctl = cprman_read(cprman, data->ctl_reg);
+
+	/* If the clock is running, we have to pause clock generation while
+	 * updating the control and div regs.  This is glitchless (no clock
+	 * signals generated faster than the rate) but each reg access is two
+	 * OSC cycles so the clock will slow down for a moment.
 	 */
-	ctl = cprman_read(cprman, data->ctl_reg) & ~CM_FRAC;
+	if (ctl & CM_ENABLE) {
+		cprman_write(cprman, data->ctl_reg, ctl & ~CM_ENABLE);
+		bcm2835_clock_wait_busy(clock);
+	}
+
+	if (parent != 0xff) {
+		ctl &= ~(CM_SRC_MASK << CM_SRC_SHIFT);
+		ctl |= parent << CM_SRC_SHIFT;
+	}
+
+	ctl &= ~CM_FRAC;
 	ctl |= (div & CM_DIV_FRAC_MASK) ? CM_FRAC : 0;
 	cprman_write(cprman, data->ctl_reg, ctl);
 
@@ -1102,6 +1143,12 @@ static int bcm2835_clock_set_rate(struct clk_hw *hw,
 	spin_unlock(&cprman->regs_lock);
 
 	return 0;
+}
+
+static int bcm2835_clock_set_rate(struct clk_hw *hw,
+				  unsigned long rate, unsigned long parent_rate)
+{
+	return bcm2835_clock_set_rate_and_parent(hw, rate, parent_rate, 0xff);
 }
 
 static bool
@@ -1287,6 +1334,7 @@ static const struct clk_ops bcm2835_clock_clk_ops = {
 	.unprepare = bcm2835_clock_off,
 	.recalc_rate = bcm2835_clock_get_rate,
 	.set_rate = bcm2835_clock_set_rate,
+	.set_rate_and_parent = bcm2835_clock_set_rate_and_parent,
 	.determine_rate = bcm2835_clock_determine_rate,
 	.set_parent = bcm2835_clock_set_parent,
 	.get_parent = bcm2835_clock_get_parent,
@@ -1304,13 +1352,15 @@ static int bcm2835_vpu_clock_is_on(struct clk_hw *hw)
  */
 static const struct clk_ops bcm2835_vpu_clock_clk_ops = {
 	.is_prepared = bcm2835_vpu_clock_is_on,
-	.recalc_rate = bcm2835_clock_get_rate,
+	.recalc_rate = bcm2835_clock_get_rate_vpu,
 	.set_rate = bcm2835_clock_set_rate,
 	.determine_rate = bcm2835_clock_determine_rate,
 	.set_parent = bcm2835_clock_set_parent,
 	.get_parent = bcm2835_clock_get_parent,
 	.debug_init = bcm2835_clock_debug_init,
 };
+
+static bool bcm2835_clk_is_claimed(const char *name);
 
 static struct clk_hw *bcm2835_register_pll(struct bcm2835_cprman *cprman,
 					   const void *data)
@@ -1328,6 +1378,9 @@ static struct clk_hw *bcm2835_register_pll(struct bcm2835_cprman *cprman,
 	init.name = pll_data->name;
 	init.ops = &bcm2835_pll_clk_ops;
 	init.flags = pll_data->flags | CLK_IGNORE_UNUSED;
+
+	if (!bcm2835_clk_is_claimed(pll_data->name))
+		init.flags |= CLK_IS_CRITICAL;
 
 	pll = kzalloc(sizeof(*pll), GFP_KERNEL);
 	if (!pll)
@@ -1384,6 +1437,13 @@ bcm2835_register_pll_divider(struct bcm2835_cprman *cprman,
 	divider->div.hw.init = &init;
 	divider->div.table = NULL;
 
+	if (!(cprman_read(cprman, divider_data->cm_reg) & divider_data->hold_mask)) {
+		if (!bcm2835_clk_is_claimed(divider_data->source_pll))
+			init.flags |= CLK_IS_CRITICAL;
+		if (!bcm2835_clk_is_claimed(divider_data->name))
+			divider->div.flags |= CLK_IS_CRITICAL;
+	}
+
 	divider->cprman = cprman;
 	divider->data = divider_data;
 
@@ -1438,6 +1498,15 @@ static struct clk_hw *bcm2835_register_clock(struct bcm2835_cprman *cprman,
 	init.flags = clock_data->flags | CLK_IGNORE_UNUSED;
 
 	/*
+	 * Some GPIO clocks for ethernet/wifi PLLs are marked as
+	 * critical (since some platforms use them), but if the
+	 * firmware didn't have them turned on then they clearly
+	 * aren't actually critical.
+	 */
+	if ((cprman_read(cprman, clock_data->ctl_reg) & CM_ENABLE) == 0)
+		init.flags &= ~CLK_IS_CRITICAL;
+
+	/*
 	 * Pass the CLK_SET_RATE_PARENT flag if we are allowed to propagate
 	 * rate changes on at least of the parents.
 	 */
@@ -1448,7 +1517,6 @@ static struct clk_hw *bcm2835_register_clock(struct bcm2835_cprman *cprman,
 		init.ops = &bcm2835_vpu_clock_clk_ops;
 	} else {
 		init.ops = &bcm2835_clock_clk_ops;
-		init.flags |= CLK_SET_RATE_GATE | CLK_SET_PARENT_GATE;
 
 		/* If the clock wasn't actually enabled at boot, it's not
 		 * critical.
@@ -1673,16 +1741,12 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.hold_mask = CM_PLLA_HOLDCORE,
 		.fixed_divider = 1,
 		.flags = CLK_SET_RATE_PARENT),
-	[BCM2835_PLLA_PER]	= REGISTER_PLL_DIV(
-		SOC_ALL,
-		.name = "plla_per",
-		.source_pll = "plla",
-		.cm_reg = CM_PLLA,
-		.a2w_reg = A2W_PLLA_PER,
-		.load_mask = CM_PLLA_LOADPER,
-		.hold_mask = CM_PLLA_HOLDPER,
-		.fixed_divider = 1,
-		.flags = CLK_SET_RATE_PARENT),
+
+	/*
+	 * PLLA_PER is used for gpu clocks. Controlled by firmware, see
+	 * clk-raspberrypi.c.
+	 */
+
 	[BCM2835_PLLA_DSI0]	= REGISTER_PLL_DIV(
 		SOC_ALL,
 		.name = "plla_dsi0",
@@ -1983,14 +2047,12 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.int_bits = 6,
 		.frac_bits = 0,
 		.tcnt_mux = 3),
-	[BCM2835_CLOCK_V3D]	= REGISTER_VPU_CLK(
-		SOC_ALL,
-		.name = "v3d",
-		.ctl_reg = CM_V3DCTL,
-		.div_reg = CM_V3DDIV,
-		.int_bits = 4,
-		.frac_bits = 8,
-		.tcnt_mux = 4),
+
+	/*
+	 * CLOCK_V3D is used for v3d clock. Controlled by firmware, see
+	 * clk-raspberrypi.c.
+	 */
+
 	/*
 	 * VPU clock.  This doesn't have an enable bit, since it drives
 	 * the bus for everything else, and is special so it doesn't need
@@ -2216,6 +2278,8 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.ctl_reg = CM_PERIICTL),
 };
 
+static bool bcm2835_clk_claimed[ARRAY_SIZE(clk_desc_array)];
+
 /*
  * Permanently take a reference on the parent of the SDRAM clock.
  *
@@ -2235,6 +2299,21 @@ static int bcm2835_mark_sdc_parent_critical(struct clk *sdc)
 	return clk_prepare_enable(parent);
 }
 
+static bool bcm2835_clk_is_claimed(const char *name)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(clk_desc_array); i++) {
+		if (clk_desc_array[i].data) {
+			const char *clk_name = *(const char **)(clk_desc_array[i].data);
+			if (!strcmp(name, clk_name))
+				return bcm2835_clk_claimed[i];
+		}
+	}
+
+	return false;
+}
+
 static int bcm2835_clk_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -2243,7 +2322,9 @@ static int bcm2835_clk_probe(struct platform_device *pdev)
 	const struct bcm2835_clk_desc *desc;
 	const size_t asize = ARRAY_SIZE(clk_desc_array);
 	const struct cprman_plat_data *pdata;
+	struct device_node *fw_node;
 	size_t i;
+	u32 clk_id;
 	int ret;
 
 	pdata = of_device_get_match_data(&pdev->dev);
@@ -2261,6 +2342,21 @@ static int bcm2835_clk_probe(struct platform_device *pdev)
 	cprman->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(cprman->regs))
 		return PTR_ERR(cprman->regs);
+
+	fw_node = of_parse_phandle(dev->of_node, "firmware", 0);
+	if (fw_node) {
+		struct rpi_firmware *fw = rpi_firmware_get(fw_node);
+		if (!fw)
+			return -EPROBE_DEFER;
+		cprman->fw = fw;
+	}
+
+	memset(bcm2835_clk_claimed, 0, sizeof(bcm2835_clk_claimed));
+	for (i = 0;
+	     !of_property_read_u32_index(pdev->dev.of_node, "claim-clocks",
+					 i, &clk_id);
+	     i++)
+		bcm2835_clk_claimed[clk_id]= true;
 
 	memcpy(cprman->real_parent_names, cprman_parent_names,
 	       sizeof(cprman_parent_names));
@@ -2295,8 +2391,15 @@ static int bcm2835_clk_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	return of_clk_add_hw_provider(dev->of_node, of_clk_hw_onecell_get,
+	ret = of_clk_add_hw_provider(dev->of_node, of_clk_hw_onecell_get,
 				      &cprman->onecell);
+	if (ret)
+		return ret;
+
+	/* note that we have registered all the clocks */
+	dev_dbg(dev, "registered %zd clocks\n", asize);
+
+	return 0;
 }
 
 static const struct cprman_plat_data cprman_bcm2835_plat_data = {
@@ -2322,7 +2425,11 @@ static struct platform_driver bcm2835_clk_driver = {
 	.probe          = bcm2835_clk_probe,
 };
 
-builtin_platform_driver(bcm2835_clk_driver);
+static int __init __bcm2835_clk_driver_init(void)
+{
+	return platform_driver_register(&bcm2835_clk_driver);
+}
+postcore_initcall(__bcm2835_clk_driver_init);
 
 MODULE_AUTHOR("Eric Anholt <eric@anholt.net>");
 MODULE_DESCRIPTION("BCM2835 clock driver");

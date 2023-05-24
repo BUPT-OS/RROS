@@ -19,11 +19,11 @@
 	};
 
 	leds {
-		act {
+		led-act {
 			gpios = <&gpio 29 GPIO_ACTIVE_HIGH>;
 		};
 
-		pwr {
+		led-pwr {
 			label = "PWR";
 			gpios = <&expgpio 2 GPIO_ACTIVE_LOW>;
 			default-state = "keep";
@@ -177,4 +177,9 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart1_gpio14>;
 	status = "okay";
+};
+
+/* i2c on camera/display connector is gpio 44&45 */
+&i2c0mux {
+	pinctrl-1 = <&i2c0_gpio44>;
 };

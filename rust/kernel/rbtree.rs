@@ -207,7 +207,9 @@ impl<K, V> RBTree<K, V> {
     pub const fn new() -> Self {
         Self {
             // INVARIANT: There are no nodes in the tree, so the invariant holds vacuously.
-            root: bindings::rb_root{ rb_node : core::ptr::null_mut()},
+            root: bindings::rb_root {
+                rb_node: core::ptr::null_mut(),
+            },
             _p: PhantomData,
         }
     }

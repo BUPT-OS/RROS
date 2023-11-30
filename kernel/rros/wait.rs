@@ -1,100 +1,129 @@
-use crate::{clock::{RrosClock, RROS_MONO_CLOCK}, thread::{RrosKthread, T_RMID,rros_wakeup_thread, T_PEND, rros_current, T_NOMEM, T_TIMEO, T_BREAK, T_WOLI, rros_notify_thread, rros_sleep_on, T_BCAST, KthreadRunner}, sched::{rros_thread, RrosThreadWithLock, rros_schedule, RrosValue},uapi::rros::thread::RROS_HMDIAG_SYSDEMOTE, timeout::{self, timeout_nonblock, RROS_INFINITE}, types::list_empty};
-use alloc::{rc::Rc, sync::Arc, boxed::Box};
-use core::{cell::RefCell, ptr::NonNull, clone::Clone, ops::FnOnce, sync::atomic::AtomicBool};
+use crate::{
+    clock::{RrosClock, RROS_MONO_CLOCK},
+    sched::{rros_schedule, RrosThread, RrosThreadWithLock, RrosValue},
+    thread::{
+        rros_current, rros_notify_thread, rros_sleep_on, rros_wakeup_thread, KthreadRunner,
+        T_BCAST, T_BREAK, T_NOMEM, T_PEND, T_RMID, T_TIMEO, T_WOLI,
+    },
+    timeout::{self, timeout_nonblock, RROS_INFINITE},
+    uapi::rros::thread::RROS_HMDIAG_SYSDEMOTE,
+};
+use alloc::sync::Arc;
 use core::ops::FnMut;
+use core::{clone::Clone, ptr::NonNull, sync::atomic::AtomicBool};
 
 use kernel::{
-    bindings, prelude::*,
-    str::CStr, sync::{SpinLock, Lock}, ktime::KtimeT, linked_list::{List, GetLinks},
-    Result
+    bindings,
+    ktime::KtimeT,
+    linked_list::List,
+    prelude::*,
+    sync::{Lock, SpinLock},
+    Result,
 };
 
-pub const RROS_WAIT_PRIO : usize = 1 << 0;
+pub const RROS_WAIT_PRIO: usize = 1 << 0;
 
 pub struct RrosWaitChannel {
     // pub name: &'static CStr,
-    pub wait_list : List<Arc<RrosThreadWithLock>>,
-    pub reorder_wait:Option<fn(waiter: Arc<SpinLock<rros_thread>>, originator: Arc<SpinLock<rros_thread>>) -> Result<i32>>,
-    pub follow_depend: Option<fn(wchan: Arc<SpinLock<RrosWaitChannel>>, originator: Arc<SpinLock<rros_thread>>) -> Result<i32>>
+    pub wait_list: List<Arc<RrosThreadWithLock>>,
+    pub reorder_wait: Option<
+        fn(waiter: Arc<SpinLock<RrosThread>>, originator: Arc<SpinLock<RrosThread>>) -> Result<i32>,
+    >,
+    pub follow_depend: Option<
+        fn(
+            wchan: Arc<SpinLock<RrosWaitChannel>>,
+            originator: Arc<SpinLock<RrosThread>>,
+        ) -> Result<i32>,
+    >,
 }
-
-
 
 pub struct RrosWaitQueue {
     pub flags: i32,
     pub clock: *mut RrosClock,
     pub wchan: RrosWaitChannel,
-    pub lock : bindings::hard_spinlock,
+    pub lock: bindings::hard_spinlock,
 }
 
-
-impl RrosWaitQueue{
-    pub fn new(clock:*mut RrosClock,flags:i32) -> Self{
-        let mut wait = RrosWaitQueue{
+impl RrosWaitQueue {
+    pub fn new(clock: *mut RrosClock, flags: i32) -> Self {
+        let mut wait = RrosWaitQueue {
             flags,
             clock,
-            wchan: RrosWaitChannel{
+            wchan: RrosWaitChannel {
                 wait_list: List::new(),
                 reorder_wait: None,
-                follow_depend: None
+                follow_depend: None,
             },
-            lock: bindings::hard_spinlock::default()
+            lock: bindings::hard_spinlock::default(),
         };
-        wait.init(clock,flags);
+        wait.init(clock, flags);
         wait
     }
     // 删掉了key:*mut bindings::lock_class_key,和name:&'static CStr
-    pub fn init(&mut self,clock:*mut RrosClock,flags:i32){
-        extern "C"{
+    pub fn init(&mut self, clock: *mut RrosClock, flags: i32) {
+        extern "C" {
             fn rust_helper_raw_spin_lock_init(lock: *mut bindings::hard_spinlock_t);
         }
         self.flags = flags;
         self.clock = clock;
-        unsafe{rust_helper_raw_spin_lock_init(&mut self.lock)}
+        unsafe { rust_helper_raw_spin_lock_init(&mut self.lock) }
         // self.wchan.name = name;
         // self.wchan.wait_list.
         // init_list_head!(&self.wchan.wait_list);
-	    // lockdep_set_class_and_name(&wq->lock, key, name);
+        // lockdep_set_class_and_name(&wq->lock, key, name);
         // 这个是调试时候用的
     }
-    pub fn flush(&mut self,reason:i32){
+    pub fn flush(&mut self, reason: i32) {
         // rros_flush_wait
-        let flags = unsafe{rust_helper_raw_spin_lock_irqsave(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t)};
+        let flags = unsafe {
+            rust_helper_raw_spin_lock_irqsave(
+                &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+            )
+        };
 
         self.flush_locked(reason);
-        
-        unsafe{rust_helper_raw_spin_unlock_irqrestore(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t, flags)};
+
+        unsafe {
+            rust_helper_raw_spin_unlock_irqrestore(
+                &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+                flags,
+            )
+        };
     }
-    pub fn flush_locked(&mut self,reason:i32){
+    pub fn flush_locked(&mut self, reason: i32) {
         // rros_flush_wait_locked
-	    // trace_rros_flush_wait(wq);
-        let list =  &mut self.wchan.wait_list;
-        while let Some(waiter) = list.pop_front(){
-            // locked_thread  
-            // rewrap    
-            let waiter = unsafe{RrosThreadWithLock::transmute_to_original(waiter)};
-            rros_wakeup_thread(waiter,T_PEND,reason);
+        // trace_rros_flush_wait(wq);
+        let list = &mut self.wchan.wait_list;
+        while let Some(waiter) = list.pop_front() {
+            // locked_thread
+            // rewrap
+            let waiter = unsafe { RrosThreadWithLock::transmute_to_original(waiter) };
+            rros_wakeup_thread(waiter, T_PEND, reason);
         }
     }
 
-    pub fn destory(&mut self){
+    pub fn destory(&mut self) {
         self.flush(T_RMID as i32);
-        unsafe{rros_schedule()};
+        unsafe { rros_schedule() };
     }
 
-    pub fn wake_up(&mut self,waiter:*mut rros_thread,reason:i32) -> Option<Arc<SpinLock<rros_thread>>>{
-	    // trace_rros_wake_up(wq);
+    pub fn wake_up(
+        &mut self,
+        waiter: *mut RrosThread,
+        reason: i32,
+    ) -> Option<Arc<SpinLock<RrosThread>>> {
+        // trace_rros_wake_up(wq);
         // assert!(self.lock) //TODO:
-        if self.wchan.wait_list.is_empty(){
-            return None
-        }else{  
-            if waiter.is_null(){
+        if self.wchan.wait_list.is_empty() {
+            return None;
+        } else {
+            if waiter.is_null() {
                 let list = &mut self.wchan.wait_list;
                 let waiter = list.pop_front().unwrap();
-                let waiter = unsafe{RrosThreadWithLock::transmute_to_original(waiter)};
-                rros_wakeup_thread(waiter.clone(),T_PEND,reason);
+                let waiter = unsafe { RrosThreadWithLock::transmute_to_original(waiter) };
+                rros_wakeup_thread(waiter.clone(), T_PEND, reason);
                 Some(waiter)
-            }else{
+            } else {
                 unimplemented!()
                 // let mut list = self.wchan.wait_list;
                 // let thread = RrosThreadWithLock();
@@ -104,90 +133,106 @@ impl RrosWaitQueue{
         }
     }
 
-    pub fn locked_add(&mut self,timeout:KtimeT,timeout_mode:timeout::rros_tmode){
+    pub fn locked_add(&mut self, timeout: KtimeT, timeout_mode: timeout::RrosTmode) {
         // rros_add_wait_queue
-        extern "C"{
-            fn rust_helper_atomic_read(v:*mut bindings::atomic_t) ->i32;
+        extern "C" {
+            fn rust_helper_atomic_read(v: *mut bindings::atomic_t) -> i32;
         }
-        let curr = unsafe{&mut *(*rros_current()).locked_data().get()};
+        let curr = unsafe { &mut *(*rros_current()).locked_data().get() };
 
         // assert!(self.lock) //TODO:
-        pr_info!("before adding the wait list length is {}", self.wchan.wait_list.len());
-        if curr.state & T_WOLI != 0  && 
-            unsafe{rust_helper_atomic_read(&mut curr.inband_disable_count) > 0}{
-                rros_notify_thread(unsafe{curr as *const _ as *mut rros_thread},RROS_HMDIAG_SYSDEMOTE as u32,RrosValue::new_nil());
-            }
-        if self.flags as usize & RROS_WAIT_PRIO == 0{
-            let current = unsafe {
-                RrosThreadWithLock::new_from_curr_thread()
-            };
+        pr_debug!(
+            "before adding the wait list length is {}",
+            self.wchan.wait_list.len()
+        );
+        if curr.state & T_WOLI != 0
+            && unsafe { rust_helper_atomic_read(&mut curr.inband_disable_count) > 0 }
+        {
+            let _ret = rros_notify_thread(
+                curr as *const _ as *mut RrosThread,
+                RROS_HMDIAG_SYSDEMOTE as u32,
+                RrosValue::new(),
+            );
+        }
+        if self.flags as usize & RROS_WAIT_PRIO == 0 {
+            let current = unsafe { RrosThreadWithLock::new_from_curr_thread() };
 
             self.wchan.wait_list.push_back(current);
-        }else{
-            if self.wchan.wait_list.is_empty(){
-                let current = unsafe {
-                    RrosThreadWithLock::new_from_curr_thread()
-                };
+        } else {
+            if self.wchan.wait_list.is_empty() {
+                let current = unsafe { RrosThreadWithLock::new_from_curr_thread() };
                 self.wchan.wait_list.push_back(current)
-            }else{
+            } else {
                 // 按优先级加入，可以看下types_test.rs的add_by_prio
                 let prio = curr.wprio;
                 let mut last = self.wchan.wait_list.cursor_back_mut();
                 let mut stop_flag = false;
-                while let Some(cur) = last.current(){
-                    if prio <= (*cur).get_wprio(){
+                while let Some(cur) = last.current() {
+                    if prio <= (*cur).get_wprio() {
                         let cur = NonNull::new(cur as *const _ as *mut RrosThreadWithLock).unwrap();
-                        let item = unsafe {
-                            RrosThreadWithLock::new_from_curr_thread()
-                        };
-                        unsafe{self.wchan.wait_list.insert_after(cur, item)};
+                        let item = unsafe { RrosThreadWithLock::new_from_curr_thread() };
+                        unsafe { self.wchan.wait_list.insert_after(cur, item) };
                         stop_flag = true;
                         break;
                     }
                     last.move_prev();
                 }
-                if !stop_flag{
-                    let item = unsafe {
-                        RrosThreadWithLock::new_from_curr_thread()
-                    };
+                if !stop_flag {
+                    let item = unsafe { RrosThreadWithLock::new_from_curr_thread() };
                     self.wchan.wait_list.push_front(item);
                 }
             }
         }
-        pr_info!("after adding the wait list length is {}", self.wchan.wait_list.len());
-        rros_sleep_on(timeout, timeout_mode, unsafe{&*self.clock}, &mut self.wchan as *mut RrosWaitChannel); // 必须保证wchan不会被释放
+        pr_debug!(
+            "after adding the wait list length is {}",
+            self.wchan.wait_list.len()
+        );
+        rros_sleep_on(
+            timeout,
+            timeout_mode,
+            unsafe { &*self.clock },
+            &mut self.wchan as *mut RrosWaitChannel,
+        ); // 必须保证wchan不会被释放
     }
 
-    pub fn wait_schedule(&mut self) -> i32{
-        /// rros_wait_schedule
-        let curr: *mut SpinLock<rros_thread> = rros_current();
+    pub fn wait_schedule(&mut self) -> i32 {
+        // rros_wait_schedule
+        let _curr: *mut SpinLock<RrosThread> = rros_current();
 
-        unsafe{rros_schedule()};
+        unsafe { rros_schedule() };
 
-    	// trace_rros_finish_wait(wq);
+        // trace_rros_finish_wait(wq);
 
-        let info = unsafe{(*(*rros_current()).locked_data().get()).info};
-        if info & T_RMID != 0{
+        let info = unsafe { (*(*rros_current()).locked_data().get()).info };
+        if info & T_RMID != 0 {
             return -(bindings::EIDRM as i32);
         }
-        if info & T_NOMEM != 0{
-            return -(bindings::ENOMEM as i32)
+        if info & T_NOMEM != 0 {
+            return -(bindings::ENOMEM as i32);
         }
-        
+
         let mut ret = 0;
-        if info & (T_TIMEO | T_BREAK) != 0{
-            let flags = unsafe{rust_helper_raw_spin_lock_irqsave(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t)};
-            if !self.wchan.wait_list.is_empty(){
-                let r = unsafe{RrosThreadWithLock::new_from_curr_thread()};
-                unsafe{self.wchan.wait_list.remove(&r)};
-                if info & T_TIMEO != 0{
+        if info & (T_TIMEO | T_BREAK) != 0 {
+            let flags = unsafe {
+                rust_helper_raw_spin_lock_irqsave(
+                    &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+                )
+            };
+            if !self.wchan.wait_list.is_empty() {
+                let r = unsafe { RrosThreadWithLock::new_from_curr_thread() };
+                unsafe { self.wchan.wait_list.remove(&r) };
+                if info & T_TIMEO != 0 {
                     ret = -(bindings::ETIMEDOUT as i32);
-                }else if (info & T_BREAK != 0){
-                    
+                } else if info & T_BREAK != 0 {
                     ret = -(bindings::EINTR as i32);
                 }
             }
-            unsafe{rust_helper_raw_spin_unlock_irqrestore(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t, flags)};
+            unsafe {
+                rust_helper_raw_spin_unlock_irqrestore(
+                    &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+                    flags,
+                )
+            };
             // unsafe{bindings::_raw_spin_unlock_irqrestore(&mut self.lock as *const _ as *mut bindings::raw_spinlock, flags)}
         }
         return ret;
@@ -201,46 +246,69 @@ impl RrosWaitQueue{
     }
 
     #[inline]
-    pub fn wait_timeout(&mut self,timeout:KtimeT,time_mode:timeout::rros_tmode,mut get_cond:impl FnMut()->bool)->i32{
+    pub fn wait_timeout(
+        &mut self,
+        timeout: KtimeT,
+        time_mode: timeout::RrosTmode,
+        mut get_cond: impl FnMut() -> bool,
+    ) -> i32 {
         // implementation of rros_wait_event_timeout
-        
+
         // let mut flags = unsafe{rust_helper_raw_spin_lock_irqsave(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t)};
-        let mut flags = unsafe{rust_helper_raw_spin_lock_irqsave(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t)};
-        let mut ret : i32 = 0;
-        if !get_cond(){
-            if timeout_nonblock(timeout){
+        let mut flags = unsafe {
+            rust_helper_raw_spin_lock_irqsave(
+                &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+            )
+        };
+        let mut ret: i32 = 0;
+        if !get_cond() {
+            if timeout_nonblock(timeout) {
                 ret = -(bindings::EAGAIN as i32);
-            } else{
-                let mut bcast = 0;
-                loop{
-                    pr_info!("I am in the wait timeout loop");
+            } else {
+                let mut bcast: u32;
+                loop {
+                    pr_debug!("I am in the wait timeout loop");
                     self.locked_add(timeout, time_mode);
-                    pr_info!("I am in the wait timeout loop aftering adding the timeout");
+                    pr_debug!("I am in the wait timeout loop aftering adding the timeout");
                     // unsafe{rust_helper_raw_spin_unlock_irqrestore(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t, flags)};
-                    unsafe{rust_helper_raw_spin_unlock_irqrestore(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t, flags)};
+                    unsafe {
+                        rust_helper_raw_spin_unlock_irqrestore(
+                            &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+                            flags,
+                        )
+                    };
                     ret = self.wait_schedule();
-                    bcast = unsafe{  (*(*rros_current()).locked_data().get()).info } & T_BCAST;
+                    bcast = unsafe { (*(*rros_current()).locked_data().get()).info } & T_BCAST;
                     // flags = unsafe{rust_helper_raw_spin_lock_irqsave(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t)};
-                    flags = unsafe{rust_helper_raw_spin_lock_irqsave(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t)};
-                    if(ret!=0 || get_cond() || bcast != 0){
+                    flags = unsafe {
+                        rust_helper_raw_spin_lock_irqsave(
+                            &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+                        )
+                    };
+                    if ret != 0 || get_cond() || bcast != 0 {
                         break;
                     }
                 }
             }
         }
-        unsafe{rust_helper_raw_spin_unlock_irqrestore(&mut self.lock as *const _ as *mut bindings::hard_spinlock_t, flags)};
+        unsafe {
+            rust_helper_raw_spin_unlock_irqrestore(
+                &mut self.lock as *const _ as *mut bindings::hard_spinlock_t,
+                flags,
+            )
+        };
         ret
     }
-    pub fn is_active(&self) ->bool{
+    pub fn is_active(&self) -> bool {
         // rros_wait_active
         !self.wchan.wait_list.is_empty()
     }
-    
-    pub fn wake_up_head(&mut self) -> Option<Arc<SpinLock<rros_thread>>>{
+
+    pub fn wake_up_head(&mut self) -> Option<Arc<SpinLock<RrosThread>>> {
         self.wake_up(core::ptr::null_mut(), 0)
     }
 
-    // pub fn add_wait_queue(&mut self,timeout:KtimeT,timeout_mode:timeout::rros_tmode){
+    // pub fn add_wait_queue(&mut self,timeout:KtimeT,timeout_mode:timeout::RrosTmode){
     //     unsafe{
     //         fn rust_helper_atomic_read(v: *mut bindings::atomic_t) -> i32;
     //     }
@@ -259,42 +327,58 @@ impl RrosWaitQueue{
     // }
 }
 
-pub fn wait_test(){
-    use kernel::prelude::*;
-    use kernel::c_str;
+#[allow(dead_code)]
+pub fn wait_test() {
     use core::sync::atomic::Ordering::Relaxed;
-    let mut queue = unsafe{RrosWaitQueue::new(&mut RROS_MONO_CLOCK as *mut RrosClock, RROS_WAIT_PRIO as i32)};
-    let ptr_queue = unsafe{&mut queue as *mut RrosWaitQueue};
+    use kernel::c_str;
+    use kernel::prelude::*;
+    let mut queue = unsafe {
+        RrosWaitQueue::new(
+            &mut RROS_MONO_CLOCK as *mut RrosClock,
+            RROS_WAIT_PRIO as i32,
+        )
+    };
+    let ptr_queue = &mut queue as *mut RrosWaitQueue;
     let mut flag = AtomicBool::new(false);
     let flag_ptr = &mut flag as *mut AtomicBool;
     let mut runner = KthreadRunner::new_empty();
-    runner.init(Box::try_new(move||{
-        for i in 0..10{
-            unsafe{(*ptr_queue).wait_timeout(RROS_INFINITE, timeout::rros_tmode::RROS_REL, ||{
-                if flag.load(Relaxed)==true{
-                    flag.store(false, Relaxed);
-                    true
-                }else{
-                    false
-                }
-            })};
-        }
-    }).unwrap());
+    runner.init(
+        Box::try_new(move || {
+            for _i in 0..10 {
+                unsafe {
+                    (*ptr_queue).wait_timeout(RROS_INFINITE, timeout::RrosTmode::RrosRel, || {
+                        if flag.load(Relaxed) == true {
+                            flag.store(false, Relaxed);
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                };
+            }
+        })
+        .unwrap(),
+    );
     runner.run(c_str!("test wait"));
-    for i in 0..10{
-        unsafe{bindings::usleep_range(10000,20000)};
-        let flags = unsafe{
-            rust_helper_raw_spin_lock_irqsave(&mut (*ptr_queue).lock as *const _ as *mut bindings::hard_spinlock_t)
+    for _i in 0..10 {
+        unsafe { bindings::usleep_range(10000, 20000) };
+        let flags = unsafe {
+            rust_helper_raw_spin_lock_irqsave(
+                &mut (*ptr_queue).lock as *const _ as *mut bindings::hard_spinlock_t,
+            )
         };
-        unsafe{(*flag_ptr).store(true, Relaxed)};
-        
-        unsafe{
-            (*ptr_queue).flush_locked(0)
-        }
-        unsafe{rust_helper_raw_spin_unlock_irqrestore(&mut (*ptr_queue).lock as *const _ as *mut bindings::hard_spinlock_t, flags)};
-        unsafe{rros_schedule()};
+        unsafe { (*flag_ptr).store(true, Relaxed) };
+
+        unsafe { (*ptr_queue).flush_locked(0) }
+        unsafe {
+            rust_helper_raw_spin_unlock_irqrestore(
+                &mut (*ptr_queue).lock as *const _ as *mut bindings::hard_spinlock_t,
+                flags,
+            )
+        };
+        unsafe { rros_schedule() };
     }
-    pr_info!("wait test done")
+    pr_debug!("wait test done")
 }
 
 extern "C" {

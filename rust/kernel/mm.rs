@@ -7,7 +7,6 @@
 use crate::{
     bindings, c_types,
     error::{Error, Result},
-    prelude::*,
 };
 
 extern "C" {
@@ -16,6 +15,10 @@ extern "C" {
     fn rust_helper_page_aligned(size: c_types::c_size_t) -> c_types::c_int;
 }
 
+/// Function `page_align` aligns a size to the page size.
+/// It calls `rust_helper_page_align` to perform the alignment.
+/// If the alignment is successful, it returns the aligned size.
+/// If the alignment fails, it returns an error.
 pub fn page_align(size: usize) -> Result<usize> {
     let res = unsafe { rust_helper_page_align(size) };
     if res != 0 {
@@ -24,6 +27,10 @@ pub fn page_align(size: usize) -> Result<usize> {
     Err(Error::EINVAL)
 }
 
+/// Function `page_aligned` checks if a size is page aligned.
+/// It calls `rust_helper_page_aligned` to perform the check.
+/// If the size is page aligned, it returns 0.
+/// If the size is not page aligned, it returns an error.
 pub fn page_aligned(size: usize) -> Result<usize> {
     let res = unsafe { rust_helper_page_aligned(size) };
     if res == 1 {
@@ -32,6 +39,23 @@ pub fn page_aligned(size: usize) -> Result<usize> {
     Err(Error::EINVAL)
 }
 
+/// Maps a range of physical pages into the virtual address space of a process.
+///
+/// # Parameters
+///
+/// * `vma`: A pointer to a vm_area_struct structure that describes a virtual memory area.
+/// * `vaddr`: The starting address in the user space where the memory should be mapped.
+/// * `pfn`: The page frame number of the physical memory page to be mapped.
+/// * `size`: The size of the memory to be mapped.
+/// * `prot`: The protection attributes for the mapped memory.
+///
+/// # Returns
+///
+/// Returns 0 on success, and a negative error number on failure.
+///
+/// # Safety
+///
+/// This function is unsafe because it performs raw pointer operations and can lead to undefined behavior if not used correctly.
 pub fn remap_pfn_range(
     vma: *mut bindings::vm_area_struct,
     vaddr: c_types::c_ulong,
@@ -42,5 +66,10 @@ pub fn remap_pfn_range(
     unsafe { bindings::remap_pfn_range(vma, vaddr, pfn, size, prot) }
 }
 
+/// Constant representing shared page protection attributes.
 type PgprotT = bindings::pgprot_t;
-pub const PAGE_SHARED: PgprotT = PgprotT { pgprot: 4035 as u64 };
+
+/// This constant is used to set the protection attributes of a page to shared.
+pub const PAGE_SHARED: PgprotT = PgprotT {
+    pgprot: 4035 as u64,
+};

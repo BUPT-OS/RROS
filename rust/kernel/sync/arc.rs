@@ -16,17 +16,13 @@
 //! [`Arc`]: https://doc.rust-lang.org/std/sync/struct.Arc.html
 
 use crate::{bindings, c_types, Opaque, Result};
-use alloc::{
-    alloc::{alloc, dealloc},
-    boxed::Box,
-    vec::Vec,
-};
+use alloc::boxed::Box;
 use core::{
-    cell::UnsafeCell, convert::AsRef, convert::TryFrom, marker::PhantomData, mem::ManuallyDrop,
-    ops::Deref, pin::Pin, ptr::NonNull,
+    convert::AsRef, marker::PhantomData, mem::ManuallyDrop, ops::Deref, pin::Pin, ptr::NonNull,
 };
 
 extern "C" {
+    #[allow(dead_code)]
     fn rust_helper_refcount_new() -> bindings::refcount_t;
     fn rust_helper_refcount_inc(r: *mut bindings::refcount_t);
     fn rust_helper_refcount_dec_and_test(r: *mut bindings::refcount_t) -> bool;

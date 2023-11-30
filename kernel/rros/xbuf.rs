@@ -1,22 +1,17 @@
 use alloc::rc::Rc;
 
-use core::{
-    cell::RefCell,
-    convert::TryInto,
-    mem::size_of,
-    ptr::NonNull
-};
+use core::{cell::RefCell, convert::TryInto, ptr::NonNull};
 
 use crate::{
-    clock::{ RrosClock, RROS_MONO_CLOCK },
+    clock::{RrosClock, RROS_MONO_CLOCK},
     factory::*,
+    file::*,
     flags::RrosFlag,
     lock::*,
     sched::*,
-    file::*,
-    wait::{ RrosWaitQueue, RROS_WAIT_PRIO },
-    timeout::{ RROS_INFINITE, rros_tmode },
     thread::rros_init_user_element,
+    timeout::{RrosTmode, RROS_INFINITE},
+    wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
 
 use kernel::{
@@ -24,30 +19,29 @@ use kernel::{
     c_types::*,
     error::Error,
     file::File,
-    file_operations::{ FileOperations, FileOpener },
-    io_buffer::{ IoBufferWriter, IoBufferReader },
+    file_operations::{FileOpener, FileOperations},
+    io_buffer::{IoBufferReader, IoBufferWriter},
     irq_work::*,
     prelude::*,
     str::CStr,
-    sync::{ Lock, SpinLock },
-    uidgid::{KgidT, KuidT},
-    user_ptr::{ UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter },
-    vmalloc::{c_kzalloc, c_kzfree},
+    sync::SpinLock,
+    user_ptr::{UserSlicePtrReader, UserSlicePtrWriter},
+    vmalloc::c_kzalloc,
 };
 
 #[derive(Default)]
 pub struct XbufOps;
 
-impl FileOpener<u8> for XbufOps{
-    fn open(shared: &u8, fileref: &File) -> Result<Self::Wrapper> {
+impl FileOpener<u8> for XbufOps {
+    fn open(shared: &u8, _fileref: &File) -> Result<Self::Wrapper> {
         let mut data = CloneData::default();
-        unsafe{ data.ptr = shared as *const u8 as *mut u8; }
+        data.ptr = shared as *const u8 as *mut u8;
         pr_info!("open xbuf device success");
         Ok(Box::try_new(data)?)
     }
 }
 
-impl FileOperations for XbufOps{
+impl FileOperations for XbufOps {
     kernel::declare_file_operations!(read, write, oob_read, oob_write);
 
     type Wrapper = Box<CloneData>;
@@ -58,9 +52,9 @@ impl FileOperations for XbufOps{
         data: &mut T,
         _offset: u64,
     ) -> Result<usize> {
-        pr_info!("I'm the read ops of the xbuf factory.");
+        pr_debug!("I'm the read ops of the xbuf factory.");
         let ret = xbuf_read(file.get_ptr(), data);
-        pr_info!("the result of xbuf read is {}", ret);
+        pr_debug!("the result of xbuf read is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
         } else {
@@ -68,14 +62,10 @@ impl FileOperations for XbufOps{
         }
     }
 
-    fn oob_read<T: IoBufferWriter>(
-        _this: &CloneData,
-        file: &File,
-        data: &mut T,
-    ) -> Result<usize> {
-        pr_info!("I'm the oob_read ops of the xbuf factory.");
+    fn oob_read<T: IoBufferWriter>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
+        pr_debug!("I'm the oob_read ops of the xbuf factory.");
         let ret = xbuf_oob_read(file.get_ptr(), data);
-        pr_info!("the result of xbuf oob_read is {}", ret);
+        pr_debug!("the result of xbuf oob_read is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
         } else {
@@ -89,9 +79,9 @@ impl FileOperations for XbufOps{
         data: &mut T,
         _offset: u64,
     ) -> Result<usize> {
-        pr_info!("I'm the write ops of the xbuf factory.");
+        pr_debug!("I'm the write ops of the xbuf factory.");
         let ret = xbuf_write(file.get_ptr(), data);
-        pr_info!("the result of xbuf write is {}", ret);
+        pr_debug!("the result of xbuf write is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
         } else {
@@ -99,14 +89,10 @@ impl FileOperations for XbufOps{
         }
     }
 
-    fn oob_write<T: IoBufferReader>(
-        _this: &CloneData,
-        file: &File,
-        data: &mut T,
-    ) -> Result<usize> {
-        pr_info!("I'm the oob_write ops of the xbuf factory.");
+    fn oob_write<T: IoBufferReader>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
+        pr_debug!("I'm the oob_write ops of the xbuf factory.");
         let ret = xbuf_oob_write(file.get_ptr(), data);
-        pr_info!("the result of xbuf oob_write is {}", ret);
+        pr_debug!("the result of xbuf oob_write is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
         } else {
@@ -114,11 +100,8 @@ impl FileOperations for XbufOps{
         }
     }
 
-    fn release(
-        _this: Box<CloneData>,
-        _file: &File,
-    ) {
-        pr_info!("I'm the release ops from the xbuf ops.");
+    fn release(_this: Box<CloneData>, _file: &File) {
+        pr_debug!("I'm the release ops from the xbuf ops.");
         // FIXME: put the rros element
     }
 }
@@ -160,7 +143,7 @@ impl XbufRing {
             wait_input: None,
             signal_input: None,
             wait_output: None,
-            signal_output: None
+            signal_output: None,
         })
     }
 
@@ -236,7 +219,12 @@ pub struct XbufOutbound {
 impl XbufOutbound {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            i_event: unsafe{RrosWaitQueue::new(&mut RROS_MONO_CLOCK as *mut RrosClock, RROS_WAIT_PRIO as i32)},
+            i_event: unsafe {
+                RrosWaitQueue::new(
+                    &mut RROS_MONO_CLOCK as *mut RrosClock,
+                    RROS_WAIT_PRIO as i32,
+                )
+            },
             o_event: bindings::wait_queue_head::default(),
             irq_work: IrqWork::new(),
             ring: XbufRing::new()?,
@@ -251,16 +239,20 @@ pub struct RrosXbufAttrs {
 }
 
 impl RrosXbufAttrs {
+    #[allow(dead_code)]
     fn new() -> Self {
         RrosXbufAttrs {
             i_bufsz: 0,
-            o_bufsz: 0
+            o_bufsz: 0,
         }
     }
 
     fn from_ptr(attrs: *mut RrosXbufAttrs) -> Self {
         unsafe {
-            Self { i_bufsz: (*attrs).i_bufsz, o_bufsz: (*attrs).o_bufsz }
+            Self {
+                i_bufsz: (*attrs).i_bufsz,
+                o_bufsz: (*attrs).o_bufsz,
+            }
         }
     }
 }
@@ -269,7 +261,7 @@ pub struct RrosXbuf {
     pub element: Rc<RefCell<RrosElement>>,
     pub ibnd: XbufInbound,
     pub obnd: XbufOutbound,
-    pub poll_head: rros_poll_head,
+    pub poll_head: RrosPollHead,
 }
 
 impl RrosXbuf {
@@ -278,7 +270,7 @@ impl RrosXbuf {
             element: Rc::try_new(RefCell::new(RrosElement::new()?))?,
             ibnd: XbufInbound::new()?,
             obnd: XbufOutbound::new()?,
-            poll_head: rros_poll_head::new(),
+            poll_head: RrosPollHead::new(),
         })
     }
 }
@@ -291,6 +283,7 @@ pub struct XbufRdesc {
 }
 
 impl XbufRdesc {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self> {
         Ok(Self {
             buf: 0 as *mut c_char,
@@ -306,26 +299,31 @@ impl XbufRdesc {
         }
         0
     }
-
 }
 
 pub fn write_to_user(rd: &mut XbufRdesc, src: *mut c_char, len: usize) -> i32 {
     let uptrwt = rd.buf_ptr as *mut UserSlicePtrWriter;
-    let res = unsafe{ (*uptrwt).write_raw(src as *mut u8, len) };
-    
+    let res = unsafe { (*uptrwt).write_raw(src as *mut u8, len) };
+
     let ret = match res {
         Ok(()) => 0,
-        Err(e) => -(bindings::EFAULT as i32),
+        Err(_e) => -(bindings::EFAULT as i32),
     };
 
     ret
 }
 
+#[allow(dead_code)]
 pub fn write_to_kernel(rd: &mut XbufRdesc, src: *mut c_char, len: usize) -> i32 {
-    unsafe { bindings::memcpy(rd.buf_ptr as *mut c_void, src as *const c_void, len as c_ulong); }
+    unsafe {
+        bindings::memcpy(
+            rd.buf_ptr as *mut c_void,
+            src as *const c_void,
+            len as c_ulong,
+        );
+    }
     0
 }
-
 
 pub struct XbufWdesc {
     pub buf: *const c_char,
@@ -335,6 +333,7 @@ pub struct XbufWdesc {
 }
 
 impl XbufWdesc {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self> {
         Ok(Self {
             buf: 0 as *const c_char,
@@ -350,28 +349,34 @@ impl XbufWdesc {
         }
         0
     }
-
 }
 
 pub fn read_from_user(wd: &mut XbufWdesc, dst: *mut c_char, len: usize) -> i32 {
     let uptrrd = wd.buf_ptr as *mut UserSlicePtrReader;
-    let res = unsafe{ (*uptrrd).read_raw(dst as *mut u8, len) };
-    
+    let res = unsafe { (*uptrrd).read_raw(dst as *mut u8, len) };
+
     let ret = match res {
         Ok(()) => 0,
-        Err(e) => -(bindings::EFAULT as i32),
+        Err(_e) => -(bindings::EFAULT as i32),
     };
 
     ret
-} 
+}
 
+#[allow(dead_code)]
 pub fn read_from_kernel(wd: &mut XbufWdesc, dst: *mut c_char, len: usize) -> i32 {
-    unsafe { bindings::memcpy(dst as *mut c_void, wd.buf_ptr as *const c_void, len as c_ulong); }
+    unsafe {
+        bindings::memcpy(
+            dst as *mut c_void,
+            wd.buf_ptr as *const c_void,
+            len as c_ulong,
+        );
+    }
     0
 }
 
 pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i32 {
-    let mut sigpoll: bool;
+    let sigpoll: bool;
     let mut flags: u32;
     let mut avail: u32;
     let mut ret: i32;
@@ -381,16 +386,16 @@ pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i3
     let mut xret: i32;
     let mut len: u32 = rd.count.try_into().unwrap();
 
-    if len == 0 { 
+    if len == 0 {
         return 0;
     }
 
-    if ring.bufsz == 0 { 
-        return (-(bindings::ENOBUFS as i32));
+    if ring.bufsz == 0 {
+        return -(bindings::ENOBUFS as i32);
     }
 
     'outer: loop {
-        unsafe { rd.buf_ptr = rd.buf; }
+        rd.buf_ptr = rd.buf;
         'inner: loop {
             flags = ring.lock();
             avail = (ring.fillsz - ring.rdrsvd as usize).try_into().unwrap();
@@ -435,7 +440,10 @@ pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i3
 
                 ring.unlock(flags);
 
-                xret = unsafe { rd.xfer((ring.bufmem as usize + rdoff as usize) as *mut c_char, n.try_into().unwrap()) };
+                xret = rd.xfer(
+                    (ring.bufmem as usize + rdoff as usize) as *mut c_char,
+                    n.try_into().unwrap(),
+                );
                 flags = ring.lock();
                 if xret != 0 {
                     ret = -(bindings::EFAULT as i32);
@@ -443,7 +451,9 @@ pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i3
                 }
 
                 // unsafe { (rd.buf_ptr as i32 += n) as *mut c_char };
-                unsafe { rd.buf_ptr = (rd.buf_ptr.offset(n.try_into().unwrap())) as *mut c_char; }
+                unsafe {
+                    rd.buf_ptr = (rd.buf_ptr.offset(n.try_into().unwrap())) as *mut c_char;
+                }
                 rbytes -= n;
                 rdoff = (rdoff + n as u32) % ring.bufsz as u32;
 
@@ -467,14 +477,15 @@ pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i3
 
     ring.unlock(flags);
 
-    unsafe { rros_schedule(); }
+    unsafe {
+        rros_schedule();
+    }
 
     ret
 }
 
-
 pub fn do_xbuf_write(ring: &mut XbufRing, wd: &mut XbufWdesc, f_flags: i32) -> i32 {
-    let mut sigpoll: bool;
+    let sigpoll: bool;
     let mut flags: u32;
     let mut avail: u32;
     let mut ret: i32;
@@ -482,18 +493,18 @@ pub fn do_xbuf_write(ring: &mut XbufRing, wd: &mut XbufWdesc, f_flags: i32) -> i
     let mut n: i32;
     let mut wroff: u32;
     let mut xret: i32;
-    let mut len: u32 = wd.count.try_into().unwrap();
+    let len: u32 = wd.count.try_into().unwrap();
 
-    if len == 0 { 
+    if len == 0 {
         return 0;
     }
 
-    if ring.bufsz == 0 { 
-        return (-(bindings::ENOBUFS as i32));
+    if ring.bufsz == 0 {
+        return -(bindings::ENOBUFS as i32);
     }
 
-    unsafe { wd.buf_ptr = wd.buf; }
-    pr_info!("do_xbuf_write 1");
+    wd.buf_ptr = wd.buf;
+    pr_debug!("do_xbuf_write 1");
     loop {
         flags = ring.lock();
         avail = ring.fillsz as u32 + ring.wrrsvd;
@@ -527,15 +538,20 @@ pub fn do_xbuf_write(ring: &mut XbufRing, wd: &mut XbufWdesc, f_flags: i32) -> i
 
             ring.unlock(flags);
 
-            xret = unsafe { wd.xfer((ring.bufmem as usize + wroff as usize) as *mut c_char, n.try_into().unwrap()) };
-            pr_info!("the value of xret is {}", xret);
+            xret = wd.xfer(
+                (ring.bufmem as usize + wroff as usize) as *mut c_char,
+                n.try_into().unwrap(),
+            );
+            pr_debug!("the value of xret is {}", xret);
             flags = ring.lock();
             if xret != 0 {
                 ret = -(bindings::EFAULT as i32);
                 break 'wbytes;
             }
 
-            unsafe { wd.buf_ptr = (wd.buf_ptr.offset(n.try_into().unwrap())) as *mut c_char; }
+            unsafe {
+                wd.buf_ptr = (wd.buf_ptr.offset(n.try_into().unwrap())) as *mut c_char;
+            }
             wbytes -= n;
             wroff = (wroff + n as u32) % ring.bufsz as u32;
 
@@ -558,47 +574,54 @@ pub fn do_xbuf_write(ring: &mut XbufRing, wd: &mut XbufWdesc, f_flags: i32) -> i
         break;
     }
 
-    pr_info!("do_xbuf_write 3, after loop");
-    unsafe { rros_schedule(); }
-    pr_info!("the ret of do_xbuf_write is {}", ret);
+    pr_debug!("do_xbuf_write 3, after loop");
+    unsafe {
+        rros_schedule();
+    }
+    pr_debug!("the ret of do_xbuf_write is {}", ret);
 
     ret
 }
 
-
-pub fn inbound_lock(ring: &XbufRing) -> u32 {
-    unsafe { raw_spin_lock_irqsave().try_into().unwrap() }
+pub fn inbound_lock(_ring: &XbufRing) -> u32 {
+    raw_spin_lock_irqsave().try_into().unwrap()
 }
 
-pub fn inbound_unlock(ring: &XbufRing, flags: u32) {
-    unsafe { raw_spin_unlock_irqrestore(flags.into()); }
+pub fn inbound_unlock(_ring: &XbufRing, flags: u32) {
+    raw_spin_unlock_irqrestore(flags.into());
 }
 
 extern "C" {
-    fn rust_helper_wait_event_interruptible(wq_head: *mut bindings::wait_queue_head, condition: bool) -> i32;
+    fn rust_helper_wait_event_interruptible(
+        wq_head: *mut bindings::wait_queue_head,
+        condition: bool,
+    ) -> i32;
 }
 
-pub fn wait_event_interruptible(wq_head: *mut bindings::wait_queue_head, condition: bool) -> i32{
+pub fn wait_event_interruptible(wq_head: *mut bindings::wait_queue_head, condition: bool) -> i32 {
     unsafe { rust_helper_wait_event_interruptible(wq_head, condition) }
 }
 
 pub fn inbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
     let ibnd: &mut XbufInbound = unsafe { &mut (*xbuf).ibnd };
-    let mut flags: u32;
-    let mut o_blocked: bool;
+    let flags: u32;
+    let o_blocked: bool;
 
     if avail > 0 {
-        flags = unsafe { raw_spin_lock_irqsave().try_into().unwrap() };
+        flags = raw_spin_lock_irqsave().try_into().unwrap();
 
         o_blocked = ibnd.o_event.wait.wake_up_head().is_some();
-        unsafe { raw_spin_unlock_irqrestore(flags.into()) };
+        raw_spin_unlock_irqrestore(flags.into());
         if o_blocked {
             return -(bindings::EAGAIN as i32);
         }
     }
 
-    wait_event_interruptible(&ibnd.i_event as *const _ as *mut bindings::wait_queue_head, ring.fillsz >= len)
+    wait_event_interruptible(
+        &ibnd.i_event as *const _ as *mut bindings::wait_queue_head,
+        ring.fillsz >= len,
+    )
 }
 
 #[no_mangle]
@@ -614,22 +637,27 @@ pub unsafe extern "C" fn c_resume_inband_writer(work: *mut bindings::irq_work) {
 pub fn resume_inband_reader(work: *mut bindings::irq_work) {
     let xbuf = kernel::container_of!(work, RrosXbuf, ibnd.irq_work) as *mut RrosXbuf;
 
-    unsafe { 
-        bindings::__wake_up(&mut (*xbuf).ibnd.i_event as *mut bindings::wait_queue_head, bindings::TASK_NORMAL, 1, 0 as *mut c_void);
+    unsafe {
+        bindings::__wake_up(
+            &mut (*xbuf).ibnd.i_event as *mut bindings::wait_queue_head,
+            bindings::TASK_NORMAL,
+            1,
+            0 as *mut c_void,
+        );
     }
 }
 
 // ring locked, irqsoff
-pub fn inbound_signal_input(ring: &XbufRing, sigpoll: bool) {
+pub fn inbound_signal_input(ring: &XbufRing, _sigpoll: bool) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
 
-    unsafe { (&mut (*xbuf).ibnd.irq_work).irq_work_queue() };
+    let _ret = unsafe { (&mut (*xbuf).ibnd.irq_work).irq_work_queue() };
 }
 
-pub fn inbound_wait_output(ring: &XbufRing, len: usize) -> i32 {
+pub fn inbound_wait_output(ring: &XbufRing, _len: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
 
-    unsafe{ (*xbuf).ibnd.o_event.wait() }
+    unsafe { (*xbuf).ibnd.o_event.wait() }
 }
 
 pub fn inbound_signal_output(ring: &XbufRing, sigpoll: bool) {
@@ -641,24 +669,29 @@ pub fn inbound_signal_output(ring: &XbufRing, sigpoll: bool) {
     unsafe { (*xbuf).ibnd.o_event.raise() }
 }
 
-
 pub fn xbuf_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> i32 {
     let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
-    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf};
+    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut rd: XbufRdesc = XbufRdesc {
-        buf: data as *mut _ as  *mut c_char,
+        buf: data as *mut _ as *mut c_char,
         buf_ptr: 0 as *mut c_char,
         count: data.len(),
         xfer: Some(write_to_user),
     };
 
-    unsafe { do_xbuf_read(&mut (*xbuf).ibnd.ring, &mut rd, (*filp).f_flags.try_into().unwrap()) }
+    unsafe {
+        do_xbuf_read(
+            &mut (*xbuf).ibnd.ring,
+            &mut rd,
+            (*filp).f_flags.try_into().unwrap(),
+        )
+    }
 }
 
 pub fn xbuf_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -> i32 {
     let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
-    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf};
+    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut wd: XbufWdesc = XbufWdesc {
         buf: data as *mut _ as *const c_char,
@@ -667,11 +700,18 @@ pub fn xbuf_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) ->
         xfer: Some(read_from_user),
     };
 
-    pr_info!("before do_xbuf_write");
-    unsafe { do_xbuf_write(&mut (*xbuf).obnd.ring, &mut wd, (*filp).f_flags.try_into().unwrap()) }
+    pr_debug!("before do_xbuf_write");
+    unsafe {
+        do_xbuf_write(
+            &mut (*xbuf).obnd.ring,
+            &mut wd,
+            (*filp).f_flags.try_into().unwrap(),
+        )
+    }
 }
 
-pub fn xbuf_ioctl(filp: *mut bindings::file, cmd: u32, arg: u32) -> i32 {
+#[allow(dead_code)]
+pub fn xbuf_ioctl(_filp: *mut bindings::file, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
 }
 
@@ -703,16 +743,17 @@ pub fn xbuf_ioctl(filp: *mut bindings::file, cmd: u32, arg: u32) -> i32 {
 // 	return ready;
 // }
 
-pub fn xbuf_oob_ioctl(filp: *mut bindings::file, cmd: u32, arg: u32) -> i32 {
+#[allow(dead_code)]
+pub fn xbuf_oob_ioctl(_filp: *mut bindings::file, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
 }
 
-pub fn outbound_lock(ring: &XbufRing) -> u32 {
-    unsafe { raw_spin_lock_irqsave().try_into().unwrap() }
+pub fn outbound_lock(_ring: &XbufRing) -> u32 {
+    raw_spin_lock_irqsave().try_into().unwrap()
 }
 
-pub fn outbound_unlock(ring: &XbufRing, flags: u32) {
-    unsafe { raw_spin_unlock_irqrestore(flags.into()); }
+pub fn outbound_unlock(_ring: &XbufRing, flags: u32) {
+    raw_spin_unlock_irqrestore(flags.into());
 }
 
 extern "C" {
@@ -722,19 +763,35 @@ extern "C" {
 pub fn outbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
     let obnd: &mut XbufOutbound = unsafe { &mut (*xbuf).obnd };
-    
-    if avail > 0 && unsafe { rust_helper_wq_has_sleeper(&obnd.o_event as *const _ as *mut bindings::wait_queue_head) } {
+
+    if avail > 0
+        && unsafe {
+            rust_helper_wq_has_sleeper(&obnd.o_event as *const _ as *mut bindings::wait_queue_head)
+        }
+    {
         return -(bindings::EAGAIN as i32);
     }
 
-    obnd.i_event.wait_timeout(RROS_INFINITE, rros_tmode::RROS_REL, ||{if ring.fillsz >= len {true} else {false}})
+    obnd.i_event
+        .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || {
+            if ring.fillsz >= len {
+                true
+            } else {
+                false
+            }
+        })
 }
 
 pub fn resume_inband_writer(work: *mut bindings::irq_work) {
     let xbuf = kernel::container_of!(work, RrosXbuf, obnd.irq_work) as *mut RrosXbuf;
 
-    unsafe { 
-        bindings::__wake_up(&mut (*xbuf).obnd.o_event as *mut bindings::wait_queue_head, bindings::TASK_NORMAL, 1, 0 as *mut c_void);
+    unsafe {
+        bindings::__wake_up(
+            &mut (*xbuf).obnd.o_event as *mut bindings::wait_queue_head,
+            bindings::TASK_NORMAL,
+            1,
+            0 as *mut c_void,
+        );
     }
 }
 
@@ -746,24 +803,31 @@ pub fn outbound_signal_input(ring: &XbufRing, sigpoll: bool) {
         // { rros_signal_poll_events((*xbuf).poll_head, POLLIN | POLLRDNORM); }
     }
 
-    unsafe{ (*xbuf).obnd.i_event.flush_locked(0); }
+    unsafe {
+        (*xbuf).obnd.i_event.flush_locked(0);
+    }
 }
 
 pub fn outbound_wait_output(ring: &XbufRing, len: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
 
-    unsafe { wait_event_interruptible(&(*xbuf).obnd.o_event as *const _ as *mut bindings::wait_queue_head, ring.fillsz + len <= ring.bufsz) }
+    unsafe {
+        wait_event_interruptible(
+            &(*xbuf).obnd.o_event as *const _ as *mut bindings::wait_queue_head,
+            ring.fillsz + len <= ring.bufsz,
+        )
+    }
 }
 
-pub fn outbound_signal_output(ring: &XbufRing, sigpoll: bool) {
+pub fn outbound_signal_output(ring: &XbufRing, _sigpoll: bool) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
 
-    unsafe { (&mut (*xbuf).obnd.irq_work).irq_work_queue() };
+    let _ret = unsafe { (&mut (*xbuf).obnd.irq_work).irq_work_queue() };
 }
 
 pub fn xbuf_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> i32 {
     let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
-    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf};
+    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut rd: XbufRdesc = XbufRdesc {
         buf: data as *mut _ as *mut c_char,
@@ -772,12 +836,18 @@ pub fn xbuf_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T)
         xfer: Some(write_to_user),
     };
 
-    unsafe { do_xbuf_read(&mut (*xbuf).obnd.ring, &mut rd, (*filp).f_flags.try_into().unwrap()) }
+    unsafe {
+        do_xbuf_read(
+            &mut (*xbuf).obnd.ring,
+            &mut rd,
+            (*filp).f_flags.try_into().unwrap(),
+        )
+    }
 }
 
 pub fn xbuf_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -> i32 {
     let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
-    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf};
+    let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut wd: XbufWdesc = XbufWdesc {
         buf: data as *mut _ as *const c_char,
@@ -786,7 +856,13 @@ pub fn xbuf_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T
         xfer: Some(read_from_user),
     };
 
-    unsafe { do_xbuf_write(&mut (*xbuf).ibnd.ring, &mut wd, (*filp).f_flags.try_into().unwrap()) }
+    unsafe {
+        do_xbuf_write(
+            &mut (*xbuf).ibnd.ring,
+            &mut wd,
+            (*filp).f_flags.try_into().unwrap(),
+        )
+    }
 }
 
 // static __poll_t xbuf_oob_poll(struct file *filp, struct oob_poll_wait *wait)
@@ -816,7 +892,6 @@ pub fn xbuf_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T
 // 	return ready;
 // }
 
-
 // static int xbuf_release(struct inode *inode, struct file *filp)
 // {
 // 	struct rros_xbuf *xbuf = element_of(filp, struct rros_xbuf);
@@ -827,25 +902,31 @@ pub fn xbuf_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T
 // 	return rros_release_element(inode, filp);
 // }
 
-
+#[allow(dead_code)]
 pub fn rros_get_xbuf(rfd: u32, rfilpp: &mut *mut RrosFile) -> Option<NonNull<RrosXbuf>> {
     let rfilp = rros_get_file(rfd);
     match rfilp {
         Some(rfilp) => {
             // unsafe{ (*rfilpp) = Arc::into_raw(rfilp) as *mut RrosFile };
-            unsafe { (*rfilpp) = rfilp.as_ptr() };
-            let fbind: *const RrosFileBinding = unsafe { (*(*(*rfilpp)).filp).private_data as *const RrosFileBinding };
-            unsafe { Some(NonNull::new_unchecked((*(*fbind).element).pointer as *mut RrosXbuf)) }
-
-        },
+            (*rfilpp) = rfilp.as_ptr();
+            let fbind: *const RrosFileBinding =
+                unsafe { (*(*(*rfilpp)).filp).private_data as *const RrosFileBinding };
+            unsafe {
+                Some(NonNull::new_unchecked(
+                    (*(*fbind).element).pointer as *mut RrosXbuf,
+                ))
+            }
+        }
         None => None,
-    } 
+    }
 }
 
+#[allow(dead_code)]
 pub fn rros_put_xbuf(rfilp: &mut RrosFile) {
-    rros_put_file(rfilp);
+    let _ret = rros_put_file(rfilp);
 }
 
+#[allow(dead_code)]
 pub fn rros_read_xbuf(xbuf: &mut RrosXbuf, buf: *mut u8, count: usize, f_flags: i32) -> i32 {
     let mut rd: XbufRdesc = XbufRdesc {
         buf: buf as *mut c_char,
@@ -854,13 +935,14 @@ pub fn rros_read_xbuf(xbuf: &mut RrosXbuf, buf: *mut u8, count: usize, f_flags: 
         xfer: Some(write_to_kernel),
     };
 
-    if  (f_flags & bindings::O_NONBLOCK as i32) == 0 && rros_cannot_block() {
+    if (f_flags & bindings::O_NONBLOCK as i32) == 0 && rros_cannot_block() {
         return -(bindings::EPERM as i32);
     }
 
     do_xbuf_read(&mut xbuf.obnd.ring, &mut rd, f_flags)
 }
 
+#[allow(dead_code)]
 pub fn rros_write_xbuf(xbuf: &mut RrosXbuf, buf: *const i8, count: usize, f_flags: i32) -> i32 {
     let mut wd: XbufWdesc = XbufWdesc {
         buf,
@@ -869,7 +951,7 @@ pub fn rros_write_xbuf(xbuf: &mut RrosXbuf, buf: *const i8, count: usize, f_flag
         xfer: Some(read_from_kernel),
     };
 
-    if  (f_flags & bindings::O_NONBLOCK as i32) == 0 && rros_cannot_block() {
+    if (f_flags & bindings::O_NONBLOCK as i32) == 0 && rros_cannot_block() {
         return -(bindings::EPERM as i32);
     }
 
@@ -877,6 +959,7 @@ pub fn rros_write_xbuf(xbuf: &mut RrosXbuf, buf: *const i8, count: usize, f_flag
 }
 
 extern "C" {
+    #[allow(improper_ctypes)]
     pub fn __init_waitqueue_head(
         wq_head: *mut bindings::wait_queue_head,
         name: *const c_char,
@@ -884,41 +967,54 @@ extern "C" {
     );
 }
 
-fn xbuf_factory_build(fac: &'static mut SpinLock<RrosFactory>, uname: &'static CStr, u_attrs: Option<*mut u8>, clone_flags: i32, state_offp: &u32) -> Rc<RefCell<RrosElement>> {
-
+fn xbuf_factory_build(
+    fac: &'static mut SpinLock<RrosFactory>,
+    uname: &'static CStr,
+    u_attrs: Option<*mut u8>,
+    clone_flags: i32,
+    _state_offp: &u32,
+) -> Rc<RefCell<RrosElement>> {
     let attrs = RrosXbufAttrs::from_ptr(u_attrs.unwrap() as *mut RrosXbufAttrs);
     if (clone_flags & !RROS_CLONE_PUBLIC) != 0 {
-        pr_info!("this is a wrong value");
+        pr_err!("this is a wrong value");
         // return Err(Error::EINVAL);
     }
 
     let xbuf = RrosXbuf::new();
     match xbuf {
         Ok(ref _o) => {
-            pr_info!("there is a uninited xbuf");
+            pr_debug!("there is a uninited xbuf");
         }
         Err(_e) => {
-            pr_info!("new xbuf error");
+            pr_err!("new xbuf error");
             // return Err(Error::ENOMEM);
         }
     }
-    let mut boxed_xbuf = Box::try_new(xbuf.unwrap()).unwrap();
+    let boxed_xbuf = Box::try_new(xbuf.unwrap()).unwrap();
     let xbuf_ptr = Box::into_raw(boxed_xbuf);
 
     unsafe {
-        let ret = rros_init_user_element(unsafe { (*xbuf_ptr).element.clone() }, fac, uname, clone_flags);
+        let ret = rros_init_user_element((*xbuf_ptr).element.clone(), fac, uname, clone_flags);
         if let Err(_e) = ret {
-            pr_info!("init user element failed");
+            pr_err!("init user element failed");
         }
 
-	    /* Inbound traffic: oob_write() -> read(). */
+        /* Inbound traffic: oob_write() -> read(). */
         let key1 = bindings::lock_class_key::default();
-        let name1 = unsafe { CStr::from_bytes_with_nul_unchecked("XBUF RING IBOUND WAITQUEUE HEAD\0".as_bytes()) };
-        unsafe { __init_waitqueue_head(&(*xbuf_ptr).ibnd.i_event as *const _ as *mut bindings::wait_queue_head, name1.as_ptr() as *const i8, &key1 as *const _ as *mut bindings::lock_class_key) };
+        let name1 =
+            CStr::from_bytes_with_nul_unchecked("XBUF RING IBOUND WAITQUEUE HEAD\0".as_bytes());
+        __init_waitqueue_head(
+            &(*xbuf_ptr).ibnd.i_event as *const _ as *mut bindings::wait_queue_head,
+            name1.as_ptr() as *const i8,
+            &key1 as *const _ as *mut bindings::lock_class_key,
+        );
 
         (*xbuf_ptr).ibnd.o_event.init();
-	    raw_spin_lock_init(&mut (*xbuf_ptr).ibnd.lock);
-        (*xbuf_ptr).ibnd.irq_work.init_irq_work(c_resume_inband_reader);
+        raw_spin_lock_init(&mut (*xbuf_ptr).ibnd.lock);
+        let _ret = (*xbuf_ptr)
+            .ibnd
+            .irq_work
+            .init_irq_work(c_resume_inband_reader);
         (*xbuf_ptr).ibnd.ring.bufsz = attrs.i_bufsz as usize;
         (*xbuf_ptr).ibnd.ring.bufmem = c_kzalloc(attrs.i_bufsz as u64).unwrap() as *mut u8;
         (*xbuf_ptr).ibnd.ring.lock = Some(inbound_lock);
@@ -928,13 +1024,24 @@ fn xbuf_factory_build(fac: &'static mut SpinLock<RrosFactory>, uname: &'static C
         (*xbuf_ptr).ibnd.ring.wait_output = Some(inbound_wait_output);
         (*xbuf_ptr).ibnd.ring.signal_output = Some(inbound_signal_output);
 
-	    /* Outbound traffic: write() -> oob_read(). */
-        (*xbuf_ptr).obnd.i_event.init(unsafe{&mut RROS_MONO_CLOCK as *mut RrosClock}, RROS_WAIT_PRIO as i32);
+        /* Outbound traffic: write() -> oob_read(). */
+        (*xbuf_ptr).obnd.i_event.init(
+            &mut RROS_MONO_CLOCK as *mut RrosClock,
+            RROS_WAIT_PRIO as i32,
+        );
         let key2 = bindings::lock_class_key::default();
-        let name2 = unsafe { CStr::from_bytes_with_nul_unchecked("XBUF RING OUTBOUND WAITQUEUE HEAD\0".as_bytes()) };
-        unsafe { __init_waitqueue_head(&(*xbuf_ptr).obnd.o_event as *const _ as *mut bindings::wait_queue_head, uname.as_ptr() as *const i8, &key2 as *const _ as *mut bindings::lock_class_key) };
+        let _name2 =
+            CStr::from_bytes_with_nul_unchecked("XBUF RING OUTBOUND WAITQUEUE HEAD\0".as_bytes());
+        __init_waitqueue_head(
+            &(*xbuf_ptr).obnd.o_event as *const _ as *mut bindings::wait_queue_head,
+            uname.as_ptr() as *const i8,
+            &key2 as *const _ as *mut bindings::lock_class_key,
+        );
 
-        (*xbuf_ptr).obnd.irq_work.init_irq_work(c_resume_inband_writer);
+        let _ret = (*xbuf_ptr)
+            .obnd
+            .irq_work
+            .init_irq_work(c_resume_inband_writer);
         (*xbuf_ptr).obnd.ring.bufsz = attrs.o_bufsz as usize;
         (*xbuf_ptr).obnd.ring.bufmem = c_kzalloc(attrs.o_bufsz as u64).unwrap() as *mut u8;
         (*xbuf_ptr).obnd.ring.lock = Some(outbound_lock);
@@ -944,18 +1051,18 @@ fn xbuf_factory_build(fac: &'static mut SpinLock<RrosFactory>, uname: &'static C
         (*xbuf_ptr).obnd.ring.wait_output = Some(outbound_wait_output);
         (*xbuf_ptr).obnd.ring.signal_output = Some(outbound_signal_output);
 
-	    //rros_init_poll_head(&xbuf->poll_head);
+        //rros_init_poll_head(&xbuf->poll_head);
         //c_kzfree(xbuf.ibnd.ring.bufmem);
         //c_kzfree(xbuf.obnd.ring.bufmem);
 
         (*(*xbuf_ptr).element.borrow_mut()).pointer = xbuf_ptr as *mut u8;
-        unsafe { (*xbuf_ptr).element.clone() }
+        (*xbuf_ptr).element.clone()
     }
 }
 
 pub static mut RROS_XBUF_FACTORY: SpinLock<RrosFactory> = unsafe {
     SpinLock::new(RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("RROS_XBUF_DEV\0".as_bytes()) },
+        name: CStr::from_bytes_with_nul_unchecked("RROS_XBUF_DEV\0".as_bytes()),
         // fops: Some(RustFileXbuf),
         nrdev: CONFIG_RROS_NR_XBUFS,
         build: Some(xbuf_factory_build),
@@ -979,4 +1086,4 @@ pub static mut RROS_XBUF_FACTORY: SpinLock<RrosFactory> = unsafe {
     })
 };
 
-pub fn xbuf_factory_dispose(ele: RrosElement) {}
+pub fn xbuf_factory_dispose(_ele: RrosElement) {}

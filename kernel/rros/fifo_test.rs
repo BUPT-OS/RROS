@@ -1,48 +1,37 @@
 //fifo_test.rs测试文件
 //用于测试fifo.rs里的函数正确性
-use crate::factory;
-use crate::list::*;
-use crate::{
-    clock::*, factory::RrosElement, factory::RrosFactory, factory::RustFile, fifo::*, lock::*,
-    sched::*, thread::*, timer::*, RROS_OOB_CPUS,
-};
-use alloc::rc::Rc;
-use core::cell::UnsafeCell;
-use core::ops::DerefMut;
-use core::{cell::RefCell, clone::Clone};
-use core::{mem::align_of, mem::size_of, todo};
-use kernel::{
-    bindings, c_str, c_types, cpumask::CpumaskT, double_linked_list::*,
-    file_operations::FileOperations, ktime::*, percpu, percpu_defs, prelude::*, premmpt,
-    spinlock_init, str::CStr, sync::Guard, sync::Lock, sync::SpinLock, sysfs, timekeeping,
-};
+use crate::{fifo::*, sched::*, thread::*, timer::*, RROS_OOB_CPUS};
+use core::clone::Clone;
+use kernel::{c_str, cpumask::CpumaskT, prelude::*, spinlock_init, sync::Lock, sync::SpinLock};
 
-pub fn test_init_thread(thread: Arc<SpinLock<rros_thread>>, prio: i32) -> Result<usize> {
-    let mut iattr = rros_init_thread_attr::new();
+#[allow(dead_code)]
+pub fn test_init_thread(thread: Arc<SpinLock<RrosThread>>, prio: i32) -> Result<usize> {
+    let mut iattr = RrosInitThreadAttr::new();
     unsafe {
         iattr.affinity = &RROS_OOB_CPUS as *const CpumaskT;
-        iattr.sched_class = Some(&rros_sched_fifo);
-        let sched_param =  unsafe{Arc::try_new(SpinLock::new(rros_sched_param::new()))?};
+        iattr.sched_class = Some(&RROS_SCHED_FIFO);
+        let sched_param = Arc::try_new(SpinLock::new(RrosSchedParam::new()))?;
         (*sched_param.locked_data().get()).fifo.prio = prio;
         (*sched_param.locked_data().get()).idle.prio = prio;
         (*sched_param.locked_data().get()).weak.prio = prio;
         iattr.sched_param = Some(sched_param);
     }
-    rros_init_thread(& Some(thread), iattr, this_rros_rq(), c_str!("bw1"));
+    rros_init_thread(&Some(thread), iattr, this_rros_rq(), c_str!("bw1"))?;
     Ok(0)
 }
 
 //测试通过
-pub fn test___rros_enqueue_fifo_thread() -> Result<usize> {
-    pr_info!("~~~test___rros_enqueue_fifo_thread begin~~~");
+#[allow(dead_code)]
+pub fn test_rros_enqueue_fifo_thread() -> Result<usize> {
+    pr_debug!("~~~test_rros_enqueue_fifo_thread begin~~~");
     unsafe {
         let mut length;
 
         //创建thread1
-        let mut t1 = SpinLock::new(rros_thread::new().unwrap());
+        let mut t1 = SpinLock::new(RrosThread::new().unwrap());
         let pinned = Pin::new_unchecked(&mut t1);
         spinlock_init!(pinned, "create_thread1");
-        let mut thread1 = Arc::try_new(t1)?;
+        let thread1 = Arc::try_new(t1)?;
 
         let mut r1 = SpinLock::new(RrosTimer::new(1));
         let pinned_r1 = Pin::new_unchecked(&mut r1);
@@ -53,13 +42,13 @@ pub fn test___rros_enqueue_fifo_thread() -> Result<usize> {
         thread1.lock().rtimer = Some(Arc::try_new(r1).unwrap());
         thread1.lock().ptimer = Some(Arc::try_new(p1).unwrap());
 
-        test_init_thread(thread1.clone(), 22);
+        test_init_thread(thread1.clone(), 22)?;
 
         //创建thread2
-        let mut t2 = SpinLock::new(rros_thread::new().unwrap());
+        let mut t2 = SpinLock::new(RrosThread::new().unwrap());
         let pinned = Pin::new_unchecked(&mut t2);
         spinlock_init!(pinned, "create_thread1");
-        let mut thread2 = Arc::try_new(t2)?;
+        let thread2 = Arc::try_new(t2)?;
 
         let mut r2 = SpinLock::new(RrosTimer::new(1));
         let pinned_r2 = Pin::new_unchecked(&mut r2);
@@ -70,13 +59,13 @@ pub fn test___rros_enqueue_fifo_thread() -> Result<usize> {
         thread2.lock().rtimer = Some(Arc::try_new(r2).unwrap());
         thread2.lock().ptimer = Some(Arc::try_new(p2).unwrap());
 
-        test_init_thread(thread2.clone(), 33);
+        test_init_thread(thread2.clone(), 33)?;
 
         // //创建thread3
-        let mut t3 = SpinLock::new(rros_thread::new().unwrap());
+        let mut t3 = SpinLock::new(RrosThread::new().unwrap());
         let pinned = Pin::new_unchecked(&mut t3);
         spinlock_init!(pinned, "create_thread1");
-        let mut thread3 = Arc::try_new(t3)?;
+        let thread3 = Arc::try_new(t3)?;
 
         let mut r3 = SpinLock::new(RrosTimer::new(1));
         let pinned_r3 = Pin::new_unchecked(&mut r3);
@@ -87,7 +76,7 @@ pub fn test___rros_enqueue_fifo_thread() -> Result<usize> {
         thread3.lock().rtimer = Some(Arc::try_new(r3).unwrap());
         thread3.lock().ptimer = Some(Arc::try_new(p3).unwrap());
 
-        test_init_thread(thread3.clone(), 44);
+        test_init_thread(thread3.clone(), 44)?;
 
         let rq_ptr1;
         match thread1.lock().rq.clone() {
@@ -95,43 +84,45 @@ pub fn test___rros_enqueue_fifo_thread() -> Result<usize> {
             None => return Err(kernel::Error::EINVAL),
         }
 
-        __rros_enqueue_fifo_thread(thread1.clone());
+        __rros_enqueue_fifo_thread(thread1.clone())?;
 
         length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
-        pr_info!("test___rros_enqueue_fifo_thread: length is  {}", length);
+        pr_debug!("test_rros_enqueue_fifo_thread: length is  {}", length);
 
-        __rros_enqueue_fifo_thread(thread2.clone());
-
-        length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
-        pr_info!("test___rros_enqueue_fifo_thread: length is  {}", length);
-
-        __rros_enqueue_fifo_thread(thread3.clone());
+        __rros_enqueue_fifo_thread(thread2.clone())?;
 
         length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
-        pr_info!("test___rros_enqueue_fifo_thread: length is  {}", length);
-        pr_info!("~~~test___rros_enqueue_fifo_thread end~~~");
+        pr_debug!("test_rros_enqueue_fifo_thread: length is  {}", length);
+
+        __rros_enqueue_fifo_thread(thread3.clone())?;
+
+        length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
+        pr_debug!("test_rros_enqueue_fifo_thread: length is  {}", length);
+        pr_debug!("~~~test_rros_enqueue_fifo_thread end~~~");
 
         //__rros_dequeue_fifo_thread测试通过
-        pr_info!("~~~test___rros_dequeue_fifo_thread begin~~~");
+        pr_debug!("~~~test_rros_dequeue_fifo_thread begin~~~");
 
-        __rros_dequeue_fifo_thread(thread1.clone());
+        __rros_dequeue_fifo_thread(thread1.clone())?;
         length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
-        pr_info!("test___rros_enqueue_fifo_thread: length1 is  {}", length);
+        pr_debug!("test_rros_enqueue_fifo_thread: length1 is  {}", length);
 
-        __rros_dequeue_fifo_thread(thread2.clone());
+        __rros_dequeue_fifo_thread(thread2.clone())?;
         length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
-        pr_info!("test___rros_enqueue_fifo_thread: length2 is  {}", length);
+        pr_debug!("test_rros_enqueue_fifo_thread: length2 is  {}", length);
 
-        __rros_dequeue_fifo_thread(thread3.clone());
+        __rros_dequeue_fifo_thread(thread3.clone())?;
         length = (*rq_ptr1).fifo.runnable.head.clone().unwrap().len();
-        pr_info!("test___rros_enqueue_fifo_thread: length3 is  {}", length);
+        pr_debug!("test_rros_enqueue_fifo_thread: length3 is  {}", length);
 
-        pr_info!("~~~test___rros_dequeue_fifo_thread end~~~");
+        pr_debug!("~~~test_rros_dequeue_fifo_thread end~~~");
     }
     Ok(0)
 }
 
+// TODO: Add a config for test functions.
 //测试通过，在上面
-pub fn test___rros_dequeue_fifo_thread() -> Result<usize> {
+#[allow(dead_code)]
+pub fn test_rros_dequeue_fifo_thread() -> Result<usize> {
     Ok(0)
 }

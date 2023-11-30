@@ -15,10 +15,11 @@ extern "C" {
         func: unsafe extern "C" fn(work: *mut bindings::irq_work),
     );
 }
-
+/// The `IrqWork` struct wraps a `bindings::irq_work` from the kernel bindings.
 pub struct IrqWork(pub bindings::irq_work);
 
 impl IrqWork {
+    /// `new`: A constructor function that returns a new `IrqWork`. It creates a default `bindings::irq_work` and wraps it in an `IrqWork`.
     pub fn new() -> Self {
         let irq_work = bindings::irq_work::default();
         Self(irq_work)
@@ -28,6 +29,7 @@ impl IrqWork {
     //     unsafe { &IrqWork((*work).cast()) }
     // }
 
+    /// `init_irq_work`: A method that initializes the `IrqWork`. It takes a function pointer to a C function and passes it to the `rust_helper_init_irq_work` function along with a pointer to the `bindings::irq_work`. It returns `Ok(0)` if the initialization is successful.
     pub fn init_irq_work(
         &mut self,
         func: unsafe extern "C" fn(work: *mut bindings::irq_work),
@@ -38,6 +40,7 @@ impl IrqWork {
         Ok(0)
     }
 
+    /// `irq_work_queue`: A method that queues the `IrqWork`. It calls the `bindings::irq_work_queue` function with a pointer to the `bindings::irq_work`. If the function returns `true`, it returns `Ok(0)`. Otherwise, it returns `Err(Error::EINVAL)`.
     pub fn irq_work_queue(&mut self) -> Result<usize> {
         let res = unsafe { bindings::irq_work_queue(&mut self.0 as *mut bindings::irq_work) };
         if res == true {
@@ -47,7 +50,9 @@ impl IrqWork {
         }
     }
 
+    /// `get_ptr`: A method that returns a mutable pointer to the `bindings::irq_work`. It returns a pointer to the `bindings::irq_work` field of the `IrqWork`.
     pub fn get_ptr(&mut self) -> *mut bindings::irq_work {
-        unsafe { &mut self.0 as *mut bindings::irq_work }
+        // unsafe { &mut self.0 as *mut bindings::irq_work }
+        &mut self.0 as *mut bindings::irq_work
     }
 }

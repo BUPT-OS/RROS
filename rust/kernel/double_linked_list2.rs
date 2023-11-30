@@ -1,14 +1,13 @@
-use core::cmp::Ordering;
-use core::fmt;
-use core::hash::{Hash, Hasher};
-use core::iter::{FromIterator, FusedIterator};
+// SPDX-License-Identifier: GPL-2.0
+
+//! Double Linked lists v2.
 use core::marker::PhantomData;
-use core::mem;
 use core::ptr::NonNull;
 
 //use super::SpecExtend;
 use crate::prelude::*;
 
+/// The `LinkedList` struct represents a doubly linked list. It holds optional pointers to the head and tail nodes of the list, the length of the list, and a marker of type `PhantomData`.
 pub struct LinkedList<T> {
     head: Option<NonNull<Node<T>>>,
     tail: Option<NonNull<Node<T>>>,
@@ -43,6 +42,7 @@ impl<T> Default for LinkedList<T> {
 }
 
 impl<T> LinkedList<T> {
+    /// The `new` method is a constructor for `LinkedList`. It creates a new `LinkedList` with `len` set to 0 and `head`, `tail`, and `marker` set to `None`.
     pub fn new() -> Self {
         Self {
             len: 0,
@@ -52,6 +52,7 @@ impl<T> LinkedList<T> {
         }
     }
 
+    /// The `len` method returns the length of the list.
     pub fn len(&self) -> usize {
         self.len
     }

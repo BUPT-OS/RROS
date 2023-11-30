@@ -18,7 +18,9 @@ extern "C" {
         name: *const c_types::c_char,
         key: *mut bindings::lock_class_key,
     );
+    #[allow(dead_code)]
     fn rust_helper_spin_lock(lock: *mut bindings::spinlock);
+    #[allow(dead_code)]
     fn rust_helper_spin_unlock(lock: *mut bindings::spinlock);
     fn rust_helper_hard_spin_lock(lock: *mut bindings::raw_spinlock);
     fn rust_helper_hard_spin_unlock(lock: *mut bindings::raw_spinlock);
@@ -88,6 +90,7 @@ impl<T: ?Sized> SpinLock<T> {
         unsafe { Guard::new(self) }
     }
 
+    /// The `irq_lock` method is similar to `lock`, but it also disables interrupts before acquiring the lock. This can be used to prevent race conditions between interrupt handlers and normal code.
     pub fn irq_lock(&self) -> Guard<'_, Self> {
         self.lock_noguard();
 
@@ -95,14 +98,23 @@ impl<T: ?Sized> SpinLock<T> {
         unsafe { Guard::new(self) }
     }
 
+    /// The `irq_lock_noguard` method acquires the lock and disables interrupts, but does not return a `Guard`. Instead, it returns a `u64` that represents the previous interrupt state. This method is unsafe because it does not provide any guarantees about the lifetime of the lock.
     // FIXME: use this to enable the smp function
     pub fn irq_lock_noguard(&self) -> u64 {
-        unsafe{rust_helper_raw_spin_lock_irqsave(self.spin_lock.get() as *mut bindings::hard_spinlock_t)}
+        unsafe {
+            rust_helper_raw_spin_lock_irqsave(self.spin_lock.get() as *mut bindings::hard_spinlock_t)
+        }
     }
 
+    /// The `irq_unlock_noguard` method releases the lock and restores the interrupt state to the value given by `flags`. This method is unsafe because it does not check whether the lock is currently held by the caller.
     // FIXME: use this to enable the smp function
     pub fn irq_unlock_noguard(&self, flags: u64) {
-        unsafe{rust_helper_raw_spin_unlock_irqrestore(self.spin_lock.get() as *mut bindings::hard_spinlock_t, flags);}
+        unsafe {
+            rust_helper_raw_spin_unlock_irqrestore(
+                self.spin_lock.get() as *mut bindings::hard_spinlock_t,
+                flags,
+            );
+        }
     }
 }
 

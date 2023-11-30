@@ -1,16 +1,12 @@
-use crate::{queue, sched, sched::rros_thread, thread::*};
-use alloc::rc::Rc;
-use core::cell::RefCell;
-use core::ptr::{null, null_mut};
+use crate::{sched, sched::RrosThread, thread::*};
 use kernel::{
     c_types,
     double_linked_list::Node,
     prelude::*,
-    sync::{Guard, Lock, SpinLock},
-    Error,
+    sync::{Lock, SpinLock},
 };
 
-pub static mut rros_sched_fifo: sched::rros_sched_class = sched::rros_sched_class {
+pub static mut RROS_SCHED_FIFO: sched::RrosSchedClass = sched::RrosSchedClass {
     sched_init: Some(rros_fifo_init),
     sched_tick: Some(rros_fifo_tick),
     sched_setparam: Some(rros_fifo_setparam),
@@ -32,7 +28,7 @@ pub static mut rros_sched_fifo: sched::rros_sched_class = sched::rros_sched_clas
     sched_kick: None,
     sched_control: None,
     nthreads: 0,
-    next: 0 as *mut sched::rros_sched_class,
+    next: 0 as *mut sched::RrosSchedClass,
     flag: 3,
 };
 
@@ -41,9 +37,9 @@ pub const RROS_FIFO_MAX_PRIO: i32 = 99;
 pub const RROS_CORE_MIN_PRIO: i32 = 0;
 pub const RROS_CORE_MAX_PRIO: i32 = 101;
 
-// pub fn init_rros_sched_fifo() -> Rc<RefCell<sched::rros_sched_class>> {
-//     let rros_sched_fifo: Rc<RefCell<sched::rros_sched_class>> =
-//         Rc::try_new(RefCell::new(sched::rros_sched_class {
+// pub fn init_rros_sched_fifo() -> Rc<RefCell<sched::RrosSchedClass>> {
+//     let RrosSchedFifo: Rc<RefCell<sched::RrosSchedClass>> =
+//         Rc::try_new(RefCell::new(sched::RrosSchedClass {
 //             sched_init: Some(rros_fifo_init),
 //             // sched_tick : rros_fifo_tick,
 //             sched_tick: None,
@@ -69,10 +65,10 @@ pub const RROS_CORE_MAX_PRIO: i32 = 101;
 //             next: None,
 //         }))
 //         .unwrap();
-//     return rros_sched_fifo.clone();
+//     return RrosSchedFifo.clone();
 // }
 
-fn rros_fifo_init(rq: *mut sched::rros_rq) -> Result<usize> {
+fn rros_fifo_init(_rq: *mut sched::rros_rq) -> Result<usize> {
     Ok(0)
 }
 
@@ -82,7 +78,7 @@ fn rros_fifo_tick(rq: Option<*mut sched::rros_rq>) -> Result<usize> {
         None => return Err(kernel::Error::EINVAL),
     }
     let rq_ptr = rq.unwrap();
-    let mut curr;
+    let curr;
     unsafe {
         match (*rq_ptr).curr.clone() {
             Some(c) => curr = Some(c.clone()),
@@ -92,85 +88,92 @@ fn rros_fifo_tick(rq: Option<*mut sched::rros_rq>) -> Result<usize> {
             }
         }
     }
-    sched::rros_putback_thread(curr.unwrap());
+    sched::rros_putback_thread(curr.unwrap())?;
     Ok(0)
 }
 
 fn rros_fifo_setparam(
-    thread: Option<Arc<SpinLock<sched::rros_thread>>>,p:Option<Arc<SpinLock<sched::rros_sched_param>>>
+    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) -> Result<usize> {
     return __rros_set_fifo_schedparam(thread.clone(), p.clone());
 }
 
 fn rros_fifo_getparam(
-    thread: Option<Arc<SpinLock<sched::rros_thread>>>,
-    p: Option<Arc<SpinLock<sched::rros_sched_param>>>,
+    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) {
     __rros_get_fifo_schedparam(thread.clone(), p.clone());
 }
 
 fn rros_fifo_chkparam(
-    thread: Option<Arc<SpinLock<rros_thread>>>, p: Option<Arc<SpinLock<sched::rros_sched_param>>>
+    thread: Option<Arc<SpinLock<RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) -> Result<i32> {
     return __rros_chk_fifo_schedparam(thread.clone(), p.clone());
 }
 
-fn rros_fifo_trackprio(thread: Option<Arc<SpinLock<sched::rros_thread>>>, p: Option<Arc<SpinLock<sched::rros_sched_param>>>) {
+fn rros_fifo_trackprio(
+    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+) {
     __rros_track_fifo_priority(thread.clone(), p.clone());
 }
 
-fn rros_fifo_ceilprio(thread: Arc<SpinLock<sched::rros_thread>>, prio: i32) {
+fn rros_fifo_ceilprio(thread: Arc<SpinLock<sched::RrosThread>>, prio: i32) {
     __rros_ceil_fifo_priority(thread.clone(), prio);
 }
 
 fn rros_fifo_show(
-    thread: *mut sched::rros_thread,
-    buf: *mut c_types::c_char,
-    count: sched::ssize_t,
+    thread: *mut sched::RrosThread,
+    _buf: *mut c_types::c_char,
+    _count: sched::SsizeT,
 ) -> Result<usize> {
-    unsafe{
-    if (*thread).state & T_RRB != 0 {
-        // return snprintf(buf, count, "%Ld\n",ktime_to_ns(thread->rrperiod));
-        pr_warn!("rros_fifo_show error!!");
-        return Err(kernel::Error::EPERM);
-    }
+    unsafe {
+        if (*thread).state & T_RRB != 0 {
+            // return snprintf(buf, count, "%Ld\n",ktime_to_ns(thread->rrperiod));
+            pr_warn!("rros_fifo_show error!!");
+            return Err(kernel::Error::EPERM);
+        }
     }
     Ok(0)
 }
 
 fn __rros_set_fifo_schedparam(
-    thread: Option<Arc<SpinLock<sched::rros_thread>>>,p:Option<Arc<SpinLock<sched::rros_sched_param>>>
+    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) -> Result<usize> {
     let thread_clone = thread.clone();
     let p_unwrap = p.unwrap();
     let thread_unwrap = thread.unwrap();
-    
-    let prio = unsafe{(*p_unwrap.locked_data().get()).fifo.prio};
-    let ret = unsafe{sched::rros_set_effective_thread_priority(thread_clone, prio)};
-    let mut state = thread_unwrap.lock().state;
+
+    let prio = unsafe { (*p_unwrap.locked_data().get()).fifo.prio };
+    let ret = sched::rros_set_effective_thread_priority(thread_clone, prio);
+    let state = thread_unwrap.lock().state;
     if state & T_BOOST == 0 {
         thread_unwrap.lock().state &= !T_WEAK;
     }
-    pr_info!("thread before calling {}", state);
+    pr_debug!("thread before calling {}", state);
     ret
 }
 
 fn __rros_get_fifo_schedparam(
-    thread: Option<Arc<SpinLock<sched::rros_thread>>>,
-    p: Option<Arc<SpinLock<sched::rros_sched_param>>>,
+    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) {
     p.unwrap().lock().fifo.prio = thread.unwrap().lock().cprio;
 }
 
 //逻辑完整，未测试
 fn __rros_chk_fifo_schedparam(
-    thread: Option<Arc<SpinLock<rros_thread>>>, p: Option<Arc<SpinLock<sched::rros_sched_param>>>
+    thread: Option<Arc<SpinLock<RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) -> Result<i32> {
     let thread_unwrap = thread.unwrap();
     let mut min = RROS_FIFO_MIN_PRIO;
     let mut max = RROS_FIFO_MAX_PRIO;
     let p_unwrap = p.unwrap();
-    unsafe{
+    unsafe {
         let state = (*thread_unwrap.locked_data().get()).state;
         if state & T_USER == 0x0 {
             min = RROS_CORE_MIN_PRIO;
@@ -185,7 +188,8 @@ fn __rros_chk_fifo_schedparam(
 }
 
 fn __rros_track_fifo_priority(
-    thread: Option<Arc<SpinLock<sched::rros_thread>>>, p: Option<Arc<SpinLock<sched::rros_sched_param>>>
+    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
+    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) {
     let thread_unwrap = thread.unwrap();
     if p.is_some() {
@@ -196,14 +200,14 @@ fn __rros_track_fifo_priority(
     }
 }
 
-fn __rros_ceil_fifo_priority(thread: Arc<SpinLock<sched::rros_thread>>, prio: i32) {
-    unsafe{(*thread.locked_data().get()).cprio = prio};
+fn __rros_ceil_fifo_priority(thread: Arc<SpinLock<sched::RrosThread>>, prio: i32) {
+    unsafe { (*thread.locked_data().get()).cprio = prio };
 }
 
 //测试通过
-pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> Result<usize> {
-    let mut rq_next = thread.lock().rq_next.clone();
-    if rq_next.is_none(){
+pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
+    let rq_next = thread.lock().rq_next.clone();
+    if rq_next.is_none() {
         return Err(kernel::Error::EINVAL);
     } else {
         unsafe {
@@ -211,36 +215,32 @@ pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
             thread.lock().rq_next.as_mut().unwrap().as_mut().remove();
             //这里是否要释放？
         }
-        rq_next = None;
     }
     Ok(0)
 }
 
 //按优先级大小入队，注意这里要赋值rq_next---这个变量在出队的时候使用
 //测试通过
-pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> Result<usize> {
+pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
     let rq_ptr;
     match thread.lock().rq.clone() {
         Some(rq) => rq_ptr = rq,
         None => return Err(kernel::Error::EINVAL),
     }
 
-    let mut q = unsafe { (*rq_ptr).fifo.runnable.head.as_mut().unwrap() };
+    let q = unsafe { (*rq_ptr).fifo.runnable.head.as_mut().unwrap() };
     let new_cprio = thread.lock().cprio;
     if q.is_empty() {
         q.add_head(thread.clone());
-        unsafe {
-            thread.lock().rq_next = q.head.prev.clone();
-        }
-        // pr_info!("addr: {:p}", thread.lock().rq_next.clone().as_mut().unwrap());
+        thread.lock().rq_next = q.head.prev.clone();
+        // pr_debug!("addr: {:p}", thread.lock().rq_next.clone().as_mut().unwrap());
     } else {
         let mut p = q.head.prev;
         //倒序遍历
-        while true {
+        loop {
             unsafe {
                 let pos_cprio = p.unwrap().as_ref().value.lock().cprio;
-                if p.unwrap().as_ptr()
-                    == &mut q.head as *mut Node<Arc<SpinLock<sched::rros_thread>>>
+                if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
                     || new_cprio <= pos_cprio
                 {
                     p.unwrap()
@@ -264,43 +264,38 @@ pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
 //enqueue_fifo_thread是new_cprio <= pos_cprio
 //requeue_fifo_thread是new_cprio < pos_cprio
 //默认测试通过
-pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> Result<usize> {
+pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
     unsafe {
         let rq_ptr;
         match (*thread.locked_data().get()).rq.clone() {
             Some(rq) => rq_ptr = rq,
             None => return Err(kernel::Error::EINVAL),
         }
-        let mut q = unsafe { (*rq_ptr).fifo.runnable.head.as_mut().unwrap() };
+        let q = (*rq_ptr).fifo.runnable.head.as_mut().unwrap();
         let new_cprio = (*thread.locked_data().get()).cprio;
         if q.is_empty() {
             q.add_head(thread.clone());
-            unsafe {
-                // (*thread.locked_data().get()).rq_next = Some(Node::new(q.head.prev.clone().unwrap().as_ref().value.clone()));
-                (*thread.locked_data().get()).rq_next = q.head.prev;
-            }
-            // pr_info!("addr: {:p}", (*thread.locked_data().get()).rq_next.clone().as_mut().unwrap());
+            // (*thread.locked_data().get()).rq_next = Some(Node::new(q.head.prev.clone().unwrap().as_ref().value.clone()));
+            (*thread.locked_data().get()).rq_next = q.head.prev;
+            // pr_debug!("addr: {:p}", (*thread.locked_data().get()).rq_next.clone().as_mut().unwrap());
         } else {
             let mut p = q.head.prev;
             //倒序遍历
-            while true {
-                unsafe {
-                    let pos_cprio = (*(p.unwrap().as_ref().value).locked_data().get()).cprio;
-                    if p.unwrap().as_ptr()
-                        == &mut q.head as *mut Node<Arc<SpinLock<sched::rros_thread>>>
-                        || new_cprio < pos_cprio
-                    {
-                        p.unwrap()
-                            .as_mut()
-                            .add(p.unwrap().as_ref().next.unwrap().as_ptr(), thread.clone());
-                        // (*thread.locked_data().get()).rq_next =
-                        //     Some(Node::new(p.unwrap().as_ref().next.clone().unwrap().as_ref().value.clone()));
-                        (*thread.locked_data().get()).rq_next = p.unwrap().as_mut().next.clone();
-                            // Some(Node::new(p.unwrap().as_ref().next.clone().unwrap().as_ref().value.clone()));
-                        break;
-                    } else {
-                        p = p.unwrap().as_ref().prev;
-                    }
+            loop {
+                let pos_cprio = (*(p.unwrap().as_ref().value).locked_data().get()).cprio;
+                if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
+                    || new_cprio < pos_cprio
+                {
+                    p.unwrap()
+                        .as_mut()
+                        .add(p.unwrap().as_ref().next.unwrap().as_ptr(), thread.clone());
+                    // (*thread.locked_data().get()).rq_next =
+                    //     Some(Node::new(p.unwrap().as_ref().next.clone().unwrap().as_ref().value.clone()));
+                    (*thread.locked_data().get()).rq_next = p.unwrap().as_mut().next.clone();
+                    // Some(Node::new(p.unwrap().as_ref().next.clone().unwrap().as_ref().value.clone()));
+                    break;
+                } else {
+                    p = p.unwrap().as_ref().prev;
                 }
                 if p.unwrap().as_ptr() == q.head.prev.unwrap().as_ptr() {
                     break;
@@ -311,7 +306,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
     }
 }
 
-// pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> Result<usize> {
+// pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
 //     let rq_ptr;
 //     match thread.lock().rq.clone() {
 //         Some(rq) => rq_ptr = rq,
@@ -325,7 +320,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
 //         unsafe {
 //             thread.lock().rq_next = Some(Node::new(q.head.prev.clone().unwrap().as_ref().value.clone()));
 //         }
-//         pr_info!("addr: {:p}", thread.lock().rq_next.clone().as_mut().unwrap());
+//         pr_debug!("addr: {:p}", thread.lock().rq_next.clone().as_mut().unwrap());
 //     } else {
 //         let mut p = q.head.prev;
 //         //倒序遍历
@@ -333,7 +328,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
 //             unsafe {
 //                 let pos_cprio = p.unwrap().as_ref().value.lock().cprio;
 //                 if p.unwrap().as_ptr()
-//                     == &mut q.head as *mut Node<Arc<SpinLock<sched::rros_thread>>>
+//                     == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
 //                     || new_cprio <= pos_cprio
 //                 {
 //                     p.unwrap()
@@ -356,7 +351,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
 // //enqueue_fifo_thread是new_cprio <= pos_cprio
 // //requeue_fifo_thread是new_cprio < pos_cprio
 // //默认测试通过
-// pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> Result<usize> {
+// pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
 //     unsafe {
 //         let rq_ptr;
 //         match (*thread.locked_data().get()).rq.clone() {
@@ -370,7 +365,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
 //             unsafe {
 //                 (*thread.locked_data().get()).rq_next = Some(Node::new(q.head.prev.clone().unwrap().as_ref().value.clone()));
 //             }
-//             pr_info!("addr: {:p}", (*thread.locked_data().get()).rq_next.clone().as_mut().unwrap());
+//             pr_debug!("addr: {:p}", (*thread.locked_data().get()).rq_next.clone().as_mut().unwrap());
 //         } else {
 //             let mut p = q.head.prev;
 //             //倒序遍历
@@ -378,7 +373,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::rros_thread>>) -> 
 //                 unsafe {
 //                     let pos_cprio = (*(p.unwrap().as_ref().value).locked_data().get()).cprio;
 //                     if p.unwrap().as_ptr()
-//                         == &mut q.head as *mut Node<Arc<SpinLock<sched::rros_thread>>>
+//                         == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
 //                         || new_cprio < pos_cprio
 //                     {
 //                         p.unwrap()

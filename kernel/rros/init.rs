@@ -1,29 +1,36 @@
-﻿#![no_std]
+#![no_std]
 #![feature(allocator_api, global_asm)]
-#![feature(const_fn_transmute,array_map,get_mut_unchecked,maybe_uninit_extra,new_uninit)]
- use kernel::cpumask::CpumaskT;
+#![feature(
+    const_fn_transmute,
+    array_map,
+    get_mut_unchecked,
+    maybe_uninit_extra,
+    new_uninit
+)]
+
+//! This file is the entry point of the rros kernel module.
+//! Importing necessary features and modules
+
 // use alloc::vec;
 // use alloc::vec;
 use kernel::{
-    bindings, c_str, c_types, chrdev, cpumask, dovetail, file_operations::FileOperations, irqstage,
-    kthread, percpu, prelude::*, str::CStr, ThisModule, task::Task
+    bindings, c_types, chrdev, cpumask, dovetail, irqstage, percpu, prelude::*, str::CStr, task,
 };
 
 use core::str;
 use core::sync::atomic::{AtomicU8, Ordering};
-use core::{mem::align_of, mem::size_of, todo};
 
 mod control;
 mod idle;
 mod queue;
+mod rros;
 mod sched;
 use sched::rros_init_sched;
 mod thread;
-mod rros;
 // mod weak;
 mod fifo;
-mod tp;
 mod tick;
+mod tp;
 use tick::rros_enable_tick;
 
 mod stat;
@@ -48,11 +55,9 @@ mod timer_test;
 #[macro_use]
 mod arch;
 mod double_linked_list_test;
-mod fifo_test;
-mod test;
-mod uapi;
-use memory::init_memory;
 mod factory;
+mod fifo_test;
+mod uapi;
 use factory::rros_early_init_factories;
 
 use crate::sched::this_rros_rq;
@@ -61,13 +66,15 @@ mod crossing;
 mod file;
 mod flags;
 mod work;
+
+/// This module contains the types used in the application.
+/// The `macro_use` attribute indicates that this module also defines macros that are used elsewhere.
 #[macro_use]
 pub mod types;
+mod proxy;
 mod types_test;
 mod wait;
 mod xbuf;
-mod xbuf_test;
-mod proxy;
 
 #[cfg(CONFIG_NET)]
 mod net;
@@ -99,18 +106,25 @@ module! {
     },
 }
 
+/// Data associated with each CPU in the machine.
 pub struct RrosMachineCpuData {}
 
+/// Pointer to the machine CPU data.
 pub static mut RROS_MACHINE_CPUDATA: *mut RrosMachineCpuData = 0 as *mut RrosMachineCpuData;
 
 enum RrosRunStates {
     RrosStateDisabled = 1,
+    #[allow(dead_code)]
     RrosStateRunning = 2,
     RrosStateStopped = 3,
+    #[allow(dead_code)]
     RrosStateTeardown = 4,
     RrosStateWarmup = 5,
 }
+
+/// The real-time operating system.
 pub struct Rros {
+    /// Factory for creating character devices.
     pub factory: Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>>>,
 }
 
@@ -119,13 +133,15 @@ struct InitState {
     state: RrosRunStates,
 }
 
+#[allow(dead_code)]
 static RUN_FLAG: AtomicU8 = AtomicU8::new(0);
+#[allow(dead_code)]
 static SCHED_FLAG: AtomicU8 = AtomicU8::new(0);
 // static RUN_FLAG: AtomicU8 = AtomicU8::new(0);
 static RROS_RUNSTATE: AtomicU8 = AtomicU8::new(RrosRunStates::RrosStateWarmup as u8);
 static mut RROS_OOB_CPUS: cpumask::CpumaskT = cpumask::CpumaskT::from_int(1 as u64);
 
-fn setup_init_state(init_state: &'static str) {
+fn setup_init_state(init_state_var: &'static str) {
     let warn_bad_state: &str = "invalid init state '{}'\n";
 
     let init_states: [InitState; 3] = [
@@ -143,14 +159,14 @@ fn setup_init_state(init_state: &'static str) {
         },
     ];
 
-    for InitState in init_states {
-        if InitState.label == init_state {
-            set_rros_state(InitState.state);
-            pr_info!("{}", init_state);
+    for init_state in init_states {
+        if init_state.label == init_state_var {
+            set_rros_state(init_state.state);
+            pr_info!("{}", init_state_var);
             return;
         }
     }
-    pr_warn!("{} {}", warn_bad_state, init_state);
+    pr_warn!("{} {}", warn_bad_state, init_state_var);
 }
 
 fn set_rros_state(state: RrosRunStates) {
@@ -206,8 +222,8 @@ fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>
         }
     }
 
-    let rq = this_rros_rq();
-    pr_info!("rq add is {:p}", this_rros_rq());
+    let _rq = this_rros_rq();
+    pr_debug!("rq add is {:p}", this_rros_rq());
     let res = rros_enable_tick();
     match res {
         Ok(_o) => (),
@@ -228,13 +244,21 @@ fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>
     Ok(fac_reg)
 }
 
+#[allow(dead_code)]
 fn test_clock() {
     //clock_test::test_do_clock_tick();
     //clock_test::test_adjust_timer();
-    clock_test::test_rros_adjust_timers();
+    let res = clock_test::test_rros_adjust_timers();
+    match res {
+        Ok(_o) => (),
+        Err(_e) => {
+            pr_warn!("clock timers adjust wrong");
+        }
+    }
     //clock_test::test_rros_stop_timers();
 }
 
+#[allow(dead_code)]
 fn test_timer() {
     // timer_test::test_timer_at_front();
     // timer_test::test_rros_timer_deactivate();
@@ -242,7 +266,6 @@ fn test_timer() {
     // timer_test::test_rros_update_timer_date();
     // timer_test::test_rros_get_timer_next_date();
     // timer_test::test_rros_get_timer_expiry();
-    //timer_test::test___rros_get_timer_delta();
     //timer_test::test_rros_get_timer_delta();
     //timer_test::test_rros_get_timer_date();
     //timer_test::test_rros_insert_tnode();
@@ -254,8 +277,15 @@ fn test_timer() {
     //timer_test::test_get_handler();
 }
 
+#[allow(dead_code)]
 fn test_double_linked_list() {
-    double_linked_list_test::test_enqueue_by_index();
+    let res = double_linked_list_test::test_enqueue_by_index();
+    match res {
+        Ok(_o) => (),
+        Err(_e) => {
+            pr_warn!("enqueue by index wrong");
+        }
+    }
 }
 
 fn test_thread() {
@@ -267,26 +297,42 @@ fn test_thread() {
 //     tp::test_tp();
 // }
 
+#[allow(dead_code)]
 fn test_sched() {
     // sched_test::test_this_rros_rq_thread();
     // sched_test::test_cpu_smp();
-    sched_test::test_rros_set_resched();
+    let res = sched_test::test_rros_set_resched();
+    match res {
+        Ok(_o) => (),
+        Err(_e) => {
+            pr_warn!("set resched wrong");
+        }
+    }
 }
 
+#[allow(dead_code)]
 fn test_fifo() {
-    fifo_test::test___rros_enqueue_fifo_thread();
+    let res = fifo_test::test_rros_enqueue_fifo_thread();
+    match res {
+        Ok(_o) => (),
+        Err(_e) => {
+            pr_warn!("enqueue fifo wrong");
+        }
+    }
 }
 fn test_mem() {
     memory_test::mem_test();
 }
 
-fn test_lantency () {
+fn test_lantency() {
     rros::latmus::test_latmus();
 }
 impl KernelModule for Rros {
     fn init() -> Result<Self> {
-        let curr = Task::current_ptr();
-        unsafe{bindings::set_cpus_allowed_ptr(curr,CpumaskT::from_int(1).as_cpumas_ptr());}
+        let curr = task::Task::current_ptr();
+        unsafe {
+            bindings::set_cpus_allowed_ptr(curr, cpumask::CpumaskT::from_int(1).as_cpumas_ptr());
+        }
         pr_info!("Hello world from rros!\n");
         let init_state_arg_str = str::from_utf8(init_state_arg.read())?;
         setup_init_state(init_state_arg_str);
@@ -337,7 +383,15 @@ impl KernelModule for Rros {
         test_thread();
         //test_double_linked_list();
         // wait::wait_test();
-        net::init();
+        let ret = net::init();
+        match ret {
+            Ok(_o) => (),
+            Err(_e) => {
+                pr_warn!("net init wrong");
+                return Err(_e);
+            }
+        }
+
         test_mem();
         match res {
             Ok(_o) => {
@@ -353,16 +407,16 @@ impl KernelModule for Rros {
 
         // let mut rros_kthread1 = rros_kthread::new(fn1);
         // let mut rros_kthread2 = rros_kthread::new(fn2);
-        // pr_info!("before thread 1");
+        // pr_debug!("before thread 1");
         // kthread::kthread_run(Some(threadfn), &mut rros_kthread1 as *mut rros_kthread as *mut c_types::c_void, c_str!("%s").as_char_ptr(),
         //  format_args!("hongyu1"));
 
-        //  pr_info!("between 1 and 2");
-        
+        //  pr_debug!("between 1 and 2");
+
         // kthread::kthread_run(Some(threadfn), &mut rros_kthread2 as *mut rros_kthread as *mut c_types::c_void, c_str!("%s").as_char_ptr(),
         //  format_args!("hongyu2"));
 
-        Ok(Rros{factory: fac_reg})
+        Ok(Rros { factory: fac_reg })
     }
 }
 

@@ -5,7 +5,6 @@
 //! This module allows Rust code to use the kernel's [`struct mutex`].
 
 use super::{Guard, Lock, NeedsLockClass};
-use crate::pr_info;
 use crate::{bindings, str::CStr, Opaque};
 use core::{cell::UnsafeCell, marker::PhantomPinned, pin::Pin};
 
@@ -66,7 +65,6 @@ impl<T: ?Sized> Mutex<T> {
     /// a time is allowed to access the protected data.
     pub fn lock(&self) -> Guard<'_, Self> {
         self.lock_noguard();
-        // pr_info!("the lock is locked");
         // SAFETY: The mutex was just acquired.
         unsafe { Guard::new(self) }
     }
@@ -79,6 +77,7 @@ impl<T: ?Sized> NeedsLockClass for Mutex<T> {
 }
 
 extern "C" {
+    #[allow(dead_code)]
     fn rust_helper_mutex_lock(mutex: *mut bindings::mutex);
 }
 

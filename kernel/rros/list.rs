@@ -1,11 +1,11 @@
-use kernel::{bindings, container_of, percpu_defs, prelude::*, str::CStr, sync::SpinLock};
-pub struct list_head {
-    pub next: *mut list_head,
-    pub prev: *mut list_head,
+#[repr(C)]
+pub struct ListHead {
+    pub next: *mut ListHead,
+    pub prev: *mut ListHead,
 }
-use core::ptr::{null, null_mut};
+use core::ptr::null_mut;
 
-impl Default for list_head {
+impl Default for ListHead {
     fn default() -> Self {
         Self {
             next: null_mut(),
@@ -14,32 +14,35 @@ impl Default for list_head {
     }
 }
 
-impl list_head {
+impl ListHead {
     //添加节点到self和next之间
-    pub fn add(&mut self, new: *mut list_head) {
+    #[allow(dead_code)]
+    pub fn add(&mut self, new: *mut ListHead) {
         if self.is_empty() {
             self.prev = new;
             unsafe {
-                (*new).next = self as *mut list_head;
-                (*new).prev = self as *mut list_head;
+                (*new).next = self as *mut ListHead;
+                (*new).prev = self as *mut ListHead;
             }
         } else {
             unsafe {
                 (*self.next).prev = new;
                 (*new).next = self.next;
-                (*new).prev = self as *mut list_head;
+                (*new).prev = self as *mut ListHead;
             }
         }
         self.next = new;
     }
 
     //空双向链表next和prev都指向自己
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.next == null_mut() && self.prev == null_mut()
     }
 
     //list是不是head的最后一个节点
-    pub fn last_is(&self, list: *mut list_head) -> bool {
+    #[allow(dead_code)]
+    pub fn last_is(&self, list: *mut ListHead) -> bool {
         self.prev == list
     }
 

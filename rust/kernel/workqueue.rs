@@ -4,17 +4,16 @@
 //!
 //! C header: [`include/linux/workqueue.h`](../../../../include/linux/workqueue.h)
 
-use crate::{
-    bindings, c_str,
-    Opaque,
-    prelude::*,
-    Result,
-};
+use crate::{bindings, c_str, prelude::*, Opaque, Result};
 
-use core::{
-    fmt, ops::Deref, ptr::NonNull,
-};
+use core::{fmt, ops::Deref, ptr::NonNull};
 
+/// Struct `Queue` represents a work queue.
+/// It wraps the `workqueue_struct` struct from the bindings module.
+/// It includes a method `try_new` for creating a new `Queue`.
+/// The `try_new` method takes a formatted string as a parameter and returns a `Result` containing a `BoxedQueue`.
+/// If the allocation fails, it returns an `Err` with `ENOMEM`.
+/// It also includes a method `get_ptr` for getting a pointer to the `workqueue_struct`.
 pub struct Queue(Opaque<bindings::workqueue_struct>);
 
 unsafe impl Sync for Queue {}
@@ -44,11 +43,17 @@ impl Queue {
         Ok(unsafe { BoxedQueue::new(ptr) })
     }
 
+    /// Method `get_ptr` gets a pointer to the `workqueue_struct`.
     pub fn get_ptr(&self) -> *mut bindings::workqueue_struct {
         self.0.get()
-    } 
+    }
 }
 
+/// Struct `Work` represents a work item in a work queue.
+/// It wraps the `work_struct` struct from the bindings module.
+/// It includes a method `new` for creating a new `Work`.
+/// The `new` method returns a `Work` with uninitialized `work_struct`.
+/// Before the work item can be used, callers must call either `Work::init` or `Work::init_with_adapter`.
 #[repr(transparent)]
 pub struct Work(Opaque<bindings::work_struct>);
 
@@ -63,7 +68,6 @@ impl Work {
         Self(Opaque::uninit())
     }
 }
-
 
 /// A boxed owned workqueue.
 ///

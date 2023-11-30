@@ -210,12 +210,13 @@ impl<G: GetLinksWrapped> List<G> {
         CursorMut::new(self.list.cursor_back_mut())
     }
 
+    /// The `len` function returns the length of the list. It iterates over the list, incrementing a counter for each element.
     pub fn len(&self) -> i32 {
         let mut len = 0;
-        let mut cursor =  self.list.cursor_front();
+        let mut cursor = self.list.cursor_front();
         while cursor.current().is_some() {
             cursor.move_next();
-            len+=1;
+            len += 1;
         }
         len
     }

@@ -11,10 +11,12 @@ extern "C" {
 
 use crate::cpumask;
 
+/// `irq_send_oob_ipi`: A wrapper around `rust_helper_irq_send_oob_ipi` that sends an out-of-band IPI to the CPUs specified by the `cpumask`. It takes an IPI number and a pointer to a `cpumask::CpumaskT`.
 pub fn irq_send_oob_ipi(ipi: usize, cpumask: *const cpumask::CpumaskT) {
     unsafe { rust_helper_irq_send_oob_ipi(ipi, cpumask) };
 }
 
-pub fn irq_get_TIMER_OOB_IPI() -> usize {
+/// `irq_get_timer_oob_ipi`: A wrapper around `rust_helper_irq_get_TIMER_OOB_IPI` that returns the IPI number for the timer out-of-band interrupt.
+pub fn irq_get_timer_oob_ipi() -> usize {
     unsafe { rust_helper_irq_get_TIMER_OOB_IPI() }
 }

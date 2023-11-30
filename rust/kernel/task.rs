@@ -97,6 +97,7 @@ impl Task {
         unsafe { TaskRef::from_ptr(ptr) }
     }
 
+    /// The `current_ptr` function returns a raw pointer to the current task. It is unsafe and should be used with caution.
     pub fn current_ptr() -> *mut bindings::task_struct {
         unsafe { rust_helper_get_current() }
     }
@@ -118,14 +119,18 @@ impl Task {
         unsafe { (*self.ptr).pid }
     }
 
+    /// The `kernel` function checks if the given task is a kernel task. It returns true if the memory descriptor of the task is null, indicating that it's a kernel task.
     pub fn kernel(&self) -> bool {
         unsafe { (*self.ptr).mm == core::ptr::null_mut() }
     }
 
+    /// The `state` function returns the state of the given task as a u32. It is unsafe because it directly accesses the `state` field of the task struct.
     pub fn state(&self) -> u32 {
         unsafe { (*self.ptr).state as u32 }
     }
 
+    /// Returns the CPU of the given task as a u32.
+    /// This function is unsafe because it directly accesses the `cpu` field of the task struct.
     pub fn cpu(&self) -> u32 {
         unsafe { (*self.ptr).cpu as u32 }
     }

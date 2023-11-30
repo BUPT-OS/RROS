@@ -29,7 +29,7 @@ pub fn rros_this_cpu_timers(clock: &RrosClock) -> *mut RrosTimerbase {
 }
 
 pub fn rros_timer_null_handler(timer: *mut RrosTimer) {
-    pr_info!("i am in rros_timer_null_handler");
+    pr_debug!("i am in rros_timer_null_handler");
 }
 
 pub struct RrosTimer {
@@ -50,7 +50,7 @@ pub struct RrosTimer {
     fired: RrosCounter,
     #[cfg(CONFIG_SMP)]
     rq: *mut RrosRq,
-    pub thread: Option<Arc<SpinLock<rros_thread>>>,
+    pub thread: Option<Arc<SpinLock<RrosThread>>>,
 }
 
 impl RrosTimer {
@@ -195,7 +195,7 @@ impl RrosTimer {
         (self.get_status() & RROS_TIMER_PERIODIC) != 0
     }
 
-    pub fn thread(&self) -> Option<Arc<SpinLock<rros_thread>>> {
+    pub fn thread(&self) -> Option<Arc<SpinLock<RrosThread>>> {
         self.thread.clone()
     }
 }
@@ -251,9 +251,9 @@ pub fn rros_update_timer_date(timer: Arc<SpinLock<RrosTimer>>) {
 
 //测试通过
 pub fn rros_get_timer_next_date(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
-    let start_date = unsafe{(*timer.locked_data().get()).get_start_date()};
-    let periodic_ticks = unsafe{(*timer.locked_data().get()).get_periodic_ticks()};
-    let interval = ktime_to_ns(unsafe{(*timer.locked_data().get()).get_interval()});
+    let start_date = unsafe { (*timer.locked_data().get()).get_start_date() };
+    let periodic_ticks = unsafe { (*timer.locked_data().get()).get_periodic_ticks() };
+    let interval = ktime_to_ns(unsafe { (*timer.locked_data().get()).get_interval() });
     return ktime_add_ns(start_date, (periodic_ticks as i64 * interval) as u64);
 }
 
@@ -340,27 +340,27 @@ pub fn rros_stop_timer(timer: Arc<SpinLock<RrosTimer>>) {
 
 #[cfg(CONFIG_SMP)]
 pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut RrosTimerbase {
-    unsafe{
-    let mut base = (*timer.locked_data().get()).get_base();
+    unsafe {
+        let mut base = (*timer.locked_data().get()).get_base();
         while true {
-        // let new_flags = lock::right_raw_spin_lock_irqsave();
-        // raw_spin_lock_irqsave(&base.lock, flags);
-        base = (*timer.locked_data().get()).get_base();
-        *flags = timer.irq_lock_noguard();
-        let base2 = (*timer.locked_data().get()).get_base();
-        if (base == base2) {
-            break;
-        }            
-        timer.irq_unlock_noguard(*flags);
-        // lock::right_raw_spin_unlock_irqrestore(&base.lock, flags);
+            // let new_flags = lock::right_raw_spin_lock_irqsave();
+            // raw_spin_lock_irqsave(&base.lock, flags);
+            base = (*timer.locked_data().get()).get_base();
+            *flags = timer.irq_lock_noguard();
+            let base2 = (*timer.locked_data().get()).get_base();
+            if (base == base2) {
+                break;
+            }
+            timer.irq_unlock_noguard(*flags);
+            // lock::right_raw_spin_unlock_irqrestore(&base.lock, flags);
         }
-    base
+        base
     }
 }
 
 #[cfg(not(CONFIG_SMP))]
 fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u32) -> *mut RrosTimerbase {
-    pr_info!("!!!!!!!!!!!! this is wrong. lock_timer_base");
+    pr_err!("!!!!!!!!!!!! this is wrong. lock_timer_base");
     (*timer.locked_data().get()).get_base()
 }
 
@@ -371,7 +371,7 @@ pub fn unlock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: u64) {
 
 #[cfg(not(CONFIG_SMP))]
 fn unlock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u32) {
-    pr_info!("!!!!!!!!!!!! this is wrong. lock_timer_base");
+    pr_err!("!!!!!!!!!!!! this is wrong. lock_timer_base");
 }
 
 //测试通过
@@ -379,9 +379,9 @@ pub fn rros_dequeue_timer(
     timer: Arc<SpinLock<RrosTimer>>,
     tq: &mut List<Arc<SpinLock<RrosTimer>>>,
 ) {
-    // pr_info!("len tq is {}", tq.len());
+    // pr_debug!("len tq is {}", tq.len());
     let timer_addr = unsafe { timer.clone().locked_data().get() };
-    // pr_info!("the run timer add is {:p}", timer_addr);
+    // pr_debug!("the run timer add is {:p}", timer_addr);
     unsafe {
         for i in 1..=tq.len() {
             let mut _x = tq.get_by_index(i).unwrap().value.clone();
@@ -446,7 +446,7 @@ fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
     //     }
     // }
     // if (cpumask_test_cpu(cpu, &clock->affinity))
-        // return cpu;
+    // return cpu;
 
     // return cpumask_first(&clock->affinity);
 }
@@ -514,9 +514,9 @@ pub fn program_timer(timer: Arc<SpinLock<RrosTimer>>, tq: &mut List<Arc<SpinLock
 
 //测试通过
 pub fn rros_start_timer(timer: Arc<SpinLock<RrosTimer>>, value: KtimeT, interval: KtimeT) {
-    // pr_info!("yinyongcishu is {}",Arc::strong_count(&timer));
-    // pr_info!("rros_start_timer: 1");
-    // pr_info!("the start timer{:?} {:?}", value, interval);
+    // pr_debug!("yinyongcishu is {}",Arc::strong_count(&timer));
+    // pr_debug!("rros_start_timer: 1");
+    // pr_debug!("the start timer{:?} {:?}", value, interval);
     unsafe {
         let mut flags = 0;
         let mut tmb = lock_timer_base(timer.clone(), &mut flags);
@@ -541,7 +541,7 @@ pub fn rros_start_timer(timer: Arc<SpinLock<RrosTimer>>, value: KtimeT, interval
         }
 
         (*timer.locked_data().get()).add_status(RROS_TIMER_RUNNING);
-        // pr_info!("rros_start_timer: 2");
+        // pr_debug!("rros_start_timer: 2");
         unsafe { program_timer(timer.clone(), &mut (*tmb).q) };
         unlock_timer_base(timer, flags);
     }

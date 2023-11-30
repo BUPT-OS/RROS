@@ -1,6 +1,7 @@
 use kernel::bindings;
 use kernel::prelude::*;
 
+/// Returns the first register value from the given out-of-bounds pointer.
 #[macro_export]
 macro_rules! oob_retval {
     ($ptr:expr) => {
@@ -8,6 +9,7 @@ macro_rules! oob_retval {
     };
 }
 
+/// Returns the first argument (register value) from the given out-of-bounds pointer.
 #[macro_export]
 macro_rules! oob_arg1 {
     ($ptr:expr) => {
@@ -15,6 +17,7 @@ macro_rules! oob_arg1 {
     };
 }
 
+/// Returns the second argument (register value) from the given out-of-bounds pointer.
 #[macro_export]
 macro_rules! oob_arg2 {
     ($ptr:expr) => {
@@ -22,6 +25,7 @@ macro_rules! oob_arg2 {
     };
 }
 
+/// Returns the third argument (register value) from the given out-of-bounds pointer.
 #[macro_export]
 macro_rules! oob_arg3 {
     ($ptr:expr) => {
@@ -29,6 +33,7 @@ macro_rules! oob_arg3 {
     };
 }
 
+/// Returns the fourth argument (register value) from the given out-of-bounds pointer.
 #[macro_export]
 macro_rules! oob_arg4 {
     ($ptr:expr) => {
@@ -36,6 +41,7 @@ macro_rules! oob_arg4 {
     };
 }
 
+/// Returns the fifth argument (register value) from the given out-of-bounds pointer.
 #[macro_export]
 macro_rules! oob_arg5 {
     ($ptr:expr) => {
@@ -43,6 +49,8 @@ macro_rules! oob_arg5 {
     };
 }
 
+/// Macro to check if a syscall is `clock_gettime`.
+/// This macro takes a syscall number and returns true if it matches the syscall number for `clock_gettime`.
 #[macro_export]
 macro_rules! is_clock_gettime {
     ($nr:expr) => {
@@ -50,6 +58,9 @@ macro_rules! is_clock_gettime {
     };
 }
 
+/// Macro to check if a syscall is `clock_gettime64`.
+/// This macro takes a syscall number and returns false if `__NR_clock_gettime64` is not defined.
+/// If `__NR_clock_gettime64` is defined, it returns true if the syscall number matches `__NR_clock_gettime64`.
 #[macro_export]
 #[cfg(not(__NR_clock_gettime64))]
 macro_rules! is_clock_gettime64 {
@@ -71,7 +82,7 @@ pub fn is_oob_syscall(regs: *const bindings::pt_regs) -> bool {
 }
 
 pub fn oob_syscall_nr(regs: *const bindings::pt_regs) -> u32 {
-    pr_info!("the sys call number is {}", (*regs).syscallno as u32);
+    unsafe { pr_debug!("the sys call number is {}", (*regs).syscallno as u32) };
     (unsafe { (*regs).syscallno as u32 } & !bindings::__OOB_SYSCALL_BIT as u32)
 }
 

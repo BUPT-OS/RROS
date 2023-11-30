@@ -76,9 +76,13 @@ impl Drop for Cdev {
     }
 }
 
+/// The `RegistrationInner` struct, with a generic parameter `N` representing the number of devices.
+/// It includes the device type, the number of used devices, an array to store the devices (with length `N`),
+/// and a phantom pin to ensure the memory location of the struct does not change.
 pub struct RegistrationInner<const N: usize> {
     dev: bindings::dev_t,
     used: usize,
+    /// An array to store the devices
     pub cdevs: [Option<Cdev>; N],
     _pin: PhantomPinned,
 }
@@ -90,6 +94,7 @@ pub struct Registration<const N: usize> {
     name: &'static CStr,
     minors_start: u16,
     this_module: &'static crate::ThisModule,
+    /// The inner registration details
     pub inner: Option<RegistrationInner<N>>,
 }
 
@@ -181,12 +186,11 @@ impl<const N: usize> Registration<{ N }> {
 impl<const N: usize> file_operations::FileOpenAdapter for Registration<{ N }> {
     type Arg = u8;
 
-    unsafe fn convert(
-        inode: *mut bindings::inode,
-        file: *mut bindings::file,
-    ) -> *const Self::Arg {
+    unsafe fn convert(inode: *mut bindings::inode, file: *mut bindings::file) -> *const Self::Arg {
         // FIXME: this is a temporary hack
-        unsafe{bindings::stream_open(inode, file);}
+        unsafe {
+            bindings::stream_open(inode, file);
+        }
         // TODO: Update the SAFETY comment on the call to `FileOperationsVTable::build` above once
         // this is updated to retrieve state.
         inode as *const u8

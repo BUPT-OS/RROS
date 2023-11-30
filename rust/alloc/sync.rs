@@ -2334,7 +2334,7 @@ impl<T> Weak<T> {
     #[stable(feature = "downgraded_weak", since = "1.10.0")]
     pub fn new() -> Weak<T> {
         Weak {
-            ptr: unsafe { NonNull::new(usize::MAX as *mut ArcInner<T>).expect("MAX is not 0") },
+            ptr: NonNull::new(usize::MAX as *mut ArcInner<T>).expect("MAX is not 0"),
             alloc: Global,
         }
     }
@@ -2361,7 +2361,7 @@ impl<T, A: Allocator> Weak<T, A> {
     #[unstable(feature = "allocator_api", issue = "32838")]
     pub fn new_in(alloc: A) -> Weak<T, A> {
         Weak {
-            ptr: unsafe { NonNull::new(usize::MAX as *mut ArcInner<T>).expect("MAX is not 0") },
+            ptr: NonNull::new(usize::MAX as *mut ArcInner<T>).expect("MAX is not 0"),
             alloc,
         }
     }

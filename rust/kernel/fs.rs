@@ -8,13 +8,14 @@
 use crate::{
     bindings, c_types,
     error::{Error, Result},
-    prelude::*,
     str::CStr,
 };
 
+/// The `Filename` struct wraps a pointer to a `bindings::filename` from the kernel bindings.
 pub struct Filename(*mut bindings::filename);
 
 impl Filename {
+    /// `getname_kernel`: A method that takes a reference to a `CStr` and returns a `Result` containing a new `Filename`. It calls the `bindings::getname_kernel` function with the `CStr` as argument. If the function returns a null pointer, it returns `Err(Error::EINVAL)`. Otherwise, it returns `Ok(Filename(res))`.
     pub fn getname_kernel(arg1: &'static CStr) -> Result<Self> {
         let res;
         unsafe {
@@ -26,10 +27,12 @@ impl Filename {
         Ok(Self(res))
     }
 
-    pub fn get_name(& self) -> *const c_types::c_char {
+    /// `get_name`: A method that returns a pointer to a `c_char`. It dereferences the `Filename`'s pointer and returns the `name` field.
+    pub fn get_name(&self) -> *const c_types::c_char {
         unsafe { (*self.0).name }
     }
 
+    /// `from_ptr`: A method that takes a pointer to a `bindings::filename` and returns a new `Filename` containing the pointer.
     pub fn from_ptr(ptr: *mut bindings::filename) -> Self {
         Self(ptr)
     }
@@ -41,6 +44,7 @@ impl Drop for Filename {
     }
 }
 
+/// The `hashlen_string` function is a wrapper around the `bindings::hashlen_string` function from the kernel bindings. It takes a pointer to a `c_char` and a pointer to a `Filename` and returns a `u64`. It gets the name of the `Filename` and calls the `bindings::hashlen_string` function with the `c_char` and the name as arguments.
 pub fn hashlen_string(salt: *const c_types::c_char, filename: *mut Filename) -> u64 {
     unsafe {
         let name = (*filename).get_name();

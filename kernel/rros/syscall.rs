@@ -2,22 +2,25 @@ use core::mem::size_of;
 
 use kernel::{
     bindings,
+    c_types::c_void,
+    io_buffer::IoBufferWriter,
     prelude::*,
     premmpt::running_inband,
-    sync::{Guard, Lock, SpinLock},
+    sync::{Lock, SpinLock},
     task::Task,
-    user_ptr::UserSlicePtr, io_buffer::IoBufferWriter, c_types::c_void,
     uapi::time_types::{KernelOldTimespec, KernelTimespec},
+    user_ptr::UserSlicePtr,
 };
 
 use crate::{
     arch::arm64::syscall::*,
-    lock, oob_arg1, oob_arg2, oob_arg3, oob_retval,
-    is_clock_gettime, is_clock_gettime64,
-    sched::{rros_is_inband, rros_switch_inband, rros_thread},
+    clock::{rros_read_clock, RROS_MONO_CLOCK, RROS_REALTIME_CLOCK},
+    file::rros_get_file,
+    is_clock_gettime, is_clock_gettime64, lock, oob_arg1, oob_arg2, oob_arg3,
+    sched::{rros_is_inband, rros_switch_inband, RrosThread},
     thread::*,
     uapi::rros::syscall::*,
-    uapi::rros::thread::*, clock::{RROS_MONO_CLOCK, RROS_REALTIME_CLOCK, rros_read_clock}, file::{rros_get_file, rros_put_file},
+    uapi::rros::thread::*,
 };
 
 const FMODE_READ: u32 = 0x1;
@@ -32,15 +35,15 @@ extern "C" {
 }
 
 fn rros_read(fd: i32, u_buf: *mut u8, size: isize) -> i64 {
-    pr_info!("oob_read syscall is called");
+    pr_debug!("oob_read syscall is called");
     let rfilp = rros_get_file(fd as u32);
-    if rfilp.is_none(){
+    if rfilp.is_none() {
         return -(bindings::EBADF as i64);
     }
-    let mut rfilp = unsafe{rfilp.unwrap().as_mut()};
+    let rfilp = unsafe { rfilp.unwrap().as_mut() };
 
-    let mut ret:i64 = 0;
-    let mut filp = rfilp.filp;
+    let ret: i64;
+    let filp = rfilp.filp;
     if unsafe { (*filp).f_mode } & FMODE_READ == 0 {
         rfilp.put_file();
         return -(bindings::EBADF as i64);
@@ -50,23 +53,24 @@ fn rros_read(fd: i32, u_buf: *mut u8, size: isize) -> i64 {
         rfilp.put_file();
         return -(bindings::EINVAL as i64);
     }
-    ret = unsafe { (*(*filp).f_op).oob_read.unwrap()(filp, u_buf as *mut i8, size as usize) as i64};
+    ret =
+        unsafe { (*(*filp).f_op).oob_read.unwrap()(filp, u_buf as *mut i8, size as usize) as i64 };
     rfilp.put_file();
-    pr_info!("oob_read syscall success, the value of ret is {}", ret);
+    pr_debug!("oob_read syscall success, the value of ret is {}", ret);
 
     ret
 }
 
 fn rros_write(fd: i32, u_buf: *mut u8, size: isize) -> i64 {
-    pr_info!("oob_write syscall is called");
+    pr_debug!("oob_write syscall is called");
     let rfilp = rros_get_file(fd as u32);
-    if rfilp.is_none(){
+    if rfilp.is_none() {
         return -(bindings::EBADF as i64);
     }
-    let mut rfilp = unsafe{rfilp.unwrap().as_mut()};
+    let rfilp = unsafe { rfilp.unwrap().as_mut() };
 
-    let mut ret:i64 = 0;
-    let mut filp = rfilp.filp;
+    let ret: i64;
+    let filp = rfilp.filp;
     if unsafe { (*filp).f_mode } & FMODE_WRITE == 0 {
         rfilp.put_file();
         return -(bindings::EBADF as i64);
@@ -76,39 +80,39 @@ fn rros_write(fd: i32, u_buf: *mut u8, size: isize) -> i64 {
         rfilp.put_file();
         return -(bindings::EINVAL as i64);
     }
-    ret = unsafe { (*(*filp).f_op).oob_write.unwrap()(filp, u_buf as *mut i8, size as usize) as i64};
-    
+    ret =
+        unsafe { (*(*filp).f_op).oob_write.unwrap()(filp, u_buf as *mut i8, size as usize) as i64 };
     rfilp.put_file();
-    pr_info!("oob_write syscall success, the value of ret is {}", ret);
+    pr_debug!("oob_write syscall success, the value of ret is {}", ret);
 
     ret
 }
 
 fn rros_ioctl(fd: i32, request: u32, arg: u64) -> i64 {
     let rfilp = rros_get_file(fd as u32);
-    if rfilp.is_none(){
+    if rfilp.is_none() {
         return -(bindings::EBADF as i64);
     }
-    let mut rfilp = unsafe{rfilp.unwrap().as_mut()};
+    let rfilp = unsafe { rfilp.unwrap().as_mut() };
     // // TODO: compat oob call
     // // if (unlikely(is_compat_oob_call())) {
-	// // 	if (filp->f_op->compat_oob_ioctl)
-	// // 		ret = filp->f_op->compat_oob_ioctl(filp, request, arg);
-	// // }
-    let mut ret:i64 = 0;
-    let mut filp = rfilp.filp;
+    // // 	if (filp->f_op->compat_oob_ioctl)
+    // // 		ret = filp->f_op->compat_oob_ioctl(filp, request, arg);
+    // // }
+    let mut ret: i64 = 0;
+    let filp = rfilp.filp;
     // let oob_ioctl = unsafe{&(*(*filp).f_op).oob_ioctl};
 
     // if let Some(oob_func) = oob_ioctl{
-        // ret = unsafe{oob_func(filp, request, arg as u64) as i64};
+    // ret = unsafe{oob_func(filp, request, arg as u64) as i64};
     // }
     if unsafe { (*(*filp).f_op).oob_ioctl.is_some() } {
         ret = unsafe { (*(*filp).f_op).oob_ioctl.unwrap()(filp, request, arg) };
     } else if unsafe { (*(*filp).f_op).compat_oob_ioctl.is_some() } {
         ret = unsafe { (*(*filp).f_op).compat_oob_ioctl.unwrap()(filp, request, arg) };
     }
-    if ret == -(bindings::ENOIOCTLCMD as i64){
-        ret = - (bindings::ENOTTY as i64);
+    if ret == -(bindings::ENOIOCTLCMD as i64) {
+        ret = -(bindings::ENOTTY as i64);
     }
     rfilp.put_file();
     ret
@@ -123,23 +127,23 @@ fn invoke_syscall(nr: u32, regs: *mut bindings::pt_regs) {
      * to exploit mitigations.
      */
     unsafe {
-        match (nr) {
+        match nr {
             // [TODO: lack __user]
-            sys_rros_read => {
+            SYS_RROS_READ => {
                 ret = rros_read(
                     oob_arg1!(regs) as i32,
                     oob_arg2!(regs) as *mut u8,
                     oob_arg3!(regs) as isize,
                 );
             }
-            sys_rros_write => {
+            SYS_RROS_WRITE => {
                 ret = rros_write(
                     oob_arg1!(regs) as i32,
                     oob_arg2!(regs) as *mut u8,
                     oob_arg3!(regs) as isize,
                 );
             }
-            sys_rros_ioctl => {
+            SYS_RROS_IOCTL => {
                 ret = rros_ioctl(
                     oob_arg1!(regs) as i32,
                     oob_arg2!(regs) as u32,
@@ -156,11 +160,11 @@ fn invoke_syscall(nr: u32, regs: *mut bindings::pt_regs) {
 }
 
 fn prepare_for_signal(
-    p: *mut SpinLock<rros_thread>,
-    curr: *mut SpinLock<rros_thread>,
+    _p: *mut SpinLock<RrosThread>,
+    curr: *mut SpinLock<RrosThread>,
     regs: *mut bindings::pt_regs,
 ) {
-    let mut flags;
+    let flags;
 
     // /*
     // * FIXME: no restart mode flag for setting -EINTR instead of
@@ -186,10 +190,10 @@ fn prepare_for_signal(
     // */
     let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
     unsafe {
-        if (res2) {
+        if res2 {
             let res1 = Task::current().signal_pending();
 
-            if (res1) {
+            if res1 {
                 set_oob_error(regs, -(bindings::ERESTARTSYS as i32));
                 (*(*curr).locked_data().get()).info &= !T_BREAK;
             }
@@ -207,54 +211,71 @@ fn prepare_for_signal(
 fn handle_vdso_fallback(nr: i32, regs: *mut bindings::pt_regs) -> bool {
     let u_old_ts;
     let mut uts: KernelOldTimespec = KernelOldTimespec::new();
-    let u_uts;    
+    let u_uts;
     let mut old_ts: KernelTimespec = KernelTimespec::new();
 
     let clock;
-    let mut ts64;
-    let mut clock_id;
-    let mut ret:i64 = 0;
+    let ts64;
+    let clock_id;
+    let mut ret: i64 = 0;
 
-    if (!is_clock_gettime!(nr) && !is_clock_gettime64!(nr)) {
+    if !is_clock_gettime!(nr) && !is_clock_gettime64!(nr) {
         return false;
-    }        
+    }
 
-    clock_id = unsafe{oob_arg1!(regs) as u32};
-    match (clock_id) {
-    	bindings::CLOCK_MONOTONIC => {
-            clock = unsafe{&RROS_MONO_CLOCK};
+    clock_id = unsafe { oob_arg1!(regs) as u32 };
+    match clock_id {
+        bindings::CLOCK_MONOTONIC => {
+            clock = unsafe { &RROS_MONO_CLOCK };
         }
         bindings::CLOCK_REALTIME => {
-            clock = unsafe{&RROS_REALTIME_CLOCK};
+            clock = unsafe { &RROS_REALTIME_CLOCK };
         }
-        _ =>{
+        _ => {
             pr_alert!("error clock");
             // clock = unsafe{&RROS_MONO_CLOCK};
-            return false
+            return false;
         }
     }
 
-    ts64 = unsafe{rust_helper_ktime_to_timespec64(rros_read_clock(clock))};
+    ts64 = unsafe { rust_helper_ktime_to_timespec64(rros_read_clock(clock)) };
 
-    if (is_clock_gettime!(nr)) {
+    if is_clock_gettime!(nr) {
         old_ts.spec.tv_sec = ts64.tv_sec as bindings::__kernel_old_time_t;
         old_ts.spec.tv_nsec = ts64.tv_nsec;
         // [TODO: lack the size of u_old_rs]
-        u_old_ts = unsafe { UserSlicePtr::new(oob_arg2!(regs) as *mut c_void, size_of::<KernelTimespec>()) }; 
-        let res = unsafe{u_old_ts.writer().write_raw(&mut old_ts as *mut KernelTimespec as *mut u8 as *const u8, size_of::<KernelTimespec>())};        
+        u_old_ts = unsafe {
+            UserSlicePtr::new(oob_arg2!(regs) as *mut c_void, size_of::<KernelTimespec>())
+        };
+        let res = unsafe {
+            u_old_ts.writer().write_raw(
+                &mut old_ts as *mut KernelTimespec as *mut u8 as *const u8,
+                size_of::<KernelTimespec>(),
+            )
+        };
         ret = match res {
             Ok(()) => 0,
-            Err(e) => -(bindings::EFAULT as i64),
+            Err(_e) => -(bindings::EFAULT as i64),
         };
-    } else if (is_clock_gettime64!(nr)) {
+    } else if is_clock_gettime64!(nr) {
         uts.spec.tv_sec = ts64.tv_sec;
         uts.spec.tv_nsec = ts64.tv_nsec;
         // [TODO: lack the size of u_uts]
-        u_uts = unsafe { UserSlicePtr::new(oob_arg2!(regs) as *mut c_void, size_of::<KernelOldTimespec>()) };
-        let res = unsafe{u_uts.writer().write_raw(&mut uts as *mut KernelOldTimespec as *mut u8 as *const u8, size_of::<KernelOldTimespec>())};        
+        u_uts = unsafe {
+            UserSlicePtr::new(
+                oob_arg2!(regs) as *mut c_void,
+                size_of::<KernelOldTimespec>(),
+            )
+        };
+        let res = unsafe {
+            u_uts.writer().write_raw(
+                &mut uts as *mut KernelOldTimespec as *mut u8 as *const u8,
+                size_of::<KernelOldTimespec>(),
+            )
+        };
         ret = match res {
             Ok(()) => 0,
-            Err(e) => -(bindings::EFAULT as i64),
+            Err(_e) => -(bindings::EFAULT as i64),
         };
     }
 
@@ -270,7 +291,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
     let p;
     let mut nr: u32 = 0;
 
-    if (!is_oob_syscall(regs)) {
+    if !is_oob_syscall(regs) {
         if rros_is_inband() {
             return SYSCALL_PROPAGATE;
         }
@@ -296,7 +317,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
 
         // bad_syscall:
         // [TODO: add rros warning]
-        pr_info!("Warning: invalid out-of-band syscall {}", nr);
+        pr_warn!("Warning: invalid out-of-band syscall {}", nr);
         // printk(RROS_WARNING "invalid out-of-band syscall <%#x>\n", nr);
 
         set_oob_error(regs, -(bindings::ENOSYS as i32));
@@ -305,8 +326,8 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
     }
 
     nr = oob_syscall_nr(regs);
-    if (nr >= crate::uapi::rros::syscall::NR_RROS_SYSCALLS) {
-        pr_info!("invalid out-of-band syscall <{}>", nr);
+    if nr >= crate::uapi::rros::syscall::NR_RROS_SYSCALLS {
+        pr_debug!("invalid out-of-band syscall <{}>", nr);
 
         set_oob_error(regs, -(bindings::ENOSYS as i32));
         return SYSCALL_STOP;
@@ -315,11 +336,12 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
     let curr = rros_current();
     unsafe {
         let res1 =
-            !(rust_helper_cap_raised(rust_helper_current_cap(), bindings::CAP_SYS_NICE as i32) != 0);
-        pr_info!("curr is {:p} res is {}", curr, res1);
-        if (curr == 0 as *mut SpinLock<rros_thread> || res1) {
+            !(rust_helper_cap_raised(rust_helper_current_cap(), bindings::CAP_SYS_NICE as i32)
+                != 0);
+        pr_debug!("curr is {:p} res is {}", curr, res1);
+        if curr == 0 as *mut SpinLock<RrosThread> || res1 {
             // [TODO: lack RROS_DEBUG]
-            pr_info!("ERROR: syscall denied");
+            pr_err!("ERROR: syscall denied");
             // if (RROS_DEBUG(CORE))
             // 	printk(RROS_WARNING
             // 		"syscall <oob_%s> denied to %s[%d]\n",
@@ -335,7 +357,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
      * switched to OOB context prior to handling the request.
      */
     unsafe {
-        if (stage != &mut bindings::oob_stage as *mut bindings::irq_stage) {
+        if stage != &mut bindings::oob_stage as *mut bindings::irq_stage {
             return SYSCALL_PROPAGATE;
         }
     }
@@ -346,7 +368,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
     invoke_syscall(nr, regs);
 
     /* Syscall might have switched in-band, recheck. */
-    if (!rros_is_inband()) {
+    if !rros_is_inband() {
         p = rros_current();
         let res1 = Task::current().signal_pending();
         let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
@@ -357,9 +379,9 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
                 &mut (*(*curr).locked_data().get()).inband_disable_count as *mut bindings::atomic_t,
             )
         } != 0;
-        if (res1 || res2) {
+        if res1 || res2 {
             prepare_for_signal(p, curr, regs);
-        } else if (res3 && !res4) {
+        } else if res3 && !res4 {
             rros_switch_inband(RROS_HMDIAG_NONE);
         }
     }
@@ -372,17 +394,15 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
     // [TODO: lack trace]
     // trace_rros_oob_sysexit(oob_retval(regs));
     // unsafe{
-    //     thread::uthread = None;
+    //     thread::UTHREAD = None;
     // }
 
     return SYSCALL_STOP;
 }
 
-use crate::thread;
-
-fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs) -> i32 {
+fn do_inband_syscall(_stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs) -> i32 {
     let curr = rros_current();
-    // struct rros_thread *curr = rros_current(); /* Always valid. */
+    // struct RrosThread *curr = rros_current(); /* Always valid. */
     let p;
     // struct task_struct *p;
     let nr;
@@ -397,7 +417,7 @@ fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_re
      * assume this is an in-band syscall which we need to
      * propagate downstream to the common handler.
      */
-    if (curr == 0 as *mut SpinLock<rros_thread>) {
+    if curr == 0 as *mut SpinLock<RrosThread> {
         return SYSCALL_PROPAGATE;
     }
 
@@ -412,7 +432,7 @@ fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_re
     // rros_propagate_schedparam_change(curr);
 
     /* Propagate in-band syscalls. */
-    if (!is_oob_syscall(regs)) {
+    if !is_oob_syscall(regs) {
         return SYSCALL_PROPAGATE;
     }
 
@@ -434,7 +454,7 @@ fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_re
      * in which case the common logic applies (i.e. based on
      * T_KICKED and/or signal_pending()).
      */
-    if (ret == Err(kernel::Error::ERESTARTSYS)) {
+    if ret == Err(kernel::Error::ERESTARTSYS) {
         set_oob_error(regs, -(bindings::ERESTARTSYS as i32));
 
         let res1 = unsafe { (*(*curr).locked_data().get()).local_info };
@@ -456,7 +476,7 @@ fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_re
 
     invoke_syscall(nr, regs);
 
-    if (!rros_is_inband()) {
+    if !rros_is_inband() {
         p = rros_current();
         let res1 = Task::current().signal_pending();
         let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
@@ -466,9 +486,9 @@ fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_re
                 &mut (*(*curr).locked_data().get()).inband_disable_count as *mut bindings::atomic_t,
             )
         } != 0;
-        if (res1 || res2) {
+        if res1 || res2 {
             prepare_for_signal(p, curr, regs);
-        } else if (res3 && res4) {
+        } else if res3 && res4 {
             rros_switch_inband(RROS_HMDIAG_NONE);
         }
     }
@@ -490,10 +510,13 @@ fn do_inband_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_re
     return SYSCALL_STOP;
 }
 
-// gcc /root/rros_output/lib/librros.so write.c -lpthread -g -o write 
+// gcc /root/rros_output/lib/librros.so write.c -lpthread -g -o write
 // export C_INCLUDE_PATH=$C_INCLUDE_PATH:/root/rros_output/include
 #[no_mangle]
-unsafe extern "C" fn  handle_pipelined_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs) -> i32 {
+unsafe extern "C" fn handle_pipelined_syscall(
+    stage: *mut bindings::irq_stage,
+    regs: *mut bindings::pt_regs,
+) -> i32 {
     // [TODO: lack unlikely]
     let res = running_inband();
     let r = match res {
@@ -508,12 +531,12 @@ unsafe extern "C" fn  handle_pipelined_syscall(stage: *mut bindings::irq_stage, 
 
 #[no_mangle]
 unsafe extern "C" fn handle_oob_syscall(regs: *mut bindings::pt_regs) {
-    let ret: i32;
+    let _ret: i32;
     // if running_inband().is_ok() {
     //     // return;
     // }
 
-    ret = unsafe { do_oob_syscall(&mut bindings::oob_stage as *mut bindings::irq_stage, regs) };
+    _ret = unsafe { do_oob_syscall(&mut bindings::oob_stage as *mut bindings::irq_stage, regs) };
     // [TODO: lack warn_on]
     // RROS_WARN_ON(CORE, ret == SYSCALL_PROPAGATE);
 }

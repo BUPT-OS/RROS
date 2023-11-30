@@ -14,6 +14,10 @@ extern "C" {
     fn rust_helper_running_inband() -> c_types::c_int;
 }
 
+/// Function `running_inband` checks if the current task is running in-band.
+/// It calls `rust_helper_running_inband` to perform the check.
+/// If the current task is running in-band, it returns 0.
+/// If the current task is not running in-band, it returns an error.
 pub fn running_inband() -> Result<usize> {
     let res = unsafe { rust_helper_running_inband() };
     if res == 1 {

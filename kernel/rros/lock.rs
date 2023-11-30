@@ -1,4 +1,4 @@
-use kernel::{c_types, cpumask, prelude::*, spinlock_init, str::CStr, sync::SpinLock};
+use kernel::{c_types, prelude::*, spinlock_init, sync::SpinLock};
 
 pub fn raw_spin_lock_init(lock: &mut SpinLock<i32>) {
     *lock = unsafe { SpinLock::new(1) };
@@ -9,7 +9,9 @@ pub fn raw_spin_lock_init(lock: &mut SpinLock<i32>) {
 extern "C" {
     fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
     fn rust_helper_hard_local_irq_restore(flags: c_types::c_ulong);
+    #[allow(dead_code)]
     fn rust_helper_preempt_enable();
+    #[allow(dead_code)]
     fn rust_helper_preempt_disable();
     // fn rust_helper_raw_spin_lock_irqsave();
     // fn rust_helper_raw_spin_unlock_irqrestore();

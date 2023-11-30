@@ -1,8 +1,5 @@
-use kernel::{bindings,prelude};
-
+use kernel::{bindings, prelude};
 
 macro_rules! DEFINE_PER_CPU {
-    ($ty:ty,$name:ident) => {
-        
-    };
+    ($ty:ty,$name:ident) => {};
 }

@@ -186,7 +186,7 @@ unsafe extern "C" fn oob_write_callback<T: FileOperations>(
         let f = unsafe { T::Wrapper::borrow((*file).private_data) };
         // No `FMODE_UNSIGNED_OFFSET` support, so `offset` must be in [0, 2^63).
         // See discussion in https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113
-        let written = T::oob_write(&f, unsafe { &FileRef::from_ptr(file) }, &mut data)?; 
+        let written = T::oob_write(&f, unsafe { &FileRef::from_ptr(file) }, &mut data)?;
         Ok(written as _)
     }
 }
@@ -428,7 +428,7 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
         } else {
             None
         },
-        oob_write: if T::TO_USE.oob_write{
+        oob_write: if T::TO_USE.oob_write {
             Some(oob_write_callback::<T>)
         } else {
             None
@@ -498,7 +498,6 @@ pub struct ToUse {
 
     /// The `oob_poll` field of [`struct file_operations`].
     pub oob_poll: bool,
-
 }
 
 /// A constant version where all values are to set to `false`, that is, all supported fields will
@@ -587,8 +586,11 @@ pub trait IoctlHandler: Sync {
 /// It can use the components of an ioctl command to dispatch ioctls using
 /// [`IoctlCommand::dispatch`].
 pub struct IoctlCommand {
+    /// `cmd`: a u32 representing the command code.
     pub cmd: u32,
+    /// `arg`: a usize representing the argument of the command.
     pub arg: usize,
+    /// `user_slice`: an optional `UserSlicePtr` representing a user space memory slice.
     pub user_slice: Option<UserSlicePtr>,
 }
 
@@ -669,13 +671,13 @@ pub trait FileOpener<T: ?Sized>: FileOperations {
 }
 
 impl<T: FileOperations<Wrapper = Box<T>> + Default> FileOpener<()> for T {
-    fn open(_: &(), fileref: &File) -> Result<Self::Wrapper> {
+    fn open(_: &(), _fileref: &File) -> Result<Self::Wrapper> {
         Ok(Box::try_new(T::default())?)
     }
 }
 
 impl<T: FileOperations<Wrapper = Box<T>> + Default> FileOpener<u8> for T {
-    fn open(_: &u8, fileref: &File) -> Result<Self::Wrapper> {
+    fn open(_: &u8, _fileref: &File) -> Result<Self::Wrapper> {
         Ok(Box::try_new(T::default())?)
     }
 }

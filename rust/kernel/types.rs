@@ -274,21 +274,26 @@ impl<T> Opaque<T> {
 
 extern "C" {
     fn rust_helper_hash_init(ht: *mut bindings::hlist_head, size: u32);
+    #[allow(dead_code)]
     fn rust_helper_rcu_read_lock();
+    #[allow(dead_code)]
     fn rust_helper_rcu_read_unlock();
-    fn rust_helper_synchronize_rcu();
 }
 
+/// The `RcuHead` struct is a wrapper around the `bindings::callback_head` struct from the kernel bindings. It represents a node in a Read-Copy-Update (RCU) list.
 pub struct RcuHead(bindings::callback_head);
 
 impl RcuHead {
+    /// The `new` method is a constructor for `RcuHead`. It creates a new `RcuHead` with a default `bindings::callback_head`.
     pub fn new() -> Self {
         Self(bindings::callback_head::default())
     }
 }
+/// The `HlistNode` struct is a wrapper around the `bindings::hlist_node` struct from the kernel bindings. It represents a node in a hash list.
 pub struct HlistNode(bindings::hlist_node);
 
 impl HlistNode {
+    /// The `new` method is a constructor for `HlistNode`. It creates a new `HlistNode` with a default `bindings::hlist_node`.
     pub fn new() -> Self {
         Self(bindings::hlist_node::default())
     }
@@ -303,23 +308,25 @@ impl HlistNode {
 }
 
 #[derive(Clone, Copy)]
+/// The `HlistHead` struct is a wrapper around the `bindings::hlist_head` struct from the kernel bindings. It represents the head of a hash list.
 pub struct HlistHead(bindings::hlist_head);
 
 impl HlistHead {
+    /// The `new` method is a constructor for `HlistHead`. It creates a new `HlistHead` with a default `bindings::hlist_head`.
     pub fn new() -> Self {
         Self(bindings::hlist_head::default())
     }
 
+    /// The `as_list_head` method returns a mutable pointer to the underlying `bindings::hlist_head`. This can be used to pass the `HlistHead` to kernel functions that expect a `bindings::hlist_head`.
     pub fn as_list_head(&mut self) -> *mut bindings::hlist_head {
         &mut self.0 as *mut bindings::hlist_head
     }
 }
 
-
+/// The `hash_init` function is a wrapper around the `rust_helper_hash_init` function from the kernel bindings. It initializes a hash table with the given size. The `ht` parameter is a pointer to the hash table to initialize.
 pub fn hash_init(ht: *mut bindings::hlist_head, size: u32) {
     unsafe { rust_helper_hash_init(ht, size) };
 }
-
 
 /// Types that are _always_ reference counted.
 ///

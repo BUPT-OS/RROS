@@ -1,10 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0
+
+//! Rros Net module.
 use crate::{bindings, str::CStr, ARef, AlwaysRefCounted};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 extern "C" {
+    #[allow(improper_ctypes)]
     fn rust_helper_dev_hold(dev: *mut bindings::net_device) -> ();
+    #[allow(improper_ctypes)]
     fn rust_helper_dev_put(dev: *mut bindings::net_device) -> ();
+    #[allow(improper_ctypes)]
     fn rust_helper_get_net(net: *mut bindings::net) -> *mut bindings::net;
+    #[allow(improper_ctypes)]
     fn rust_helper_put_net(net: *mut bindings::net) -> ();
 }
 

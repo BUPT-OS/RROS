@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
+
+//! Per-CPU variables and functions.
 use core::i32;
 
 use crate::c_types;
@@ -16,6 +19,10 @@ extern "C" {
 //per_cpu原型：
 //#define per_cpu(var, cpu)	(*per_cpu_ptr(&(var), cpu))
 //per_cpu返回具体值无法实现，因此只能用per_cpu_ptr来返回指针
+
+/// Function `per_cpu_ptr` gets a per-CPU pointer.
+/// It takes a variable and a CPU ID as parameters and returns a per-CPU pointer.
+/// It calls `rust_helper_per_cpu_ptr` to get the per-CPU pointer.
 pub fn per_cpu_ptr(var: *mut u8, cpu: i32) -> *mut u8 {
     unsafe {
         return rust_helper_per_cpu_ptr(var as *mut c_types::c_void, cpu as c_types::c_int)
@@ -25,18 +32,25 @@ pub fn per_cpu_ptr(var: *mut u8, cpu: i32) -> *mut u8 {
 
 // We can use generic to implement part of the ability of function per_cpu. But due to the absence of the
 // macro define_percpu, this function has little chance to be used.
+
+/// Function `per_cpu` gets a per-CPU pointer.
+/// It takes a variable and a CPU ID as parameters and returns a per-CPU pointer.
+/// It calls `per_cpu_ptr` to get the per-CPU pointer.
 pub fn per_cpu<T>(var: *mut T, cpu: i32) -> *mut T {
-    unsafe {
-        return per_cpu_ptr(var as *mut u8, cpu) as *mut T;
-    }
+    return per_cpu_ptr(var as *mut u8, cpu) as *mut T;
 }
 
+/// Function `raw_cpu_ptr` gets a raw CPU pointer.
+/// It takes a variable as a parameter and returns a raw CPU pointer.
+/// It calls `rust_helper_raw_cpu_ptr` to get the raw CPU pointer.
 pub fn raw_cpu_ptr(var: *mut u8) -> *mut u8 {
     unsafe {
         return rust_helper_raw_cpu_ptr(var as *mut c_types::c_void) as *mut u8;
     }
 }
 
+/// Function `smp_processor_id` gets the current processor ID.
+/// It calls `rust_helper_smp_processor_id` to get the current processor ID.
 pub fn smp_processor_id() -> c_types::c_int {
     unsafe { rust_helper_smp_processor_id() }
 }

@@ -178,7 +178,7 @@ impl<G: GetLinks> RawList<G> {
             Some(back) => {
                 self.insert_after_priv(unsafe { back.as_ref() }, new_entry, new_ptr);
                 self.head = self.back(); // move head so that the back become the front
-            },
+            }
             None => {
                 self.head = new_ptr;
                 new_entry.next = new_ptr;
@@ -186,13 +186,11 @@ impl<G: GetLinks> RawList<G> {
             }
         }
         true
-
     }
 
     pub(crate) unsafe fn push_front(&mut self, new: &G::EntryType) -> bool {
         self.push_front_internal(new)
     }
-
 
     fn remove_internal(&mut self, data: &G::EntryType) -> bool {
         let links = G::get_links(data);

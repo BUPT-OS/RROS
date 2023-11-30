@@ -6,14 +6,14 @@
 #![feature(stmt_expr_attributes)]
 use crate::factory;
 use crate::list::*;
-use crate::sched::__rros_timespec;
+use crate::sched::RrosTimespec;
 use crate::sched::{rros_cpu_rq, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY};
 use crate::thread::T_ROOT;
 use crate::tick;
 use crate::timeout::RROS_INFINITE;
 use crate::{
-    factory::RrosElement, factory::RrosFactory, factory::RustFile, lock::*, tick::*, timer::*,
-    RROS_OOB_CPUS,
+    factory::CloneData, factory::RrosElement, factory::RrosFactory, factory::RustFile, lock::*,
+    tick::*, timer::*, RROS_OOB_CPUS,
 };
 use alloc::rc::Rc;
 use core::borrow::{Borrow, BorrowMut};
@@ -24,13 +24,22 @@ use core::ops::Deref;
 use core::ops::DerefMut;
 use core::{mem::align_of, mem::size_of, todo};
 use factory::RROS_CLONE_PUBLIC;
-use kernel::{
-    bindings, c_types, cpumask, double_linked_list::*, file_operations::FileOperations, ktime::*,
-    percpu, prelude::*, premmpt, spinlock_init, str::CStr, sync::Lock, sync::SpinLock, sysfs,
-    timekeeping,
-};
-use kernel::io_buffer::IoBufferWriter;
 use kernel::file::File;
+use kernel::io_buffer::IoBufferWriter;
+use kernel::{
+    bindings, c_types, cpumask,
+    double_linked_list::*,
+    file_operations::{FileOpener, FileOperations},
+    ktime::*,
+    percpu,
+    prelude::*,
+    premmpt, spinlock_init,
+    str::CStr,
+    sync::Lock,
+    sync::SpinLock,
+    sysfs, timekeeping,
+    uidgid::{KgidT, KuidT},
+};
 
 static mut CLOCKLIST_LOCK: SpinLock<i32> = unsafe { SpinLock::new(1) };
 
@@ -38,7 +47,8 @@ const CONFIG_RROS_LATENCY_USER: KtimeT = 0; //这里先定义为常量，后面�
 const CONFIG_RROS_LATENCY_KERNEL: KtimeT = 0;
 const CONFIG_RROS_LATENCY_IRQ: KtimeT = 0;
 
-const CONFIG_RROS_NR_CLOCKS: usize = 8;
+// there should be 8
+pub const CONFIG_RROS_NR_CLOCKS: usize = 16;
 
 #[derive(Default)]
 pub struct RustFileClock;
@@ -127,7 +137,7 @@ pub struct RrosClock {
     timerdata: *mut RrosTimerbase,
     master: *mut RrosClock,
     offset: KtimeT,
-    next: *mut list_head,
+    next: *mut ListHead,
     element: Option<Rc<RefCell<RrosElement>>>,
     dispose: Option<fn(&mut RrosClock)>,
     #[cfg(CONFIG_SMP)]
@@ -145,7 +155,7 @@ impl RrosClock {
         timerdata: *mut RrosTimerbase,
         master: *mut RrosClock,
         offset: KtimeT,
-        next: *mut list_head,
+        next: *mut ListHead,
         element: Option<Rc<RefCell<RrosElement>>>,
         dispose: Option<fn(&mut RrosClock)>,
         #[cfg(CONFIG_SMP)] affinity: Option<cpumask::CpumaskT>,
@@ -325,7 +335,7 @@ pub fn rros_stop_timers(clock: &RrosClock) {
     let tq = unsafe { &mut (*tmb).q };
     while tq.is_empty() == false {
         //raw_spin_lock_irqsave(&tmb->lock, flags);
-        pr_info!("rros_stop_timers: 213");
+        pr_debug!("rros_stop_timers: 213");
         let timer = tq.get_head().unwrap().value.clone();
         rros_timer_deactivate(timer);
         //raw_spin_unlock_irqrestore(&tmb->lock, flags);
@@ -440,7 +450,7 @@ pub static mut RROS_MONO_CLOCK: RrosClock = RrosClock {
     },
     timerdata: 0 as *mut RrosTimerbase,
     master: 0 as *mut RrosClock,
-    next: 0 as *mut list_head,
+    next: 0 as *mut ListHead,
     offset: 0,
     element: None,
     dispose: None,
@@ -471,7 +481,7 @@ pub static mut RROS_REALTIME_CLOCK: RrosClock = RrosClock {
     },
     timerdata: 0 as *mut RrosTimerbase,
     master: 0 as *mut RrosClock,
-    next: 0 as *mut list_head,
+    next: 0 as *mut ListHead,
     offset: 0,
     dispose: None,
     element: None,
@@ -499,7 +509,7 @@ struct rros_factory rros_clock_factory = {
 pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
         name: unsafe { CStr::from_bytes_with_nul_unchecked("RROS_CLOCK_DEV\0".as_bytes()) },
-        // fops: Some(&Clockops),
+        // fops: Some(&ClockOps),
         nrdev: CONFIG_RROS_NR_CLOCKS,
         build: None,
         dispose: Some(clock_factory_dispose),
@@ -522,18 +532,28 @@ pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     })
 };
 
-struct Clockops;
+pub struct ClockOps;
 
-impl FileOperations for Clockops {
+impl FileOpener<u8> for ClockOps {
+    fn open(shared: &u8, fileref: &File) -> Result<Self::Wrapper> {
+        let mut data = CloneData::default();
+        pr_debug!("open clock device success");
+        Ok(Box::try_new(data)?)
+    }
+}
+
+impl FileOperations for ClockOps {
     kernel::declare_file_operations!(read);
 
+    type Wrapper = Box<CloneData>;
+
     fn read<T: IoBufferWriter>(
-        _this: &Self,
+        _this: &CloneData,
         _file: &File,
         _data: &mut T,
         _offset: u64,
     ) -> Result<usize> {
-        pr_info!("I'm the read ops of the rros clock factory.");
+        pr_debug!("I'm the read ops of the rros clock factory.");
         Ok(1)
     }
 }
@@ -639,8 +659,8 @@ pub fn do_clock_tick(clock: &mut RrosClock, tmb: *mut RrosTimerbase) {
                     rros_enqueue_timer(timer.clone(), tq);
                 }
 
-                pr_info!("now is {}", now);
-                // pr_info!("date is {}",timer.lock().get_date());
+                pr_debug!("now is {}", now);
+                // pr_debug!("date is {}",timer.lock().get_date());
             }
         }
     }
@@ -653,7 +673,7 @@ pub fn do_clock_tick(clock: &mut RrosClock, tmb: *mut RrosTimerbase) {
 
 #[no_mangle]
 pub unsafe extern "C" fn rros_core_tick(dummy: *mut bindings::clock_event_device) {
-    // pr_info!("in rros_core_tick");
+    // pr_debug!("in rros_core_tick");
     let this_rq = this_rros_rq();
     //	if (RROS_WARN_ON_ONCE(CORE, !is_rros_cpu(rros_rq_cpu(this_rq))))
     // pr_info!("in rros_core_tick");
@@ -666,26 +686,26 @@ pub unsafe extern "C" fn rros_core_tick(dummy: *mut bindings::clock_event_device
         //这个if进不去有问题！！
         // let a = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
         // if rq_has_tproxy  {
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
         // }
         // let b = ((*this_rq).get_curr().lock().deref_mut().state & (T_ROOT as u32) != 0x0);
 
         // if curr_state_is_t_root  {
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
-        //     pr_info!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
+        //     pr_debug!("in rros_core_tick");
         // }
         if rq_has_tproxy && curr_state_is_t_root {
             rros_notify_proxy_tick(this_rq);
@@ -772,7 +792,7 @@ pub fn rros_clock_init() -> Result<usize> {
     if let Err(_) = ret {
         //rros_put_element(&rros_mono_clock.element);
     }
-    pr_info!("clock init success!");
+    pr_debug!("clock init success!");
     Ok(0)
 }
 
@@ -805,17 +825,14 @@ fn rros_ktime_monotonic() -> KtimeT {
 // 	return clock->ops.read(clock);
 // }
 
-
-pub fn u_timespec_to_ktime(u_ts:__rros_timespec) -> KtimeT{
-    extern "C"{
-        fn rust_helper_timespec64_to_ktime(ts:bindings::timespec64) -> KtimeT;
+pub fn u_timespec_to_ktime(u_ts: RrosTimespec) -> KtimeT {
+    extern "C" {
+        fn rust_helper_timespec64_to_ktime(ts: bindings::timespec64) -> KtimeT;
     }
-    let ts64 = bindings::timespec64{
-        tv_sec:u_ts.tv_sec as i64,
-        tv_nsec:u_ts.tv_nsec as i64,
+    let ts64 = bindings::timespec64 {
+        tv_sec: u_ts.tv_sec as i64,
+        tv_nsec: u_ts.tv_nsec as i64,
     };
-    
-    unsafe{
-        rust_helper_timespec64_to_ktime(ts64)
-    }
+
+    unsafe { rust_helper_timespec64_to_ktime(ts64) }
 }

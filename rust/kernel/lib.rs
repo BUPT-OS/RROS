@@ -89,8 +89,9 @@ pub mod fs;
 pub mod irq_pipeline;
 pub mod irq_work;
 pub mod irqstage;
-pub mod kthread;
 pub mod ktime;
+pub mod memory_rros;
+pub mod memory_rros_test;
 pub mod mm;
 #[cfg(CONFIG_NET)]
 pub mod net;
@@ -99,12 +100,10 @@ pub mod percpu_defs;
 pub mod premmpt;
 pub mod sysfs;
 pub mod timekeeping;
+pub mod uapi;
 pub mod uidgid;
 pub mod vmalloc;
 pub mod workqueue;
-pub mod memory_rros;
-pub mod memory_rros_test;
-pub mod uapi;
 
 #[doc(hidden)]
 pub use build_error::build_error;
@@ -136,6 +135,7 @@ pub trait KernelModule: Sized + Sync {
 /// Equivalent to `THIS_MODULE` in the C API.
 ///
 /// C header: `include/linux/export.h`
+#[repr(transparent)]
 pub struct ThisModule(*mut bindings::module);
 
 // SAFETY: `THIS_MODULE` may be used from all threads within a module.
@@ -151,6 +151,7 @@ impl ThisModule {
         ThisModule(ptr)
     }
 
+    /// Method `get_ptr` gets a pointer to the `module`.
     pub const fn get_ptr(&self) -> *mut bindings::module {
         self.0
     }
@@ -188,7 +189,7 @@ impl<'a> Drop for KParamGuard<'a> {
 
 /// Calculates the offset of a field from the beginning of the struct it belongs to.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// # use kernel::prelude::*;
@@ -198,10 +199,7 @@ impl<'a> Drop for KParamGuard<'a> {
 ///     b: u32,
 /// }
 ///
-/// fn test() {
-///     // This prints `8`.
-///     pr_info!("{}\n", offset_of!(Test, b));
-/// }
+/// assert_eq!(offset_of!(Test, b), 8);
 /// ```
 #[macro_export]
 macro_rules! offset_of {
@@ -226,30 +224,28 @@ macro_rules! offset_of {
 /// # Safety
 ///
 /// Callers must ensure that the pointer to the field is in fact a pointer to the specified field,
-/// as opposed to a pointer to another object of the same type.
+/// as opposed to a pointer to another object of the same type. If this condition is not met,
+/// any dereference of the resulting pointer is UB.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
-/// # use kernel::prelude::*;
 /// # use kernel::container_of;
 /// struct Test {
 ///     a: u64,
 ///     b: u32,
 /// }
 ///
-/// fn test() {
-///     let test = Test { a: 10, b: 20 };
-///     let b_ptr = &test.b;
-///     let test_alias = unsafe { container_of!(b_ptr, Test, b) };
-///     // This prints `true`.
-///     pr_info!("{}\n", core::ptr::eq(&test, test_alias));
-/// }
+/// let test = Test { a: 10, b: 20 };
+/// let b_ptr = &test.b;
+/// let test_alias = container_of!(b_ptr, Test, b);
+/// assert!(core::ptr::eq(&test, test_alias));
 /// ```
 #[macro_export]
 macro_rules! container_of {
     ($ptr:expr, $type:ty, $($f:tt)*) => {{
+        let ptr = $ptr as *const _ as *const u8;
         let offset = $crate::offset_of!($type, $($f)*);
-        unsafe { ($ptr as *const _ as *const u8).offset(-offset) as *const $type }
+        ptr.wrapping_offset(-offset) as *const $type
     }}
 }

@@ -5,7 +5,7 @@
 //! C headers: [`include/linux/fs.h`](../../../../include/linux/fs.h) and
 //! [`include/linux/file.h`](../../../../include/linux/file.h)
 
-use crate::{bindings, error::Error, Result, c_types};
+use crate::{bindings, c_types, error::Error, Result};
 use core::{mem::ManuallyDrop, ops::Deref};
 
 /// Wraps the kernel's `struct file`.
@@ -14,6 +14,7 @@ use core::{mem::ManuallyDrop, ops::Deref};
 ///
 /// The pointer `File::ptr` is non-null and valid. Its reference count is also non-zero.
 pub struct File {
+    /// The pointer `File::ptr` is non-null and valid. Its reference count is also non-zero.
     pub ptr: *mut bindings::file,
 }
 
@@ -45,10 +46,14 @@ impl File {
         unsafe { (*self.ptr).f_flags & bindings::O_NONBLOCK == 0 }
     }
 
+    /// Sets the private data of the file.
+    ///
+    /// SAFETY: The caller must ensure that `data` is a valid pointer.
     pub fn set_private_data(&self, data: *mut c_types::c_void) {
         unsafe { (*self.ptr).private_data = data as _ };
     }
 
+    /// Returns the raw pointer to the underlying `file` struct.
     pub fn get_ptr(&self) -> *mut bindings::file {
         self.ptr
     }
@@ -97,6 +102,7 @@ impl Deref for FileRef {
 /// then we commit or drop the reservation. The first step may fail (e.g., the current process ran
 /// out of available slots), but commit and drop never fail (and are mutually exclusive).
 pub struct FileDescriptorReservation {
+    /// The file descriptor (fd) is a non-negative integer that is used to access the open files or I/O devices.
     pub fd: u32,
 }
 

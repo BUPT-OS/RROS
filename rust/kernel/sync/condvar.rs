@@ -7,7 +7,7 @@
 
 use super::{Guard, Lock, NeedsLockClass};
 use crate::{bindings, str::CStr, task::Task, Opaque};
-use core::{cell::UnsafeCell, marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
+use core::{marker::PhantomPinned, pin::Pin};
 
 extern "C" {
     fn rust_helper_init_wait(wq: *mut bindings::wait_queue_entry);

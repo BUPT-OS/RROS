@@ -1,70 +1,68 @@
 use alloc::rc::Rc;
 
-use core::{
-    cell::RefCell,
-    convert::TryFrom,
-    mem::size_of,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::{cell::RefCell, convert::TryFrom, mem::size_of, sync::atomic::AtomicUsize};
 
 use crate::{
     clock, factory,
-    factory::{rros_init_element, RrosElement, RrosFactory},
+    factory::{RrosElement, RrosFactory},
     fifo::RROS_FIFO_MAX_PRIO,
-    sched,
-    thread::atomic_set,
-    Box, wait::RrosWaitQueue,
+    list, sched,
+    wait::RrosWaitQueue,
 };
 
-use kernel::{
-    bindings, c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error,
-};
+use kernel::{c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error};
 
 use kernel::file::File;
 use kernel::file_operations::FileOperations;
 use kernel::io_buffer::IoBufferWriter;
 
+#[allow(dead_code)]
 pub struct RrosMonitorItem1 {
     pub mutex: SpinLock<i32>,
-    pub events: sched::list_head,
+    pub events: list::ListHead,
     pub lock: SpinLock<i32>,
 }
 
 impl RrosMonitorItem1 {
+    #[allow(dead_code)]
     fn new() -> Result<Self> {
         Ok(Self {
             mutex: unsafe { SpinLock::new(0) },
-            events: sched::list_head::new(),
+            events: list::ListHead::default(),
             lock: unsafe { SpinLock::<i32>::new(0) },
         })
     }
 }
 
+#[allow(dead_code)]
 pub struct RrosMonitorItem2 {
     pub wait_queue: RrosWaitQueue,
     pub gate: Option<*mut u8>,
-    pub poll_head: sched::rros_poll_head,
-    pub next: sched::list_head,
-    pub next_poll: sched::list_head,
+    pub poll_head: sched::RrosPollHead,
+    pub next: list::ListHead,
+    pub next_poll: list::ListHead,
 }
 
 impl RrosMonitorItem2 {
+    #[allow(dead_code)]
     fn new() -> Result<Self> {
         Ok(Self {
-            wait_queue: unsafe{core::mem::zeroed()},
+            wait_queue: unsafe { core::mem::zeroed() },
             gate: None,
-            poll_head: sched::rros_poll_head::new(),
-            next: sched::list_head::new(),
-            next_poll: sched::list_head::new(),
+            poll_head: sched::RrosPollHead::new(),
+            next: list::ListHead::default(),
+            next_poll: list::ListHead::default(),
         })
     }
 }
 
+#[allow(dead_code)]
 pub enum RrosMonitorItem {
     Item1(RrosMonitorItem1),
     Item2(RrosMonitorItem2),
 }
 
+#[allow(dead_code)]
 pub struct RrosMonitor {
     pub element: Rc<RefCell<RrosElement>>,
     pub state: Option<RrosMonitorState>,
@@ -74,6 +72,7 @@ pub struct RrosMonitor {
 }
 
 impl RrosMonitor {
+    #[allow(dead_code)]
     pub fn new(
         element: Rc<RefCell<RrosElement>>,
         state: Option<RrosMonitorState>,
@@ -102,16 +101,23 @@ impl RrosMonitor {
 
 // #[derive(Copy, Clone)]
 pub struct RrosMonitorStateItemGate {
+    #[allow(dead_code)]
     owner: AtomicUsize,
+    #[allow(dead_code)]
     ceiling: u32,
+    #[allow(dead_code)]
     recursive: u32,
+    #[allow(dead_code)]
     nesting: u32,
 }
 
 // #[derive(Copy, Clone)]
 pub struct RrosMonitorStateItemEvent {
+    #[allow(dead_code)]
     value: AtomicUsize,
+    #[allow(dead_code)]
     pollrefs: AtomicUsize,
+    #[allow(dead_code)]
     gate_offset: u32,
 }
 
@@ -119,6 +125,7 @@ pub struct RrosMonitorStateItemEvent {
 //     gate: RrosMonitorState_item_gate,
 //     event: RrosMonitorState_item_event,
 // }
+#[allow(dead_code)]
 pub enum RrosMonitorStateItem {
     Gate(RrosMonitorStateItemGate),
     Event(RrosMonitorStateItemEvent),
@@ -130,11 +137,13 @@ pub struct RrosMonitorState {
 }
 
 impl RrosMonitorState {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self> {
         Ok(Self { flags: 0, u: None })
     }
 }
 
+#[allow(dead_code)]
 pub struct RrosMonitorAttrs {
     clockfd: u32,
     type_foo: u32,
@@ -143,6 +152,7 @@ pub struct RrosMonitorAttrs {
 }
 
 impl RrosMonitorAttrs {
+    #[allow(dead_code)]
     fn new() -> Result<Self> {
         Ok(Self {
             clockfd: 0,
@@ -153,26 +163,38 @@ impl RrosMonitorAttrs {
     }
 }
 
+#[allow(dead_code)]
 pub const RROS_MONITOR_EVENT: u32 = 0; /* Event monitor. */
+#[allow(dead_code)]
 pub const RROS_EVENT_GATED: u32 = 0; /* Gate protected. */
+#[allow(dead_code)]
 pub const RROS_EVENT_COUNT: u32 = 1; /* Semaphore. */
+#[allow(dead_code)]
 pub const RROS_EVENT_MASK: u32 = 2; /* Event (bit)mask. */
+#[allow(dead_code)]
 pub const RROS_MONITOR_GATE: u32 = 1; /* Gate monitor. */
+#[allow(dead_code)]
 pub const RROS_GATE_PI: u32 = 0; /* Gate with priority inheritance. */
+#[allow(dead_code)]
 pub const RROS_GATE_PP: u32 = 1; /* Gate with priority protection (ceiling). */
 
+#[allow(dead_code)]
 pub const RROS_MONITOR_NOGATE: u32 = 1;
+#[allow(dead_code)]
 pub const CLOCK_MONOTONIC: u32 = 1;
+#[allow(dead_code)]
 pub const CLOCK_REALTIME: u32 = 0;
 
+#[allow(dead_code)]
 const CONFIG_RROS_MONITOR: usize = 0; //未知
 
+#[allow(dead_code)]
 pub fn monitor_factory_build(
-    fac: *mut RrosFactory,
-    uname: &'static CStr,
-    u_attrs: Option<*mut u8>,
+    _fac: *mut RrosFactory,
+    _uname: &'static CStr,
+    _u_attrs: Option<*mut u8>,
     clone_flags: i32,
-    state_offp: &u32,
+    _state_offp: &u32,
 ) -> Result<Rc<RefCell<RrosElement>>> {
     if (clone_flags & !factory::RROS_CLONE_PUBLIC) != 0 {
         return Err(Error::EINVAL);
@@ -209,7 +231,7 @@ pub fn monitor_factory_build(
         _ => return Err(Error::EINVAL),
     }
 
-    let clock: Result<&mut clock::RrosClock> = {
+    let _clock: Result<&mut clock::RrosClock> = {
         match attrs.clockfd {
             CLOCK_MONOTONIC => unsafe { Ok(&mut clock::RROS_MONO_CLOCK) },
             _ => unsafe { Ok(&mut clock::RROS_REALTIME_CLOCK) },
@@ -217,8 +239,8 @@ pub fn monitor_factory_build(
     };
 
     let element = Rc::try_new(RefCell::new(RrosElement::new()?))?;
-    let mut factory: &mut SpinLock<RrosFactory> = unsafe { &mut RROS_MONITOR_FACTORY };
-    let ret = factory::rros_init_element(element.clone(), factory, clone_flags);
+    let factory: &mut SpinLock<RrosFactory> = unsafe { &mut RROS_MONITOR_FACTORY };
+    let _ret = factory::rros_init_element(element.clone(), factory, clone_flags);
 
     let mut state = RrosMonitorState::new()?;
 
@@ -249,7 +271,7 @@ pub fn monitor_factory_build(
 
     // init monitor
     let mon = match state.u {
-        Some(RrosMonitorStateItem::Gate(ref RrosMonitorStateItemGate)) => {
+        Some(RrosMonitorStateItem::Gate(ref _rros_monitor_state_item_gate)) => {
             let mut item = RrosMonitorItem1::new()?;
             let pinned = unsafe { Pin::new_unchecked(&mut item.mutex) };
             spinlock_init!(pinned, "RrosMonitorItem1_lock");
@@ -282,9 +304,10 @@ pub fn monitor_factory_build(
     return Ok(mon.element);
 }
 
+#[allow(dead_code)]
 pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("RROS_MONITOR_DEV\0".as_bytes()) },
+        name: CStr::from_bytes_with_nul_unchecked("RROS_MONITOR_DEV\0".as_bytes()),
         // fops: Some(&MonitorOps),
         nrdev: CONFIG_RROS_MONITOR,
         build: None,
@@ -308,7 +331,8 @@ pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     })
 };
 
-pub fn monitor_factory_dispose(ele: factory::RrosElement) {}
+#[allow(dead_code)]
+pub fn monitor_factory_dispose(_ele: factory::RrosElement) {}
 
 struct MonitorOps;
 
@@ -321,7 +345,7 @@ impl FileOperations for MonitorOps {
         _data: &mut T,
         _offset: u64,
     ) -> Result<usize> {
-        pr_info!("I'm the read ops of the rros monitor factory.");
+        pr_debug!("I'm the read ops of the rros monitor factory.");
         Ok(1)
     }
 }

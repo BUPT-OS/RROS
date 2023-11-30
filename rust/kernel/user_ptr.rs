@@ -13,18 +13,21 @@ use crate::{
 use alloc::vec::Vec;
 
 extern "C" {
+    /// The `rust_helper_copy_from_user` function is an unsafe function that copies data from user space to kernel space. It takes a destination pointer, a source pointer, and the number of bytes to copy. It returns the number of bytes that could not be copied. If this is not zero, that means that the copy failed.
     pub fn rust_helper_copy_from_user(
         to: *mut c_types::c_void,
         from: *const c_types::c_void,
         n: c_types::c_ulong,
     ) -> c_types::c_ulong;
 
+    /// The `rust_helper_copy_to_user` function is an unsafe function that copies data from kernel space to user space. It takes a destination pointer, a source pointer, and the number of bytes to copy. It returns the number of bytes that could not be copied. If this is not zero, that means that the copy failed.
     pub fn rust_helper_copy_to_user(
         to: *mut c_types::c_void,
         from: *const c_types::c_void,
         n: c_types::c_ulong,
     ) -> c_types::c_ulong;
 
+    /// The `rust_helper_clear_user` function is an unsafe function that clears a block of user space memory. It takes a pointer to the start of the block and the number of bytes to clear. It returns the number of bytes that could not be cleared. If this is not zero, that means that the operation failed.
     pub fn rust_helper_clear_user(
         to: *mut c_types::c_void,
         n: c_types::c_ulong,

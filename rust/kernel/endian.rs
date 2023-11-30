@@ -58,11 +58,13 @@ macro_rules! define_be_integer {
         #[repr(transparent)]
         pub struct $name($native_type);
 
-        impl $name{
+        impl $name {
+            /// `new`: A constructor function that takes a value of type `$native_type` and returns a new instance of `$name` with the provided value.
             pub fn new(v: $native_type) -> Self {
                 Self(v)
             }
 
+            /// `raw`: A method that returns the raw value of the `$name` instance.
             pub fn raw(&self) -> $native_type {
                 self.0
             }

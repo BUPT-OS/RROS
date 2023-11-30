@@ -1015,11 +1015,6 @@ struct sk_buff* rust_helper_netdev_alloc_oob_skb(struct net_device *dev,dma_addr
 }
 EXPORT_SYMBOL_GPL(rust_helper_netdev_alloc_oob_skb);
 
-struct sk_buff* rust_helper_netif_oob_diversion(const struct net_device *dev){
-	return netif_oob_diversion(dev);
-}
-EXPORT_SYMBOL_GPL(rust_helper_netif_oob_diversion);
-
 void rust_helper_set_bit(int nr, volatile unsigned long *addr){
 	set_bit(nr,addr);
 }

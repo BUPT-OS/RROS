@@ -65,15 +65,20 @@ void dovetail_stop_altsched(void)
 }
 EXPORT_SYMBOL_GPL(dovetail_stop_altsched);
 
-void __weak handle_oob_syscall(struct pt_regs *regs)
-{
-}
+extern void handle_oob_syscall(struct pt_regs *regs);
 
-int __weak handle_pipelined_syscall(struct irq_stage *stage,
-				    struct pt_regs *regs)
-{
-	return 0;
-}
+// void __weak handle_oob_syscall(struct pt_regs *regs)
+// {
+// }
+
+extern int handle_pipelined_syscall(struct irq_stage *stage,
+				    struct pt_regs *regs);
+
+// int __weak handle_pipelined_syscall(struct irq_stage *stage,
+// 				    struct pt_regs *regs)
+// {
+// 	return 0;
+// }
 
 void __weak handle_oob_mayday(struct pt_regs *regs)
 {
@@ -274,8 +279,12 @@ noinstr void __oob_trap_unwind(unsigned int exception, struct pt_regs *regs)
 	instrumentation_end();
 }
 
+extern void rust_handle_inband_event(enum inband_event_type event, void *data);
+
 void __weak handle_inband_event(enum inband_event_type event, void *data)
 {
+	// pr_info("rust_handle_inband_event in");
+	rust_handle_inband_event(event,data);
 }
 
 void inband_event_notify(enum inband_event_type event, void *data)
@@ -286,8 +295,13 @@ void inband_event_notify(enum inband_event_type event, void *data)
 		handle_inband_event(event, data);
 }
 
+extern void rust_resume_oob_task(void *ptr);
+
 void __weak resume_oob_task(struct task_struct *p)
 {
+	void *thread = p->thread_info.oob_state.thread;
+	pr_info("the passed thread ptr is %px", thread);
+	rust_resume_oob_task(thread);
 }
 
 static void finalize_oob_transition(void) /* hard IRQs off */
@@ -388,9 +402,16 @@ void __weak install_inband_fd(unsigned int fd, struct file *file,
 {
 }
 
+extern void rust_uninstall_inband_fd(unsigned int fd, struct file *file,
+				struct files_struct *files);
+
 void __weak uninstall_inband_fd(unsigned int fd, struct file *file,
 				struct files_struct *files)
 {
+	// pr_info("the address files in the c is %px", files);
+	// pr_info("the address file in the c is %px", file);
+	// pr_info("the fd is %d", fd);
+	rust_uninstall_inband_fd(fd, file, files);
 }
 
 void __weak replace_inband_fd(unsigned int fd, struct file *file,

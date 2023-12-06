@@ -23,6 +23,7 @@
 
 static void torture_event_handler(struct clock_event_device *dev)
 {
+	pr_info("tick test!!!");
 	/*
 	 * We are running on the oob stage, in NMI-like mode. Schedule
 	 * a tick on the proxy device to satisfy the corresponding

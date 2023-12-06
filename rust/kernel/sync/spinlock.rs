@@ -8,7 +8,7 @@
 
 use super::{Guard, Lock, NeedsLockClass};
 use crate::str::CStr;
-use crate::{bindings, c_types};
+use crate::{bindings, c_types, Opaque};
 use core::{cell::UnsafeCell, marker::PhantomPinned, pin::Pin};
 
 extern "C" {
@@ -20,6 +20,10 @@ extern "C" {
     );
     fn rust_helper_spin_lock(lock: *mut bindings::spinlock);
     fn rust_helper_spin_unlock(lock: *mut bindings::spinlock);
+    fn rust_helper_hard_spin_lock(lock: *mut bindings::raw_spinlock);
+    fn rust_helper_hard_spin_unlock(lock: *mut bindings::raw_spinlock);
+    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
+    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
 }
 
 /// Safely initialises a [`SpinLock`] with the given name, generating a new lock class.
@@ -44,7 +48,7 @@ macro_rules! spinlock_init {
 ///
 /// [`spinlock_t`]: ../../../include/linux/spinlock.h
 pub struct SpinLock<T: ?Sized> {
-    spin_lock: UnsafeCell<bindings::spinlock>,
+    spin_lock: Opaque<bindings::spinlock>,
 
     /// Spinlocks are architecture-defined. So we conservatively require them to be pinned in case
     /// some architecture uses self-references now or in the future.
@@ -66,9 +70,9 @@ impl<T> SpinLock<T> {
     /// # Safety
     ///
     /// The caller must call [`SpinLock::init`] before using the spinlock.
-    pub unsafe fn new(t: T) -> Self {
+    pub const unsafe fn new(t: T) -> Self {
         Self {
-            spin_lock: UnsafeCell::new(bindings::spinlock::default()),
+            spin_lock: Opaque::uninit(),
             data: UnsafeCell::new(t),
             _pin: PhantomPinned,
         }
@@ -83,6 +87,23 @@ impl<T: ?Sized> SpinLock<T> {
         // SAFETY: The spinlock was just acquired.
         unsafe { Guard::new(self) }
     }
+
+    pub fn irq_lock(&self) -> Guard<'_, Self> {
+        self.lock_noguard();
+
+        // SAFETY: The spinlock was just acquired.
+        unsafe { Guard::new(self) }
+    }
+
+    // FIXME: use this to enable the smp function
+    pub fn irq_lock_noguard(&self) -> u64 {
+        unsafe{rust_helper_raw_spin_lock_irqsave(self.spin_lock.get() as *mut bindings::hard_spinlock_t)}
+    }
+
+    // FIXME: use this to enable the smp function
+    pub fn irq_unlock_noguard(&self, flags: u64) {
+        unsafe{rust_helper_raw_spin_unlock_irqrestore(self.spin_lock.get() as *mut bindings::hard_spinlock_t, flags);}
+    }
 }
 
 impl<T: ?Sized> NeedsLockClass for SpinLock<T> {
@@ -96,11 +117,19 @@ impl<T: ?Sized> Lock for SpinLock<T> {
 
     fn lock_noguard(&self) {
         // SAFETY: `spin_lock` points to valid memory.
-        unsafe { rust_helper_spin_lock(self.spin_lock.get()) };
+        // unsafe { rust_helper_spin_lock(self.spin_lock.get()) };
+        unsafe { rust_helper_hard_spin_lock(self.spin_lock.get() as *mut bindings::raw_spinlock) };
+        // unsafe { rust_helper_hard_spin_lock((*self.spin_lock.get()).rlock()
+        // as *mut bindings::raw_spinlock) };
     }
 
     unsafe fn unlock(&self) {
-        unsafe { rust_helper_spin_unlock(self.spin_lock.get()) };
+        // unsafe { rust_helper_spin_unlock(self.spin_lock.get()) };
+        unsafe {
+            rust_helper_hard_spin_unlock(self.spin_lock.get() as *mut bindings::raw_spinlock)
+        };
+        // unsafe { rust_helper_hard_spin_unlock((*self.spin_lock.get()).rlock()
+        // as *mut bindings::raw_spinlock) };
     }
 
     fn locked_data(&self) -> &UnsafeCell<T> {

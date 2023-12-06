@@ -48,7 +48,7 @@ extern "C" {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! init_with_lockdep {
-    ($obj:expr, $name:literal) => {{
+    ($obj:expr, $name:expr) => {{
         static mut CLASS: core::mem::MaybeUninit<$crate::bindings::lock_class_key> =
             core::mem::MaybeUninit::uninit();
         let obj = $obj;
@@ -81,4 +81,67 @@ pub trait NeedsLockClass {
 pub fn cond_resched() -> bool {
     // SAFETY: No arguments, reschedules `current` if needed.
     unsafe { rust_helper_cond_resched() != 0 }
+}
+
+/// Automatically initialises static instances of synchronisation primitives.
+///
+/// The syntax resembles that of regular static variables, except that the value assigned is that
+/// of the protected type (if one exists). In the examples below, all primitives except for
+/// [`CondVar`] require the inner value to be supplied.
+///
+/// # Examples
+///
+/// ```ignore
+/// # use kernel::{init_static_sync, sync::{CondVar, Mutex, RevocableMutex, SpinLock}};
+/// struct Test {
+///     a: u32,
+///     b: u32,
+/// }
+///
+/// init_static_sync! {
+///     static A: Mutex<Test> = Test { a: 10, b: 20 };
+///
+///     /// Documentation for `B`.
+///     pub static B: Mutex<u32> = 0;
+///
+///     pub(crate) static C: SpinLock<Test> = Test { a: 10, b: 20 };
+///     static D: CondVar;
+///
+///     static E: RevocableMutex<Test> = Test { a: 30, b: 40 };
+/// }
+/// ```
+#[macro_export]
+macro_rules! init_static_sync {
+    ($($(#[$outer:meta])* $v:vis static $id:ident : $t:ty $(= $value:expr)?;)*) => {
+        $(
+            $(#[$outer])*
+            $v static $id: $t = {
+                #[link_section = ".ctors"]
+                #[used]
+                static TMP: extern "C" fn() = {
+                    extern "C" fn constructor() {
+                        // SAFETY: This locally-defined function is only called from a constructor,
+                        // which guarantees that `$id` is not accessible from other threads
+                        // concurrently.
+                        #[allow(clippy::cast_ref_to_mut)]
+                        let mutable = unsafe { &mut *(&$id as *const _ as *mut $t) };
+                        // SAFETY: It's a shared static, so it cannot move.
+                        let pinned = unsafe { core::pin::Pin::new_unchecked(mutable) };
+                        $crate::init_with_lockdep!(pinned, stringify!($id));
+                    }
+                    constructor
+                };
+                $crate::init_static_sync!(@call_new $t, $($value)?)
+            };
+        )*
+    };
+    (@call_new $t:ty, $value:expr) => {{
+        let v = $value;
+        // SAFETY: the initialisation function is called by the constructor above.
+        unsafe { <$t>::new(v) }
+    }};
+    (@call_new $t:ty,) => {
+        // SAFETY: the initialisation function is called by the constructor above.
+        unsafe { <$t>::new() }
+    };
 }

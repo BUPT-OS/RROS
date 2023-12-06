@@ -161,7 +161,7 @@ mod macros;
 // Heaps provided for low-level allocation strategies
 
 pub mod alloc;
-
+pub mod alloc_rros;
 // Primitive types using the heaps above
 
 // Need to conditionally define the mod from `boxed.rs` to avoid

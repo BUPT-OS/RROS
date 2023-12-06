@@ -7,6 +7,7 @@
  */
 
 struct oob_mm_state {
+    unsigned int flags;
 };
 
 #endif /* !_DOVETAIL_MM_INFO_H */

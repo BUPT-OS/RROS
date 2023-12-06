@@ -85,7 +85,8 @@ unsafe extern "C" fn open_callback<A: FileOpenAdapter, T: FileOpener<A::Arg>>(
 ) -> c_types::c_int {
     from_kernel_result! {
         let arg = unsafe { A::convert(inode, file) };
-        let ptr = T::open(unsafe { &*arg })?.into_pointer();
+        let fileref = unsafe { &FileRef::from_ptr(file) };
+        let ptr = T::open(unsafe { &*arg }, fileref)?.into_pointer();
         unsafe { (*file).private_data = ptr as *mut c_types::c_void };
         Ok(0)
     }
@@ -108,6 +109,25 @@ unsafe extern "C" fn read_callback<T: FileOperations>(
         // See discussion in https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113
         let read = T::read(&f, unsafe { &FileRef::from_ptr(file) }, &mut data, unsafe { *offset }.try_into()?)?;
         unsafe { (*offset) += bindings::loff_t::try_from(read).unwrap() };
+        Ok(read as _)
+    }
+}
+
+unsafe extern "C" fn oob_read_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    buf: *mut c_types::c_char,
+    len: c_types::c_size_t,
+) -> c_types::c_ssize_t {
+    from_kernel_result! {
+        let mut data = unsafe { UserSlicePtr::new(buf as *mut c_types::c_void, len).writer() };
+        // SAFETY: `private_data` was initialised by `open_callback` with a value returned by
+        // `T::Wrapper::into_pointer`. `T::Wrapper::from_pointer` is only called by the `release`
+        // callback, which the C API guarantees that will be called only when all references to
+        // `file` have been released, so we know it can't be called while this function is running.
+        let f = unsafe { T::Wrapper::borrow((*file).private_data) };
+        // No `FMODE_UNSIGNED_OFFSET` support, so `offset` must be in [0, 2^63).
+        // See discussion in https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113
+        let read = T::oob_read(&f, unsafe { &FileRef::from_ptr(file) }, &mut data)?;
         Ok(read as _)
     }
 }
@@ -148,6 +168,25 @@ unsafe extern "C" fn write_callback<T: FileOperations>(
         // See discussion in https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113
         let written = T::write(&f, unsafe { &FileRef::from_ptr(file) }, &mut data, unsafe { *offset }.try_into()?)?;
         unsafe { (*offset) += bindings::loff_t::try_from(written).unwrap() };
+        Ok(written as _)
+    }
+}
+
+unsafe extern "C" fn oob_write_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    buf: *const c_types::c_char,
+    len: c_types::c_size_t,
+) -> c_types::c_ssize_t {
+    from_kernel_result! {
+        let mut data = unsafe { UserSlicePtr::new(buf as *mut c_types::c_void, len).reader() };
+        // SAFETY: `private_data` was initialised by `open_callback` with a value returned by
+        // `T::Wrapper::into_pointer`. `T::Wrapper::from_pointer` is only called by the `release`
+        // callback, which the C API guarantees that will be called only when all references to
+        // `file` have been released, so we know it can't be called while this function is running.
+        let f = unsafe { T::Wrapper::borrow((*file).private_data) };
+        // No `FMODE_UNSIGNED_OFFSET` support, so `offset` must be in [0, 2^63).
+        // See discussion in https://github.com/fishinabarrel/linux-kernel-module-rust/pull/113
+        let written = T::oob_write(&f, unsafe { &FileRef::from_ptr(file) }, &mut data)?; 
         Ok(written as _)
     }
 }
@@ -217,6 +256,23 @@ unsafe extern "C" fn unlocked_ioctl_callback<T: FileOperations>(
         let f = unsafe { T::Wrapper::borrow((*file).private_data) };
         let mut cmd = IoctlCommand::new(cmd as _, arg as _);
         let ret = T::ioctl(&f, unsafe { &FileRef::from_ptr(file) }, &mut cmd)?;
+        Ok(ret as _)
+    }
+}
+
+unsafe extern "C" fn oob_ioctl_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    cmd: c_types::c_uint,
+    arg: c_types::c_ulong,
+) -> c_types::c_long {
+    from_kernel_result! {
+        // SAFETY: `private_data` was initialised by `open_callback` with a value returned by
+        // `T::Wrapper::into_pointer`. `T::Wrapper::from_pointer` is only called by the `release`
+        // callback, which the C API guarantees that will be called only when all references to
+        // `file` have been released, so we know it can't be called while this function is running.
+        let f = unsafe { T::Wrapper::borrow((*file).private_data) };
+        let mut cmd = IoctlCommand::new(cmd as _, arg as _);
+        let ret = T::oob_ioctl(&f, unsafe { &FileRef::from_ptr(file) }, &mut cmd)?;
         Ok(ret as _)
     }
 }
@@ -367,9 +423,21 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
         } else {
             None
         },
-        oob_read: None,
-        oob_write: None,
-        oob_ioctl: None,
+        oob_read: if T::TO_USE.oob_read {
+            Some(oob_read_callback::<T>)
+        } else {
+            None
+        },
+        oob_write: if T::TO_USE.oob_write{
+            Some(oob_write_callback::<T>)
+        } else {
+            None
+        },
+        oob_ioctl: if T::TO_USE.oob_ioctl {
+            Some(oob_ioctl_callback::<T>)
+        } else {
+            None
+        },
         compat_oob_ioctl: None,
         oob_poll: None,
     };
@@ -415,6 +483,22 @@ pub struct ToUse {
 
     /// The `poll` field of [`struct file_operations`].
     pub poll: bool,
+
+    /// The `oob_read` field of [`struct file_operations`].
+    pub oob_read: bool,
+
+    /// The `oob_write` field of [`struct file_operations`].
+    pub oob_write: bool,
+
+    /// The `oob_ioctl` field of [`struct file_operations`].
+    pub oob_ioctl: bool,
+
+    /// The `compat_oob_ioctl` field of [`struct file_operations`].
+    pub compat_oob_ioctl: bool,
+
+    /// The `oob_poll` field of [`struct file_operations`].
+    pub oob_poll: bool,
+
 }
 
 /// A constant version where all values are to set to `false`, that is, all supported fields will
@@ -430,6 +514,11 @@ pub const USE_NONE: ToUse = ToUse {
     fsync: false,
     mmap: false,
     poll: false,
+    oob_read: false,
+    oob_write: false,
+    oob_ioctl: false,
+    compat_oob_ioctl: false,
+    oob_poll: false,
 };
 
 /// Defines the [`FileOperations::TO_USE`] field based on a list of fields to be populated.
@@ -498,9 +587,9 @@ pub trait IoctlHandler: Sync {
 /// It can use the components of an ioctl command to dispatch ioctls using
 /// [`IoctlCommand::dispatch`].
 pub struct IoctlCommand {
-    cmd: u32,
-    arg: usize,
-    user_slice: Option<UserSlicePtr>,
+    pub cmd: u32,
+    pub arg: usize,
+    pub user_slice: Option<UserSlicePtr>,
 }
 
 impl IoctlCommand {
@@ -576,11 +665,17 @@ pub trait FileOpener<T: ?Sized>: FileOperations {
     /// Creates a new instance of this file.
     ///
     /// Corresponds to the `open` function pointer in `struct file_operations`.
-    fn open(context: &T) -> Result<Self::Wrapper>;
+    fn open(context: &T, fileref: &File) -> Result<Self::Wrapper>;
 }
 
 impl<T: FileOperations<Wrapper = Box<T>> + Default> FileOpener<()> for T {
-    fn open(_: &()) -> Result<Self::Wrapper> {
+    fn open(_: &(), fileref: &File) -> Result<Self::Wrapper> {
+        Ok(Box::try_new(T::default())?)
+    }
+}
+
+impl<T: FileOperations<Wrapper = Box<T>> + Default> FileOpener<u8> for T {
+    fn open(_: &u8, fileref: &File) -> Result<Self::Wrapper> {
         Ok(Box::try_new(T::default())?)
     }
 }
@@ -619,6 +714,17 @@ pub trait FileOperations: Send + Sync + Sized {
         Err(Error::EINVAL)
     }
 
+    /// Reads data from this file to the caller's buffer.
+    ///
+    /// Corresponds to the `oob_read` function pointers in `struct file_operations`.
+    fn oob_read<T: IoBufferWriter>(
+        _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _data: &mut T,
+    ) -> Result<usize> {
+        Err(Error::EINVAL)
+    }
+
     /// Writes data from the caller's buffer to this file.
     ///
     /// Corresponds to the `write` and `write_iter` function pointers in `struct file_operations`.
@@ -627,6 +733,17 @@ pub trait FileOperations: Send + Sync + Sized {
         _file: &File,
         _data: &mut T,
         _offset: u64,
+    ) -> Result<usize> {
+        Err(Error::EINVAL)
+    }
+
+    /// Writes data from the caller's buffer to this file.
+    ///
+    /// Corresponds to the `oob_write` function pointers in `struct file_operations`.
+    fn oob_write<T: IoBufferReader>(
+        _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _data: &mut T,
     ) -> Result<usize> {
         Err(Error::EINVAL)
     }
@@ -653,6 +770,16 @@ pub trait FileOperations: Send + Sync + Sized {
         Err(Error::EINVAL)
     }
 
+    /// Performs IO control operations that are specific to the file.
+    ///
+    /// Corresponds to the `oob_ioctl` function pointer in `struct file_operations`.
+    fn oob_ioctl(
+        _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _cmd: &mut IoctlCommand,
+    ) -> Result<i32> {
+        Err(Error::EINVAL)
+    }
     /// Performs 32-bit IO control operations on that are specific to the file on 64-bit kernels.
     ///
     /// Corresponds to the `compat_ioctl` function pointer in `struct file_operations`.

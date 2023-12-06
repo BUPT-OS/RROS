@@ -9,7 +9,7 @@ use crate::{
     error::{Error, Result},
     prelude::*,
 };
-extern "C"{
+extern "C" {
     fn rust_helper_num_possible_cpus() -> u32;
 }
 use core::iter::Iterator;
@@ -153,10 +153,14 @@ extern "C" {
         dstp: *mut bindings::cpumask,
     ) -> c_types::c_int;
     fn rust_helper_cpumask_copy(dstp: *mut bindings::cpumask, srcp: *const bindings::cpumask);
-    fn rust_helper_cpumask_and(dstp: *mut bindings::cpumask, srcp1: *const bindings::cpumask,
-                                srcp2: *const bindings::cpumask);
+    fn rust_helper_cpumask_and(
+        dstp: *mut bindings::cpumask,
+        srcp1: *const bindings::cpumask,
+        srcp2: *const bindings::cpumask,
+    );
     fn rust_helper_cpumask_empty(srcp: *const bindings::cpumask) -> c_types::c_int;
     fn rust_helper_cpumask_first(srcp: *const bindings::cpumask);
+    fn rust_helper_cpumask_set_cpu(cpu: u32, dstp: *mut bindings::cpumask);
     //fn rust_helper_per_cpu();
 }
 
@@ -167,7 +171,7 @@ pub struct CpumaskVarT(bindings::cpumask_var_t);
 
 impl CpumaskT {
     pub const fn from_int(c: u64) -> Self {
-        Self(bindings::cpumask_t { bits: [c, 0 , 0, 0] })
+        Self(bindings::cpumask_t { bits: [c, 0, 0, 0] })
         // Self(bindings::cpumask_t { bits: [c] })
     }
 
@@ -175,7 +179,7 @@ impl CpumaskT {
         &mut self.0 as *mut bindings::cpumask_t
     }
 
-    pub fn cpu_mask_all() -> Self{
+    pub fn cpu_mask_all() -> Self {
         let c: u64 = u64::MAX;
         Self(bindings::cpumask_t { bits: [c, c, c, c] })
         // Self(bindings::cpumask_t { bits: [c] })
@@ -185,19 +189,18 @@ impl CpumaskT {
 #[cfg(not(CONFIG_CPUMASK_OFFSTACK))]
 impl CpumaskVarT {
     pub const fn from_int(c: u64) -> Self {
-        Self([bindings::cpumask_t { bits: [c, 0 , 0, 0] }])
+        Self([bindings::cpumask_t { bits: [c, 0, 0, 0] }])
         // Self([bindings::cpumask_t { bits: [c] }])
     }
 
-    pub fn alloc_cpumask_var(mask: &mut CpumaskVarT) -> Result<usize>{
+    pub fn alloc_cpumask_var(mask: &mut CpumaskVarT) -> Result<usize> {
         Ok(0)
     }
 
-    pub fn free_cpumask_var(mask: &mut CpumaskVarT) -> Result<usize>{
+    pub fn free_cpumask_var(mask: &mut CpumaskVarT) -> Result<usize> {
         Ok(0)
     }
 }
-
 
 #[cfg(CONFIG_CPUMASK_OFFSTACK)]
 impl CpumaskVarT {
@@ -220,13 +223,15 @@ pub fn cpumask_copy(dstp: *mut bindings::cpumask, srcp: *const bindings::cpumask
     unsafe { rust_helper_cpumask_copy(dstp, srcp) }
 }
 
-pub fn cpumask_and(dstp: *mut bindings::cpumask, srcp1: *const bindings::cpumask,
-                                srcp2: *const bindings::cpumask) {
+pub fn cpumask_and(
+    dstp: *mut bindings::cpumask,
+    srcp1: *const bindings::cpumask,
+    srcp2: *const bindings::cpumask,
+) {
     unsafe { rust_helper_cpumask_and(dstp, srcp1, srcp2) }
 }
 
-
-pub fn cpumask_empty(srcp: *const bindings::cpumask, ) -> Result<usize> {
+pub fn cpumask_empty(srcp: *const bindings::cpumask) -> Result<usize> {
     let res = unsafe { rust_helper_cpumask_empty(srcp) };
     if res == 1 {
         return Ok(0);
@@ -234,10 +239,14 @@ pub fn cpumask_empty(srcp: *const bindings::cpumask, ) -> Result<usize> {
     Err(Error::EINVAL)
 }
 
-pub fn cpumask_first(srcp: *const bindings::cpumask, ) {
+pub fn cpumask_first(srcp: *const bindings::cpumask) {
     unsafe { rust_helper_cpumask_first(srcp) }
 }
 
 pub fn num_possible_cpus() -> u32 {
-    unsafe{rust_helper_num_possible_cpus()}
+    unsafe { rust_helper_num_possible_cpus() }
+}
+
+pub fn cpumask_set_cpu(cpu: u32, dstp: *mut bindings::cpumask) {
+    unsafe { rust_helper_cpumask_set_cpu(cpu as c_types::c_uint, dstp) }
 }

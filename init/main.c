@@ -1367,11 +1367,15 @@ static void __init do_pre_smp_initcalls(void)
 		do_one_initcall(initcall_from_entry(fn));
 }
 
+extern void helloworld(void);
+
 static int run_init_process(const char *init_filename)
 {
 	const char *const *p;
 
 	argv_init[0] = init_filename;
+	helloworld();
+	// pr_info("hello struct", );
 	pr_info("Run %s as init process\n", init_filename);
 	pr_debug("  with arguments:\n");
 	for (p = argv_init; *p; p++)

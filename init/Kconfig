@@ -2037,6 +2037,7 @@ config RUST
 	depends on HAS_RUST
 	depends on !COMPILE_TEST
 	depends on !MODVERSIONS
+	select CONSTRUCTORS
 	default n
 	help
 	  Enables Rust support in the kernel.

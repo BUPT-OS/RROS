@@ -4,10 +4,10 @@
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
-
+use crate::timekeeping::*;
 use crate::bindings;
 use crate::c_types;
-
+use crate::pr_info;
 pub struct KernelAllocator;
 
 unsafe impl GlobalAlloc for KernelAllocator {
@@ -32,7 +32,10 @@ static ALLOCATOR: KernelAllocator = KernelAllocator;
 // let's generate them ourselves instead.
 #[no_mangle]
 pub fn __rust_alloc(size: usize, _align: usize) -> *mut u8 {
-    unsafe { bindings::krealloc(core::ptr::null(), size, bindings::GFP_KERNEL) as *mut u8 }
+    // pr_info!("__rust_alloc: time1 is {} size is {}",ktime_get_real_fast_ns(),size);
+    let x = unsafe { bindings::krealloc(core::ptr::null(), size, bindings::GFP_KERNEL) as *mut u8 };
+    // pr_info!("__rust_alloc: time2 is {}",ktime_get_real_fast_ns());
+    return x;
 }
 
 #[no_mangle]

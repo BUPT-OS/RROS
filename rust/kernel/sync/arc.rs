@@ -15,17 +15,22 @@
 //!
 //! [`Arc`]: https://doc.rust-lang.org/std/sync/struct.Arc.html
 
-use crate::{bindings, Result};
-use alloc::boxed::Box;
+use crate::{bindings, c_types, Opaque, Result};
+use alloc::{
+    alloc::{alloc, dealloc},
+    boxed::Box,
+    vec::Vec,
+};
 use core::{
-    cell::UnsafeCell, convert::AsRef, marker::PhantomData, mem::ManuallyDrop, ops::Deref, pin::Pin,
-    ptr::NonNull,
+    cell::UnsafeCell, convert::AsRef, convert::TryFrom, marker::PhantomData, mem::ManuallyDrop,
+    ops::Deref, pin::Pin, ptr::NonNull,
 };
 
 extern "C" {
     fn rust_helper_refcount_new() -> bindings::refcount_t;
     fn rust_helper_refcount_inc(r: *mut bindings::refcount_t);
     fn rust_helper_refcount_dec_and_test(r: *mut bindings::refcount_t) -> bool;
+    fn rust_helper_REFCOUNT_INIT(n: c_types::c_int) -> bindings::refcount_t;
 }
 
 /// A reference-counted pointer to an instance of `T`.
@@ -43,7 +48,7 @@ pub struct Ref<T: ?Sized> {
 }
 
 struct RefInner<T: ?Sized> {
-    refcount: UnsafeCell<bindings::refcount_t>,
+    refcount: Opaque<bindings::refcount_t>,
     data: T,
 }
 
@@ -74,7 +79,7 @@ impl<T> Ref<T> {
         // INVARIANT: The refcount is initialised to a non-zero value.
         let mut inner = Box::try_new(RefInner {
             // SAFETY: Just an FFI call that returns a `refcount_t` initialised to 1.
-            refcount: UnsafeCell::new(unsafe { rust_helper_refcount_new() }),
+            refcount: Opaque::new(unsafe { rust_helper_REFCOUNT_INIT(1) }),
             data: contents,
         })?;
 
@@ -225,3 +230,39 @@ impl<T: ?Sized> Deref for RefBorrow<T> {
         self.inner_ref.deref()
     }
 }
+
+// impl<T> TryFrom<Vec<T>> for Ref<[T]> {
+//     type Error = Error;
+//     fn try_from(mut v: Vec<T>) -> Result<Self> {
+//         let value_layout = Layout::array::<T>(v.len())?;
+//         let layout = Layout::new::<RefInner<()>>()
+//             .extend(value_layout)?
+//             .0
+//             .pad_to_align();
+//         // SAFETY: The layout size is guaranteed to be non-zero because `RefInner` contains the
+//         // reference count.
+//         let ptr = NonNull::new(unsafe { alloc(layout) }).ok_or(Error::ENOMEM)?;
+//         let inner =
+//             core::ptr::slice_from_raw_parts_mut(ptr.as_ptr() as _, v.len()) as *mut RefInner<[T]>;
+//         // SAFETY: Just an FFI call that returns a `refcount_t` initialised to 1.
+//         let count = Opaque::new(unsafe { bindings::REFCOUNT_INIT(1) });
+//         // SAFETY: `inner.refcount` is writable and properly aligned.
+//         unsafe { core::ptr::addr_of_mut!((*inner).refcount).write(count) };
+//         // SAFETY: The contents of `v` as readable and properly aligned; `inner.data` is writable
+//         // and properly aligned. There is no overlap between the two because `inner` is a new
+//         // allocation.
+//         unsafe {
+//             core::ptr::copy_nonoverlapping(
+//                 v.as_ptr(),
+//                 core::ptr::addr_of_mut!((*inner).data) as *mut [T] as *mut T,
+//                 v.len(),
+//             )
+//         };
+//         // SAFETY: We're setting the new length to zero, so it is <= to capacity, and old_len..0 is
+//         // an empty range (so satisfies vacuously the requirement of being initialised).
+//         unsafe { v.set_len(0) };
+//         // SAFETY: We just created `inner` with a reference count of 1, which is owned by the new
+//         // `Ref` object.
+//         Ok(unsafe { Self::from_inner(NonNull::new(inner).unwrap()) })
+//     }
+// }

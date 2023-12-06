@@ -97,6 +97,10 @@ impl Task {
         unsafe { TaskRef::from_ptr(ptr) }
     }
 
+    pub fn current_ptr() -> *mut bindings::task_struct {
+        unsafe { rust_helper_get_current() }
+    }
+
     /// Returns the group leader of the given task.
     pub fn group_leader(&self) -> TaskRef<'_> {
         // SAFETY: By the type invariant, we know that `self.ptr` is non-null and valid.
@@ -112,6 +116,18 @@ impl Task {
     pub fn pid(&self) -> Pid {
         // SAFETY: By the type invariant, we know that `self.ptr` is non-null and valid.
         unsafe { (*self.ptr).pid }
+    }
+
+    pub fn kernel(&self) -> bool {
+        unsafe { (*self.ptr).mm == core::ptr::null_mut() }
+    }
+
+    pub fn state(&self) -> u32 {
+        unsafe { (*self.ptr).state as u32 }
+    }
+
+    pub fn cpu(&self) -> u32 {
+        unsafe { (*self.ptr).cpu as u32 }
     }
 
     /// Determines whether the given task has pending signals.

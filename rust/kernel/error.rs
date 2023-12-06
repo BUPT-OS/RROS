@@ -6,7 +6,10 @@
 
 use crate::str::CStr;
 use crate::{bindings, c_types};
-use alloc::{alloc::AllocError, collections::TryReserveError};
+use alloc::{
+    alloc::{AllocError, LayoutError},
+    collections::TryReserveError,
+};
 use core::convert::From;
 use core::fmt;
 use core::num::TryFromIntError;
@@ -60,11 +63,29 @@ impl Error {
     /// Bad file number.
     pub const EBADF: Self = Error(-(bindings::EBADF as i32));
 
+    /// Resource deadlock would occur
+    pub const EDEADLK: Self = Error(-(bindings::EDEADLK as i32));
+
+    /// Connection timed out
+    pub const ETIMEDOUT: Self = Error(-(bindings::ETIMEDOUT as i32));
+
+    /// Owner died
+    pub const EOWNERDEAD: Self = Error(-(bindings::EOWNERDEAD as i32));
+
+    /// Identifier removed
+    pub const EIDRM: Self = Error(-(bindings::EIDRM as i32));
+
+    ///	Stale file handle
+    pub const ESTALE: Self = Error(-(bindings::ESTALE as i32));
+
+    /// Not a typewriter
+    pub const ENOTTY: Self = Error(-(bindings::ENOTTY as i32));
+
     /// Creates an [`Error`] from a kernel error code.
     ///
     /// It is a bug to pass an out-of-range `errno`. `EINVAL` would
     /// be returned in such a case.
-    pub(crate) fn from_kernel_errno(errno: c_types::c_int) -> Error {
+    pub fn from_kernel_errno(errno: c_types::c_int) -> Error {
         if errno < -(bindings::MAX_ERRNO as i32) || errno >= 0 {
             // TODO: make it a `WARN_ONCE` once available.
             crate::pr_warn!(
@@ -163,6 +184,12 @@ impl From<AllocError> for Error {
     }
 }
 
+impl From<LayoutError> for Error {
+    fn from(_: LayoutError) -> Error {
+        Error::ENOMEM
+    }
+}
+
 // # Invariant: `-bindings::MAX_ERRNO` fits in an `i16`.
 crate::static_assert!(bindings::MAX_ERRNO <= -(i16::MIN as i32) as u32);
 
@@ -242,7 +269,7 @@ macro_rules! from_kernel_result {
 /// ```
 // TODO: remove `dead_code` marker once an in-kernel client is available.
 #[allow(dead_code)]
-pub(crate) fn from_kernel_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
+pub fn from_kernel_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
     extern "C" {
         #[allow(improper_ctypes)]
         fn rust_helper_is_err(ptr: *const c_types::c_void) -> bool;

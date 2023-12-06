@@ -823,7 +823,7 @@ impl IoctlHandler for Process {
 }
 
 impl FileOpener<Ref<Context>> for Process {
-    fn open(ctx: &Ref<Context>) -> Result<Self::Wrapper> {
+    fn open(ctx: &Ref<Context>, fileref: &File) -> Result<Self::Wrapper> {
         Self::new(ctx.clone())
     }
 }

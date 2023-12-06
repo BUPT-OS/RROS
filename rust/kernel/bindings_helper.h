@@ -18,6 +18,23 @@
 #include <linux/platform_device.h>
 #include <linux/of_platform.h>
 #include <linux/security.h>
+#include <linux/vmalloc.h>
+#include <linux/slab.h>
+#include <linux/irq_work.h>
+#include <linux/interrupt.h>
+#include <linux/list.h>
+#include <linux/tick.h>
+#include <uapi/linux/sched/types.h>
+#include <linux/irq_pipeline.h>
+#include <net/net_namespace.h>
+#include <linux/netdevice.h>
+#include <uapi/linux/unistd.h>
+#include <net/sock.h>
+#include <linux/net.h>
+#include <linux/bottom_half.h>
+#include <uapi/linux/unistd.h>
+#include <linux/capability.h>
+#include <linux/anon_inodes.h>
 
 // `bindgen` gets confused at certain things
 const gfp_t BINDINGS_GFP_KERNEL = GFP_KERNEL;

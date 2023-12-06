@@ -66,7 +66,7 @@ impl FileState {
 }
 
 impl FileOpener<Ref<Semaphore>> for FileState {
-    fn open(shared: &Ref<Semaphore>) -> Result<Box<Self>> {
+    fn open(shared: &Ref<Semaphore>, fileref: &File) -> Result<Box<Self>> {
         Ok(Box::try_new(Self {
             read_count: AtomicU64::new(0),
             shared: shared.clone(),

@@ -204,10 +204,10 @@ pub struct RBTree<K, V> {
 
 impl<K, V> RBTree<K, V> {
     /// Creates a new and empty tree.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             // INVARIANT: There are no nodes in the tree, so the invariant holds vacuously.
-            root: bindings::rb_root::default(),
+            root: bindings::rb_root{ rb_node : core::ptr::null_mut()},
             _p: PhantomData,
         }
     }

@@ -113,7 +113,7 @@ pub struct List<G: GetLinksWrapped> {
 
 impl<G: GetLinksWrapped> List<G> {
     /// Constructs a new empty linked list.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             list: RawList::new(),
         }
@@ -133,6 +133,21 @@ impl<G: GetLinksWrapped> List<G> {
 
         // SAFETY: We took ownership of the entry, so it is safe to insert it.
         if !unsafe { self.list.push_back(ptr.as_ref()) } {
+            // If insertion failed, rebuild object so that it can be freed.
+            // SAFETY: We just called `into_pointer` above.
+            unsafe { G::Wrapped::from_pointer(ptr) };
+        }
+    }
+
+    /// Adds the given object to the start (front) of the list.
+    ///
+    /// It is dropped if it's already on this (or another) list; this can happen for
+    /// reference-counted objects, so dropping means decrementing the reference count.
+    pub fn push_front(&mut self, data: G::Wrapped) {
+        let ptr = data.into_pointer();
+
+        // SAFETY: We took ownership of the entry, so it is safe to insert it.
+        if !unsafe { self.list.push_front(ptr.as_ref()) } {
             // If insertion failed, rebuild object so that it can be freed.
             // SAFETY: We just called `into_pointer` above.
             unsafe { G::Wrapped::from_pointer(ptr) };
@@ -189,6 +204,21 @@ impl<G: GetLinksWrapped> List<G> {
     pub fn cursor_front_mut(&mut self) -> CursorMut<'_, G> {
         CursorMut::new(self.list.cursor_front_mut())
     }
+
+    /// Returns a mutable cursor starting on the last (back) element of the list.
+    pub fn cursor_back_mut(&mut self) -> CursorMut<'_, G> {
+        CursorMut::new(self.list.cursor_back_mut())
+    }
+
+    pub fn len(&self) -> i32 {
+        let mut len = 0;
+        let mut cursor =  self.list.cursor_front();
+        while cursor.current().is_some() {
+            cursor.move_next();
+            len+=1;
+        }
+        len
+    }
 }
 
 impl<G: GetLinksWrapped> Default for List<G> {
@@ -241,5 +271,10 @@ impl<'a, G: GetLinksWrapped> CursorMut<'a, G> {
     /// Moves the cursor to the next element.
     pub fn move_next(&mut self) {
         self.cursor.move_next();
+    }
+
+    /// Moves the cursor to the next element.
+    pub fn move_prev(&mut self) {
+        self.cursor.move_prev();
     }
 }

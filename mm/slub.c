@@ -1770,8 +1770,8 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	flags &= gfp_allowed_mask;
 
-	if (gfpflags_allow_blocking(flags))
-		local_irq_enable();
+	// if (gfpflags_allow_blocking(flags))
+	// 	local_irq_enable();
 
 	flags |= s->allocflags;
 

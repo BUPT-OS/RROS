@@ -5,7 +5,7 @@
 //! This module contains a lock guard that can be used with any locking primitive that implements
 //! the ([`Lock`]) trait. It also contains the definition of the trait, which can be leveraged by
 //! other constructs to work on generic locking primitives.
-
+use crate::pr_info;
 /// Allows mutual exclusion primitives that implement the [`Lock`] trait to automatically unlock
 /// when a guard goes out of scope. It also provides a safe and convenient way to access the data
 /// protected by the lock.
@@ -29,6 +29,7 @@ impl<L: Lock + ?Sized> core::ops::Deref for Guard<'_, L> {
     type Target = L::Inner;
 
     fn deref(&self) -> &Self::Target {
+        // pr_info!("the lock is unlocked");
         // SAFETY: The caller owns the lock, so it is safe to deref the protected data.
         unsafe { &*self.lock.locked_data().get() }
     }

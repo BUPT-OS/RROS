@@ -4352,10 +4352,10 @@ static inline void netdev_disable_oob_port(struct net_device *dev)
 	dev->oob_context.flags &= ~IFF_OOB_PORT;
 }
 
-static inline bool netdev_is_oob_port(struct net_device *dev)
-{
-	return !!(dev->oob_context.flags & IFF_OOB_PORT);
-}
+// static bool netdev_is_oob_port(struct net_device *dev)
+// {
+// 	return !!(dev->oob_context.flags & IFF_OOB_PORT);
+// }
 
 static inline struct sk_buff *netdev_alloc_oob_skb(struct net_device *dev,
 						   dma_addr_t *dma_addr)
@@ -4390,10 +4390,10 @@ static inline void netdev_disable_oob_port(struct net_device *dev)
 {
 }
 
-static inline bool netdev_is_oob_port(struct net_device *dev)
-{
-	return false;
-}
+// static inline bool netdev_is_oob_port(struct net_device *dev)
+// {
+// 	return false;
+// }
 
 #endif
 

@@ -58,7 +58,7 @@ impl SharedState {
 struct Token;
 
 impl FileOpener<Pin<Ref<SharedState>>> for Token {
-    fn open(shared: &Pin<Ref<SharedState>>) -> Result<Self::Wrapper> {
+    fn open(shared: &Pin<Ref<SharedState>>, fileref: &File) -> Result<Self::Wrapper> {
         Ok(shared.clone())
     }
 }

@@ -85,7 +85,7 @@ pub(crate) struct RawList<G: GetLinks> {
 }
 
 impl<G: GetLinks> RawList<G> {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { head: None }
     }
 
@@ -163,6 +163,37 @@ impl<G: GetLinks> RawList<G> {
         self.push_back_internal(new)
     }
 
+    fn push_front_internal(&mut self, new: &G::EntryType) -> bool {
+        let links = G::get_links(new);
+        if !links.acquire_for_insertion() {
+            // Nothing to do if already inserted.
+            return false;
+        }
+
+        // SAFETY: The links are now owned by the list, so it is safe to get a mutable reference.
+        let new_entry = unsafe { &mut *links.entry.get() };
+        let new_ptr = Some(NonNull::from(new));
+        match self.back() {
+            // SAFETY: `back` is valid as the list cannot change.
+            Some(back) => {
+                self.insert_after_priv(unsafe { back.as_ref() }, new_entry, new_ptr);
+                self.head = self.back(); // move head so that the back become the front
+            },
+            None => {
+                self.head = new_ptr;
+                new_entry.next = new_ptr;
+                new_entry.prev = new_ptr;
+            }
+        }
+        true
+
+    }
+
+    pub(crate) unsafe fn push_front(&mut self, new: &G::EntryType) -> bool {
+        self.push_front_internal(new)
+    }
+
+
     fn remove_internal(&mut self, data: &G::EntryType) -> bool {
         let links = G::get_links(data);
 
@@ -238,6 +269,10 @@ impl<G: GetLinks> RawList<G> {
     pub(crate) fn cursor_front_mut(&mut self) -> CursorMut<'_, G> {
         CursorMut::new(self, self.front())
     }
+
+    pub(crate) fn cursor_back_mut(&mut self) -> CursorMut<'_, G> {
+        CursorMut::new(self, self.back())
+    }
 }
 
 struct CommonCursor<G: GetLinks> {
@@ -300,6 +335,13 @@ impl<'a, G: GetLinks> Cursor<'a, G> {
     }
 
     /// Returns the element the cursor is currently positioned on.
+    pub fn current_mut(&self) -> Option<&'a mut G::EntryType> {
+        let cur = self.cursor.cur?;
+        // SAFETY: Objects must be kept alive while on the list.
+        Some(unsafe { &mut *cur.as_ptr() })
+    }
+
+    /// Returns the element the cursor is currently positioned on.
     pub fn current(&self) -> Option<&'a G::EntryType> {
         let cur = self.cursor.cur?;
         // SAFETY: Objects must be kept alive while on the list.
@@ -357,5 +399,10 @@ impl<'a, G: GetLinks> CursorMut<'a, G> {
 
     pub(crate) fn move_next(&mut self) {
         self.cursor.move_next(self.list);
+    }
+
+    /// Moves the cursor to the prev element.
+    pub(crate) fn move_prev(&mut self) {
+        self.cursor.move_prev(self.list);
     }
 }

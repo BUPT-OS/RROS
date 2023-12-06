@@ -5,8 +5,8 @@
 //! This module allows Rust code to use the kernel's [`struct mutex`].
 
 use super::{Guard, Lock, NeedsLockClass};
-use crate::bindings;
-use crate::str::CStr;
+use crate::pr_info;
+use crate::{bindings, str::CStr, Opaque};
 use core::{cell::UnsafeCell, marker::PhantomPinned, pin::Pin};
 
 /// Safely initialises a [`Mutex`] with the given name, generating a new lock class.
@@ -29,7 +29,7 @@ macro_rules! mutex_init {
 /// [`struct mutex`]: ../../../include/linux/mutex.h
 pub struct Mutex<T: ?Sized> {
     /// The kernel `struct mutex` object.
-    mutex: UnsafeCell<bindings::mutex>,
+    mutex: Opaque<bindings::mutex>,
 
     /// A mutex needs to be pinned because it contains a [`struct list_head`] that is
     /// self-referential, so it cannot be safely moved once it is initialised.
@@ -52,9 +52,9 @@ impl<T> Mutex<T> {
     /// # Safety
     ///
     /// The caller must call [`Mutex::init`] before using the mutex.
-    pub unsafe fn new(t: T) -> Self {
+    pub const unsafe fn new(t: T) -> Self {
         Self {
-            mutex: UnsafeCell::new(bindings::mutex::default()),
+            mutex: Opaque::uninit(),
             data: UnsafeCell::new(t),
             _pin: PhantomPinned,
         }
@@ -66,6 +66,7 @@ impl<T: ?Sized> Mutex<T> {
     /// a time is allowed to access the protected data.
     pub fn lock(&self) -> Guard<'_, Self> {
         self.lock_noguard();
+        // pr_info!("the lock is locked");
         // SAFETY: The mutex was just acquired.
         unsafe { Guard::new(self) }
     }
@@ -86,9 +87,7 @@ impl<T: ?Sized> Lock for Mutex<T> {
 
     fn lock_noguard(&self) {
         // SAFETY: `mutex` points to valid memory.
-        unsafe {
-            rust_helper_mutex_lock(self.mutex.get());
-        }
+        unsafe { bindings::mutex_lock(self.mutex.get()) };
     }
 
     unsafe fn unlock(&self) {

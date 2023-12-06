@@ -13,19 +13,22 @@ use crate::{
 use alloc::vec::Vec;
 
 extern "C" {
-    fn rust_helper_copy_from_user(
+    pub fn rust_helper_copy_from_user(
         to: *mut c_types::c_void,
         from: *const c_types::c_void,
         n: c_types::c_ulong,
     ) -> c_types::c_ulong;
 
-    fn rust_helper_copy_to_user(
+    pub fn rust_helper_copy_to_user(
         to: *mut c_types::c_void,
         from: *const c_types::c_void,
         n: c_types::c_ulong,
     ) -> c_types::c_ulong;
 
-    fn rust_helper_clear_user(to: *mut c_types::c_void, n: c_types::c_ulong) -> c_types::c_ulong;
+    pub fn rust_helper_clear_user(
+        to: *mut c_types::c_void,
+        n: c_types::c_ulong,
+    ) -> c_types::c_ulong;
 }
 
 /// A reference to an area in userspace memory, which can be either

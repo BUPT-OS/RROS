@@ -173,6 +173,24 @@ impl CStr {
     pub const fn as_bytes_with_nul(&self) -> &[u8] {
         &self.0
     }
+
+    /// Yields a [`&str`] slice if the [`CStr`] contains valid UTF-8.
+    ///
+    /// If the contents of the [`CStr`] are valid UTF-8 data, this
+    /// function will return the corresponding [`&str`] slice. Otherwise,
+    /// it will return an error with details of where UTF-8 validation failed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use kernel::str::CStr;
+    /// let cstr = CStr::from_bytes_with_nul(b"foo\0").unwrap();
+    /// assert_eq!(cstr.to_str(), Ok("foo"));
+    /// ```
+    #[inline]
+    pub fn to_str(&self) -> Result<&str, core::str::Utf8Error> {
+        core::str::from_utf8(self.as_bytes())
+    }
 }
 
 impl AsRef<BStr> for CStr {
@@ -251,7 +269,7 @@ where
 /// ```
 #[macro_export]
 macro_rules! c_str {
-    ($str:literal) => {{
+    ($str:expr) => {{
         const S: &str = concat!($str, "\0");
         const C: &$crate::str::CStr = $crate::str::CStr::from_bytes_with_nul_unwrap(S.as_bytes());
         C

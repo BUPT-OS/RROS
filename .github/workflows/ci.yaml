@@ -1,7 +1,7 @@
 on:
   pull_request: {}
   schedule:
-    - cron: '30 11,17 * * *'
+    - cron: '30 11,23 * * *'
   # push:
 
 jobs:
@@ -150,8 +150,8 @@ jobs:
       # Setup: GCC
       - if: matrix.arch == 'arm'
         run:  apt-get install -y gcc-arm-linux-gnueabi lzop
-      - if: matrix.arch == 'arm64'
-        run:  apt-get install -y gcc-aarch64-linux-gnu
+      # - if: matrix.arch == 'arm64'
+      #   run:  apt-get install -y gcc-aarch64-linux-gnu
       - if: matrix.arch == 'ppc64le'
         run:  apt-get install -y gcc-powerpc64le-linux-gnu
       - if: matrix.arch == 'riscv64'
@@ -162,13 +162,13 @@ jobs:
         run:  apt-get install -y opensbi
 
       # Setup: libelf
-      - run:  apt-get install -y libelf-dev
+      # - run:  apt-get install -y libelf-dev
 
       # Setup: QEMU
       - if: matrix.arch == 'x86_64'
         run:  apt-get install -y qemu-system-x86
-      - if: matrix.arch == 'arm' || matrix.arch == 'arm64'
-        run:  apt-get install -y qemu-system-arm
+      # - if: matrix.arch == 'arm' || matrix.arch == 'arm64'
+        # run:  apt-get install -y qemu-system-arm
       - if: matrix.arch == 'ppc64le'
         run:  apt-get install -y qemu-system-ppc
       - if: matrix.arch == 'riscv64'
@@ -213,7 +213,7 @@ jobs:
       
       # Setup: ccache
       - run: |
-          apt-get install ccache
+          # apt-get install ccache
           echo '/usr/lib/ccache:$PATH' >> $GITHUB_PATH
           echo 'CCACHE_COMPRESS=true' >> $GITHUB_ENV
                 

@@ -9,7 +9,9 @@ use crate::{
     sync::{Ref, RefBorrow},
 };
 use alloc::{boxed::Box, sync::Arc};
-use core::{ops::Deref, pin::Pin, ptr::NonNull};
+use core::{
+    cell::UnsafeCell, marker::PhantomData, mem::MaybeUninit, ops::Deref, pin::Pin, ptr::NonNull,
+};
 
 /// Permissions.
 ///
@@ -245,5 +247,180 @@ impl<T: FnOnce()> Drop for ScopeGuard<T> {
         if let Some(cleanup) = self.cleanup_func.take() {
             cleanup();
         }
+    }
+}
+
+/// Stores an opaque value.
+///
+/// This is meant to be used with FFI objects that are never interpreted by Rust code.
+pub struct Opaque<T>(MaybeUninit<UnsafeCell<T>>);
+
+impl<T> Opaque<T> {
+    /// Creates a new opaque value.
+    pub fn new(value: T) -> Self {
+        Self(MaybeUninit::new(UnsafeCell::new(value)))
+    }
+
+    /// Creates an uninitialised value.
+    pub const fn uninit() -> Self {
+        Self(MaybeUninit::uninit())
+    }
+
+    /// Returns a raw pointer to the opaque data.
+    pub fn get(&self) -> *mut T {
+        UnsafeCell::raw_get(self.0.as_ptr())
+    }
+}
+
+extern "C" {
+    fn rust_helper_hash_init(ht: *mut bindings::hlist_head, size: u32);
+    fn rust_helper_rcu_read_lock();
+    fn rust_helper_rcu_read_unlock();
+    fn rust_helper_synchronize_rcu();
+}
+
+pub struct RcuHead(bindings::callback_head);
+
+impl RcuHead {
+    pub fn new() -> Self {
+        Self(bindings::callback_head::default())
+    }
+}
+pub struct HlistNode(bindings::hlist_node);
+
+impl HlistNode {
+    pub fn new() -> Self {
+        Self(bindings::hlist_node::default())
+    }
+    // pub fn hash_del(&mut self){
+    //     extern "C"{
+    //         fn rust_helper_hash_del(node: *mut bindings::hlist_node);
+    //     }
+    //     unsafe{
+    //         rust_helper_hash_del(&mut self.0 as *mut bindings::hlist_node);
+    //     }
+    // }
+}
+
+#[derive(Clone, Copy)]
+pub struct HlistHead(bindings::hlist_head);
+
+impl HlistHead {
+    pub fn new() -> Self {
+        Self(bindings::hlist_head::default())
+    }
+
+    pub fn as_list_head(&mut self) -> *mut bindings::hlist_head {
+        &mut self.0 as *mut bindings::hlist_head
+    }
+}
+
+
+pub fn hash_init(ht: *mut bindings::hlist_head, size: u32) {
+    unsafe { rust_helper_hash_init(ht, size) };
+}
+
+
+/// Types that are _always_ reference counted.
+///
+/// It allows such types to define their own custom ref increment and decrement functions.
+/// Additionally, it allows users to convert from a shared reference `&T` to an owned reference
+/// [`ARef<T>`].
+///
+/// This is usually implemented by wrappers to existing structures on the C side of the code. For
+/// Rust code, the recommendation is to use [`Arc`] to create reference-counted instances of a
+/// type.
+///
+/// # Safety
+///
+/// Implementers must ensure that increments to the reference count keeps the object alive in
+/// memory at least until a matching decrement performed.
+///
+/// Implementers must also ensure that all instances are reference-counted. (Otherwise they
+/// won't be able to honour the requirement that [`AlwaysRefCounted::inc_ref`] keep the object
+/// alive.)
+pub unsafe trait AlwaysRefCounted {
+    /// Increments the reference count on the object.
+    fn inc_ref(&self);
+
+    /// Decrements the reference count on the object.
+    ///
+    /// Frees the object when the count reaches zero.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that there was a previous matching increment to the reference count,
+    /// and that the object is no longer used after its reference count is decremented (as it may
+    /// result in the object being freed), unless the caller owns another increment on the refcount
+    /// (e.g., it calls [`AlwaysRefCounted::inc_ref`] twice, then calls
+    /// [`AlwaysRefCounted::dec_ref`] once).
+    unsafe fn dec_ref(obj: NonNull<Self>);
+}
+
+/// An owned reference to an always-reference-counted object.
+///
+/// The object's reference count is automatically decremented when an instance of [`ARef`] is
+/// dropped. It is also automatically incremented when a new instance is created via
+/// [`ARef::clone`].
+///
+/// # Invariants
+///
+/// The pointer stored in `ptr` is non-null and valid for the lifetime of the [`ARef`] instance. In
+/// particular, the [`ARef`] instance owns an increment on underlying object's reference count.
+pub struct ARef<T: AlwaysRefCounted> {
+    ptr: NonNull<T>,
+    _p: PhantomData<T>,
+}
+
+impl<T: AlwaysRefCounted> ARef<T> {
+    /// Creates a new instance of [`ARef`].
+    ///
+    /// It takes over an increment of the reference count on the underlying object.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that the reference count was incremented at least once, and that they
+    /// are properly relinquishing one increment. That is, if there is only one increment, callers
+    /// must not use the underlying object anymore -- it is only safe to do so via the newly
+    /// created [`ARef`].
+    pub unsafe fn from_raw(ptr: NonNull<T>) -> Self {
+        // INVARIANT: The safety requirements guarantee that the new instance now owns the
+        // increment on the refcount.
+        Self {
+            ptr,
+            _p: PhantomData,
+        }
+    }
+}
+impl<T: AlwaysRefCounted> Clone for ARef<T> {
+    fn clone(&self) -> Self {
+        self.inc_ref();
+        // SAFETY: We just incremented the refcount above.
+        unsafe { Self::from_raw(self.ptr) }
+    }
+}
+
+impl<T: AlwaysRefCounted> Deref for ARef<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: The type invariants guarantee that the object is valid.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: AlwaysRefCounted> From<&T> for ARef<T> {
+    fn from(b: &T) -> Self {
+        b.inc_ref();
+        // SAFETY: We just incremented the refcount above.
+        unsafe { Self::from_raw(NonNull::from(b)) }
+    }
+}
+
+impl<T: AlwaysRefCounted> Drop for ARef<T> {
+    fn drop(&mut self) {
+        // SAFETY: The type invariants guarantee that the `ARef` owns the reference we're about to
+        // decrement.
+        unsafe { T::dec_ref(self.ptr) };
     }
 }

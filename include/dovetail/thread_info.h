@@ -8,6 +8,10 @@
  */
 
 struct oob_thread_state {
+    int preempt_count;
+
+    void *thread;
+    // struct rros_thread *thread;
 };
 
 #endif /* !_DOVETAIL_THREAD_INFO_H */

@@ -22,7 +22,8 @@
     const_raw_ptr_deref,
     const_unreachable_unchecked,
     receiver_trait,
-    try_reserve
+    try_reserve,
+    unsafe_cell_raw_get
 )]
 
 // Ensure conditional compilation based on the kernel configuration works;
@@ -40,7 +41,7 @@ pub mod bindings;
 pub mod buffer;
 pub mod c_types;
 pub mod chrdev;
-mod error;
+pub mod error;
 pub mod file;
 pub mod file_operations;
 pub mod miscdev;
@@ -71,22 +72,28 @@ pub mod io_buffer;
 pub mod iov_iter;
 pub mod of;
 pub mod platdev;
-mod types;
+pub mod types;
 pub mod user_ptr;
 
 pub mod bitmap;
 pub mod class;
-pub mod cpumask;
 pub mod clockchips;
+pub mod completion;
+pub mod cpumask;
+pub mod device;
 pub mod double_linked_list;
 pub mod double_linked_list2;
-pub mod device;
+pub mod dovetail;
 pub mod endian;
 pub mod fs;
+pub mod irq_pipeline;
 pub mod irq_work;
 pub mod irqstage;
-pub mod irq_pipeline;
+pub mod kthread;
+pub mod ktime;
 pub mod mm;
+#[cfg(CONFIG_NET)]
+pub mod net;
 pub mod percpu;
 pub mod percpu_defs;
 pub mod premmpt;
@@ -95,18 +102,15 @@ pub mod timekeeping;
 pub mod uidgid;
 pub mod vmalloc;
 pub mod workqueue;
-pub mod kthread;
-pub mod ktime;
-pub mod dovetail;
-pub mod completion;
-#[cfg(CONFIG_NET)]
-pub mod net;
+pub mod memory_rros;
+pub mod memory_rros_test;
+pub mod uapi;
 
 #[doc(hidden)]
 pub use build_error::build_error;
 
 pub use crate::error::{Error, Result};
-pub use crate::types::{Mode, ScopeGuard};
+pub use crate::types::{ARef, AlwaysRefCounted, Mode, Opaque, ScopeGuard};
 
 /// Page size defined in terms of the `PAGE_SHIFT` macro from C.
 ///
@@ -147,6 +151,9 @@ impl ThisModule {
         ThisModule(ptr)
     }
 
+    pub const fn get_ptr(&self) -> *mut bindings::module {
+        self.0
+    }
     /// Locks the module parameters to access them.
     ///
     /// Returns a [`KParamGuard`] that will release the lock when dropped.

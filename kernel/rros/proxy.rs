@@ -19,8 +19,10 @@ use crate::{
 
 use kernel::{
     bindings,
+    device::DeviceType,
     file::File,
     file_operations::{FileOpener, FileOperations},
+    from_kernel_result,
     io_buffer::{IoBufferReader, IoBufferWriter},
     prelude::*,
     premmpt::running_inband,
@@ -1017,15 +1019,15 @@ fn proxy_factory_build(
 
 pub static mut RROS_PROXY_FACTORY: SpinLock<RrosFactory> = unsafe {
     SpinLock::new(RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("RROS_PROXY_DEV\0".as_bytes()),
+        name: unsafe { CStr::from_bytes_with_nul_unchecked("proxy\0".as_bytes()) },
         // fops: Some(&RustFileProxy),
         nrdev: CONFIG_RROS_NR_PROXIES,
         build: Some(proxy_factory_build),
         dispose: Some(proxy_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
-        flags: 1,
+        flags: crate::factory::RrosFactoryType::CLONE,
         inside: Some(RrosFactoryInside {
-            rrtype: None,
+            type_: DeviceType::new(),
             class: None,
             cdev: None,
             device: None,

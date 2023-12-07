@@ -10,7 +10,7 @@
 
 RROS is a dual-kernel OS, consisting of a real-time kernel (in Rust) and a general-purpose kernel (Linux). RROS is compatible with almost all native Linux programs and offers real-time performance superior to RT-Linux. It is also being experimented with as the host OS for in-orbit satellites ([Tiansuan Project](http://www.tiansuan.org.cn/)).
 
-The architecture diagram is [here](https://bupt-os.github.io/website/architecture.png).
+Here is an [architecture diagram](https://bupt-os.github.io/website/architecture.png) and a [TODO: demo video](#) of RROS.
 
 ## News
 
@@ -132,34 +132,27 @@ On Linux (Debian-like distros), do the following:
        -m 4096
    ```
 
-## Demo
-
-[TODO: upload the demo video to the YouTube and update the link]
-
 ## Documentation
 
 Check out our detailed [documentation](https://bupt-os.github.io/website/docs/).
 
-## Contribution
+## Communication & Contribution
 
-See [here](https://bupt-os.github.io/website/docs/contributing/contributing/) if you want to make contribution to RROS, which is very welcomed!
+Contact us at [Zulip Forum](https://rros.zulipchat.com/) or with email `buptrros AT gmail.com`.
+
+Contributions are also very welcomed! [Check it out](https://bupt-os.github.io/website/docs/contributing/contributing/).
 
 ## Roadmap
 
 See [here](https://bupt-os.github.io/website/docs/roadmap/roadmap) for our future roadmap.
 
-## Contact
+## Who are we
 
-- Forum: You can also contact with us in [Zulip](https://rros.zulipchat.com/).
-- Email: Our email is `buptrros AT gmail.com`.
+We are a [research group](https://bupt-os.github.io/website/docs/team/team/) at BUPT.
 
 ## Release
 
 The RROS relies on both the dovetail and the Rust for Linux(RFL), neither of which currently provides patches. Integrating one into the other at a high frequency is challenging. As a result, RROS is currently tied to Linux kernel version 5.13, built on top of linux-dovetail-v5.13, and readily compatible with RFL patch v1. Fortunately, RFL is swiftly making its way into the mainline Linux kernel. We plan to release new versions once most of the RFL APIs we depend on are available in the linux-dovetail mainline. At that point, we will further consider Long-Term Support (LTS) versions.
-
-## Who are we
-
-We are a [research group](https://bupt-os.github.io/website/docs/team/team/) at BUPT.
 
 ## Acknowledgements
 

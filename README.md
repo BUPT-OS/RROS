@@ -14,8 +14,8 @@ The architecture diagram is [here](https://bupt-os.github.io/website/architectur
 
 ## News
 
-XXX
-
+- [2023.11.30] RROS is presented in Xenomai Workshop 2023 ([photos](#)).
+- [2023.11.28] :fire: RROS is open-sourced!
 
 ## Why RROS
 
@@ -24,11 +24,11 @@ RROS is primarily intended for satellites (onboard computers, payloads, etc). Th
 The advantages of RROS are:
 
 * **Hard real-time**: 
-RROS offers superior real-time performance compared to RT-Linux, which can meet most scenarios' real-time requirements. RROS is designed with an efficient task scheduler that can quickly respond to external events, reducing task switching and processing delays.
+RROS offers superior real-time performance compared to RT-Linux. RROS is designed with an efficient task scheduler that can quickly respond to external events, reducing task switching and processing delays.
 * **Compatibility**: 
-RROS is compatible with almost every Linux program, allowing seamless migration of large-scale Linux applications, such as TensorFlow and Kubernetes. Additionally, you can modify your general Linux programs to provide a certain degree of real-time capability.
+RROS is compatible with almost every Linux program, allowing seamless migration of complex Linux applications such as TensorFlow and Kubernetes. You can also easily modify your general Linux programs into a more real-time counterpart.
 * **Easy to use**: 
-RROS facilitates easy writing and debugging of real-time programs. RROS uses the libevl interface to call real-time APIs for user programs, allowing you to use tools like gdb for debugging. Additionally, you can use QEMU and kgdb or an external debugger connected with an actual board and kgdb to inspect the operation of the real-time kernel.
+RROS facilitates easy programming and debugging of real-time programs. RROS uses the libevl interface to call real-time APIs for user programs, allowing you to use tools like gdb, kgdb, and QEMU.
 * **Robustness**:
 The real-time kernel of RROS is carefully written in Rust, making it safer and more robust, especially for memory and concurrency issues.
 * **Runtime flexibility**:
@@ -138,11 +138,11 @@ On Linux (Debian-like distros), do the following:
 
 ## Documentation
 
-See the [documentation](https://bupt-os.github.io/website/docs/) on our website for details.
+Check out our detailed [documentation](https://bupt-os.github.io/website/docs/).
 
 ## Contribution
 
-See [here](https://bupt-os.github.io/website/docs/contributing/contributing/) for contribution.
+See [here](https://bupt-os.github.io/website/docs/contributing/contributing/) if you want to make contribution to RROS, which is very welcomed!
 
 ## Roadmap
 
@@ -159,7 +159,7 @@ The RROS relies on both the dovetail and the Rust for Linux(RFL), neither of whi
 
 ## Who are we
 
-See [here](https://bupt-os.github.io/website/docs/team/team/) for our team.
+We are a [research group](https://bupt-os.github.io/website/docs/team/team/) at BUPT.
 
 ## Acknowledgements
 

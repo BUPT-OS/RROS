@@ -10,7 +10,7 @@
 
 RROS is a dual-kernel OS, consisting of a real-time kernel (in Rust) and a general-purpose kernel (Linux). RROS is compatible with almost all native Linux programs and offers real-time performance superior to RT-Linux. It is also being experimented with as the host OS for in-orbit satellites ([Tiansuan Project](http://www.tiansuan.org.cn/)).
 
-You can get our architecture diagram [here](https://bupt-os.github.io/website/architecture.png).
+The architecture diagram is [here](https://bupt-os.github.io/website/architecture.png).
 
 ## News
 
@@ -19,16 +19,16 @@ XXX
 
 ## Why RROS
 
-RROS is primarily intended for satellites (onboard computers, payloads, etc). The key incentive is the trend that nowadays satellites serve traditional satellite-borne real-time tasks (communication and positioning) and general-purpose tasks that need mature, complicated software support such as data compression and machine learning. That catalyzes the dual-kernel architecture of RROS. Taking a step further, the real-time kernel of RROS is fully implemented in Rust for better safety and robustness. However, RROS can be used in scenarios like automatic cars, IoTs, industrial control, etc.
+RROS is primarily intended for satellites (onboard computers, payloads, etc). The key incentive is the trend that nowadays satellites serve both traditional satellite-borne real-time tasks (e.g., communication and positioning) and general-purpose tasks that need mature, complicated software support (e.g., data compression and machine learning). That catalyzes the dual-kernel architecture of RROS. Taking a step further, the real-time kernel of RROS is fully implemented in Rust for better safety and robustness. However, RROS can be used in scenarios like automatic cars, IoTs, industrial control, etc.
 
 The advantages of RROS are:
 
 * **Hard real-time**: 
 RROS offers superior real-time performance compared to RT-Linux, which can meet most scenarios' real-time requirements. RROS is designed with an efficient task scheduler that can quickly respond to external events, reducing task switching and processing delays.
 * **Compatibility**: 
-RROS is compatible with almost every Linux program, allowing seamless migration of large-scale Linux applications, such as TensorFlow, Kubernetes, and more, to RROS. Additionally, you can modify your general Linux programs to provide a certain degree of real-time capability.
+RROS is compatible with almost every Linux program, allowing seamless migration of large-scale Linux applications, such as TensorFlow and Kubernetes. Additionally, you can modify your general Linux programs to provide a certain degree of real-time capability.
 * **Easy to use**: 
-RROS facilitates easy writing and debugging of real-time programs. RROS uses the libevl interface to call real-time APIs for user programs, allowing you to use tools like gdb for debugging, just as you would with standard Linux programs. Additionally, in the kernel, you can use QEMU and kgdb or an external debugger connected with an actual board and kgdb to inspect the operation of the real-time system within the kernel.
+RROS facilitates easy writing and debugging of real-time programs. RROS uses the libevl interface to call real-time APIs for user programs, allowing you to use tools like gdb for debugging. Additionally, you can use QEMU and kgdb or an external debugger connected with an actual board and kgdb to inspect the operation of the real-time kernel.
 * **Robustness**:
 The real-time kernel of RROS is carefully written in Rust, making it safer and more robust, especially for memory and concurrency issues.
 * **Runtime flexibility**:

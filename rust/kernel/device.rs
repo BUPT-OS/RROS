@@ -4,13 +4,15 @@
 //!
 //! C header: [`include/linux/device.h`](../../../../include/linux/device.h)
 
+use crate::prelude::Box;
+
 use crate::{
     bindings, c_types,
     str::CStr,
     uidgid::{KgidT, KuidT},
 };
 
-use core::{marker::PhantomData, mem::ManuallyDrop};
+use core::marker::PhantomData;
 
 /// The `DeviceType` struct is a wrapper around the `bindings::device_type` struct from the kernel bindings. It represents a device type in the kernel.
 #[repr(transparent)]
@@ -18,13 +20,13 @@ pub struct DeviceType(bindings::device_type);
 
 impl DeviceType {
     pub const fn new() -> Self {
-        Self(bindings::device_type{
-            name : core::ptr::null(),
-            groups : core::ptr::null_mut(),
-            uevent : None ,
-            devnode : None,
-            release : None,
-            pm : core::ptr::null()
+        Self(bindings::device_type {
+            name: core::ptr::null(),
+            groups: core::ptr::null_mut(),
+            uevent: None,
+            devnode: None,
+            release: None,
+            pm: core::ptr::null(),
         })
     }
 
@@ -54,15 +56,15 @@ pub struct Device(*mut bindings::device);
 
 impl Device {
     // FIXME: temporarily used
-    pub unsafe fn raw_new<func>(mut init: func, name: &CStr) -> Self
+    pub unsafe fn raw_new<FUNC>(mut init: FUNC, name: &CStr) -> Self
     where
-        func: FnMut(&mut bindings::device),
+        FUNC: FnMut(&mut bindings::device),
     {
         let dev = Box::try_new(bindings::device::default()).unwrap();
         let dev = Box::leak(dev);
         init(dev);
-        unsafe{bindings::dev_set_name(dev, name.as_char_ptr())};
-        unsafe{bindings::device_register(dev)};
+        unsafe { bindings::dev_set_name(dev, name.as_char_ptr()) };
+        unsafe { bindings::device_register(dev) };
         Self(dev as *mut bindings::device)
     }
 
@@ -76,7 +78,7 @@ impl Device {
 
     #[inline]
     pub fn get_drvdata<T>(&mut self) -> Option<&T> {
-        let ptr = unsafe { (*self.0) }.driver_data as *const T;
+        let ptr = unsafe { *self.0 }.driver_data as *const T;
         if ptr.is_null() {
             None
         } else {
@@ -105,10 +107,7 @@ impl Device {
 }
 
 pub trait ClassDevnode {
-    fn devnode(
-        dev: &mut Device,
-        mode: &mut u16,
-    ) -> *mut c_types::c_char;
+    fn devnode(dev: &mut Device, mode: &mut u16) -> *mut c_types::c_char;
 }
 
 pub trait Devnode {
@@ -148,7 +147,7 @@ unsafe extern "C" fn class_devnode_callback<T: ClassDevnode>(
     mode: *mut u16,
 ) -> *mut c_types::c_char {
     let dev = &mut Device(dev);
-    let mode = unsafe{&mut *mode};
+    let mode = unsafe { &mut *mode };
     T::devnode(dev, mode)
 }
 
@@ -159,16 +158,16 @@ unsafe extern "C" fn devnode_callback<T: Devnode>(
     gid: *mut bindings::kgid_t,
 ) -> *mut c_types::c_char {
     let dev = &mut Device(dev);
-    let mode = unsafe{&mut *mode};
+    let mode = unsafe { &mut *mode };
     let uid = if uid.is_null() {
         None
     } else {
-        unsafe{Some(&mut *(uid as *mut KuidT))}
+        unsafe { Some(&mut *(uid as *mut KuidT)) }
     };
     let gid = if gid.is_null() {
         None
     } else {
-        unsafe{Some(&mut *(gid as *mut KgidT))}
+        unsafe { Some(&mut *(gid as *mut KgidT)) }
     };
     T::devnode(dev, mode, uid, gid)
 }

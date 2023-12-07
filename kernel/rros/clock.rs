@@ -24,6 +24,7 @@ use core::ops::Deref;
 use core::ops::DerefMut;
 use core::{mem::align_of, mem::size_of, todo};
 use factory::RROS_CLONE_PUBLIC;
+use kernel::device::DeviceType;
 use kernel::file::File;
 use kernel::io_buffer::IoBufferWriter;
 use kernel::{
@@ -499,7 +500,7 @@ pub static mut CLOCK_LIST: List<*mut RrosClock> = List::<*mut RrosClock> {
 
 /*
 struct rros_factory rros_clock_factory = {
-    .name	=	RROS_CLOCK_DEV,
+    .name	=	clock,
     .fops	=	&clock_fops,
     .nrdev	=	CONFIG_RROS_NR_CLOCKS,
     .attrs	=	clock_groups,
@@ -508,15 +509,15 @@ struct rros_factory rros_clock_factory = {
 */
 pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("RROS_CLOCK_DEV\0".as_bytes()) },
-        // fops: Some(&ClockOps),
+        name: unsafe { CStr::from_bytes_with_nul_unchecked("clock\0".as_bytes()) },
+        // fops: Some(&Clockops),
         nrdev: CONFIG_RROS_NR_CLOCKS,
         build: None,
         dispose: Some(clock_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
-        flags: 2,
+        flags: factory::RrosFactoryType::SINGLE,
         inside: Some(factory::RrosFactoryInside {
-            rrtype: None,
+            type_: DeviceType::new(),
             class: None,
             cdev: None,
             device: None,

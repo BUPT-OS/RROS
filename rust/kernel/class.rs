@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! class
 //!
 //! C header: [`include/linux/device/class.h`](../../../../include/linux/device/class.h)
 
 use core::u32;
 
-use crate::{bindings, c_types, error::Error, Result};
+use crate::{bindings, c_types, error::Error, Result, device};
 
 extern "C" {
     #[allow(improper_ctypes)]
@@ -49,9 +49,13 @@ impl Class {
         Ok(Self { ptr })
     }
 
-    // fn add_function_devnode(){
+    pub fn set_devnode<T: device::ClassDevnode>(&mut self) {
+        unsafe { (*(self.ptr)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback(); }
+    }
 
-    // }
+    pub fn get_ptr(&self) -> *mut bindings::class {
+        self.ptr
+    }
 }
 
 /// The `class_create` function is a helper function that creates a new device class. It takes a reference to the current module and a name, and returns a raw pointer to the created class./// The `DevT` struct is a wrapper around the `bindings::dev_t` struct from the kernel bindings. It represents a device type.

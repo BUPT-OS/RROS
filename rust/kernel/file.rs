@@ -142,3 +142,7 @@ impl Drop for FileDescriptorReservation {
         unsafe { bindings::put_unused_fd(self.fd) };
     }
 }
+
+pub fn fd_install(fd: u32, filp: *mut bindings::file) {
+    unsafe { bindings::fd_install(fd, filp); }
+}

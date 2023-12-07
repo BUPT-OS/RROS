@@ -180,6 +180,13 @@ impl<const N: usize> Registration<{ N }> {
         inner.used += 1;
         Ok(())
     }
+
+    pub fn last_registered_devt(self: Pin<&mut Self>) -> Option<u32>{
+        let this = unsafe { self.get_unchecked_mut() };
+        this.inner.as_mut().map(|inner|{
+            (inner.dev as u32 + (inner.used as u32 - 1)) as u32
+        })
+    }
 }
 
 // FIXME: update the kernel-doc comment once the API is finalised as below.

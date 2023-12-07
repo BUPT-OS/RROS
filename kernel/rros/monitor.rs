@@ -10,7 +10,9 @@ use crate::{
     wait::RrosWaitQueue,
 };
 
-use kernel::{c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error};
+use kernel::{
+    bindings, c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error, device::DeviceType,
+};
 
 use kernel::file::File;
 use kernel::file_operations::FileOperations;
@@ -307,15 +309,15 @@ pub fn monitor_factory_build(
 #[allow(dead_code)]
 pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("RROS_MONITOR_DEV\0".as_bytes()),
+        name: unsafe { CStr::from_bytes_with_nul_unchecked("monitor\0".as_bytes()) },
         // fops: Some(&MonitorOps),
         nrdev: CONFIG_RROS_MONITOR,
         build: None,
         dispose: Some(monitor_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
-        flags: 2,
+        flags: factory::RrosFactoryType::CLONE,
         inside: Some(factory::RrosFactoryInside {
-            rrtype: None,
+            type_: DeviceType::new(),
             class: None,
             cdev: None,
             device: None,

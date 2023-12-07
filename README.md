@@ -41,7 +41,8 @@ On Linux (Debian-like distros), do the following:
 1. Clone this repository:
 
    ```bash
-   git clone https://github.com/rust-real-time-os/RTOS.git
+   
+   git clone https://github.com/BUPT-OS/RROS.git
    ```
 
 2. Install Rust toolchain:

@@ -50,8 +50,7 @@ const CONFIG_RROS_LATENCY_USER: KtimeT = 0;
 const CONFIG_RROS_LATENCY_KERNEL: KtimeT = 0;
 const CONFIG_RROS_LATENCY_IRQ: KtimeT = 0;
 
-// There should be 8.
-pub const CONFIG_RROS_NR_CLOCKS: usize = 16;
+const CONFIG_RROS_NR_CLOCKS: usize = 8;
 
 #[derive(Default)]
 pub struct RustFileClock;
@@ -667,19 +666,34 @@ impl clockchips::CoreTick for RrosCoreTick {
 }
 
 fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
+    let mut ret = Ok(0);
     // unsafe{
     //     if (*clock).element.is_none(){
     //         return Err(kernel::Error::EINVAL);
     //     }
     // }
-    // unsafe{
-    //     factory::rros_init_element((*clock).element.as_ref().unwrap().clone(),
-    //     &mut RROS_CLOCK_FACTORY, (*clock).flags & RROS_CLONE_PUBLIC);
-    // }
+    unsafe{
+        ret = factory::rros_init_element((*clock).element.as_ref().unwrap().clone(),
+            &mut RROS_CLOCK_FACTORY, (*clock).flags & RROS_CLONE_PUBLIC);
+    }
+
+    if let Err(_) = ret {
+        return ret;
+    }
+
     unsafe {
         (*clock).master = master;
     }
-    //rros_create_core_element_device()?;
+
+    unsafe{
+        ret = factory::rros_create_core_element_device((*clock).element.as_ref().unwrap().clone(),
+                &mut RROS_CLOCK_FACTORY, (*clock).name);
+    }
+
+    if let Err(_) = ret {
+        //TODO: destroy element
+        return ret;
+    }
 
     unsafe {
         CLOCKLIST_LOCK.lock();
@@ -736,6 +750,8 @@ pub fn rros_clock_init() -> Result<usize> {
     unsafe {
         RROS_MONO_CLOCK.reset_gravity();
         RROS_REALTIME_CLOCK.reset_gravity();
+        RROS_MONO_CLOCK.element = Some(Rc::try_new(RefCell::new(RrosElement::new().unwrap())).unwrap());
+        RROS_REALTIME_CLOCK.element = Some(Rc::try_new(RefCell::new(RrosElement::new().unwrap())).unwrap());
         rros_init_clock(&mut RROS_MONO_CLOCK, &RROS_OOB_CPUS)?;
     }
     let ret = unsafe { rros_init_slave_clock(&mut RROS_REALTIME_CLOCK, &mut RROS_MONO_CLOCK) };

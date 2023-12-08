@@ -34,108 +34,11 @@ The real-time kernel of RROS is carefully written in Rust, making it safer and m
 
 ## Quick start
 
-On Linux (Debian-like distros), do the following:
-
-> Running RROS needs the following requirements: TODO: add the requirements of RROS. If you don't have a proper environment, you can follow our [environment document](https://bupt-os.github.io/website/docs/tutorial/environment/).
-
-1. Clone this repository:
-
-   ```bash
-   
-   git clone https://github.com/BUPT-OS/RROS.git
-   ```
-
-2. Install Rust toolchain:
-
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-
-   switch to `beta-2021-06-23-x86_64-unknown-linux-gnu`. Currently, we only support this compiler version.
-
-   ```bash
-   rustup toolchain install beta-2021-06-23-x86_64-unknown-linux-gnu
-   ```
-
-   Set the rust toolchain for this project:
-
-   ```bash
-   cd RROS
-   rustup override set beta-2021-06-23-x86_64-unknown-linux-gnu
-   ```
-
-   Add the rust `no-std` component.
-
-   ```bash
-   rustup component add rust-src
-   ```
-   
-3. Select compile options
-
-   Create a default configuration:
-
-   ```bash
-   export CROSS_COMPILE=aarch64-linux-gnu-
-   export ARCH=arm64
-
-   make LLVM=1 defconfig
-   make LLVM=1 menuconfig
-   ```
-
-   select the following options:
-
-   ```
-   General Setup --->  Rust Support
-   Kernel Features ---> Bupt real-time core
-   ```
-
-   You may need to cancel the option versioning support to enable `Rust support`:
-
-   ```
-   Enable loadable module support ---> Module versioning support.
-   ```
-
-4. Compile the kernel
-
-   ```bash
-   export CROSS_COMPILE=aarch64-linux-gnu-
-   export ARCH=arm64
-   make LLVM=1 -j
-   ```
-
-   If you want to boot on Raspberry PI 4, you need to generate dtbs and modules additionally.
-
-   ```bash
-   export INSTALL_MOD_PATH=/path/to/mod
-   export INSTALL_DTBS_PATH=/path/to/dtbs
-   make modules_install dtbs_install -j
-   ```
-
-   And move `broadcom`, `lib`, `overlays`, and `Image` to the boot partition of the SD card.
-
-5. Run on simulator
-
-   You need a filesystem to boot the kernel on QEMU. 
-
-   Here's an example of how to run on QEMU:
-
-   ```bash
-   qemu-system-aarch64 -nographic  \
-       -kernel Image \
-       -drive file=ubuntu-20.04-server-cloudimg-arm64.img \
-       -drive file=cloud_init.img,format=raw \
-       -initrd ubuntu-20.04-server-cloudimg-arm64-initrd-generic \
-       -machine virt-2.12,accel=kvm \
-       -cpu host  -enable-kvm \
-       -append "root=/dev/vda1 console=ttyAMA0"  \
-       -device virtio-scsi-device \
-       -smp 4 \
-       -m 4096
-   ```
+Check out the quick-start [documentation](https://bupt-os.github.io/website/docs/introduction/quick-start/) to run and develop RROS.
 
 ## Documentation
 
-Check out our detailed [documentation](https://bupt-os.github.io/website/docs/).
+Check out our [documentation](https://bupt-os.github.io/website/docs/).
 
 ## Communication & Contribution
 

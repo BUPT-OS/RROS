@@ -1,7 +1,7 @@
 # RROS
 
 [![Documentation](https://img.shields.io/badge/view-docs-blue)](https://bupt-os.github.io/website/docs/tutorial/docker/)
-<!-- [![ci tests](https://github.com/rust-real-time-os/RTOS/actions/ci.yml/badge.svg)](TODO: add a new CI in this repo) -->
+[![ci tests](https://github.com/bupt-os/RROS/actions/ci.yaml/badge.svg)
 [![Zulip chat](https://img.shields.io/badge/chat-on%20zulip-brightgreen)](https://rros.zulipchat.com/)
 ![RROS](https://img.shields.io/badge/RROS-0.0.1-orange)
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](https://github.com/BUPT-OS/RROS/blob/master/README.md)
@@ -31,12 +31,12 @@ RROS is compatible with almost every Linux program, allowing seamless migration 
 RROS facilitates easy programming and debugging of real-time programs. RROS uses the libevl interface to call real-time APIs for user programs, allowing you to use tools like gdb, kgdb, and QEMU.
 * **Robustness**:
 The real-time kernel of RROS is carefully written in Rust, making it safer and more robust, especially for memory and concurrency issues.
-* **Runtime flexibility**:
-RROS allows flexible runtime task scheduling on multicore processors. The number of cores dispatched to different real-time tasks or general-purpose tasks is dynamically adjusted based on the demands and workloads.
 
 ## Quick start
 
 On Linux (Debian-like distros), do the following:
+
+> Running RROS needs the following requirements: TODO: add the requirements of RROS. If you don't have a proper environment, you can follow our [environment document](https://bupt-os.github.io/website/docs/tutorial/environment/).
 
 1. Clone this repository:
 
@@ -60,7 +60,7 @@ On Linux (Debian-like distros), do the following:
    Set the rust toolchain for this project:
 
    ```bash
-   cd RTOS
+   cd RROS
    rustup override set beta-2021-06-23-x86_64-unknown-linux-gnu
    ```
 

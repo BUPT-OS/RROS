@@ -1,6 +1,6 @@
 # RROS
 
-[![Documentation](https://img.shields.io/badge/view-docs-blue)](https://rust-real-time-os.github.io/website/docs/)
+[![Documentation](https://img.shields.io/badge/view-docs-blue)](https://BUPT-OS.github.io/website/docs/)
 [![.github/workflows/ci.yaml](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml/badge.svg)](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml)
 [![Zulip chat](https://img.shields.io/badge/chat-on%20zulip-brightgreen)](https://rros.zulipchat.com/)
 ![RROS](https://img.shields.io/badge/RROS-0.0.1-orange)

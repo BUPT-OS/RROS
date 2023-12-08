@@ -1,7 +1,7 @@
 # RROS
 
 [![Documentation](https://img.shields.io/badge/view-docs-blue)](https://bupt-os.github.io/website/docs/tutorial/docker/)
-[![ci tests](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml/badge.svg)
+[![.github/workflows/ci.yaml](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml/badge.svg)](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml)
 [![Zulip chat](https://img.shields.io/badge/chat-on%20zulip-brightgreen)](https://rros.zulipchat.com/)
 ![RROS](https://img.shields.io/badge/RROS-0.0.1-orange)
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](https://github.com/BUPT-OS/RROS/blob/master/README.md)

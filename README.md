@@ -1,6 +1,6 @@
 # RROS
 
-[![Documentation](https://img.shields.io/badge/view-docs-blue)](https://bupt-os.github.io/website/docs/tutorial/docker/)
+[![Documentation](https://img.shields.io/badge/view-docs-blue)](https://rust-real-time-os.github.io/website/docs/)
 [![.github/workflows/ci.yaml](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml/badge.svg)](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml)
 [![Zulip chat](https://img.shields.io/badge/chat-on%20zulip-brightgreen)](https://rros.zulipchat.com/)
 ![RROS](https://img.shields.io/badge/RROS-0.0.1-orange)
@@ -10,7 +10,7 @@
 
 RROS is a dual-kernel OS, consisting of a real-time kernel (in Rust) and a general-purpose kernel (Linux). RROS is compatible with almost all native Linux programs and offers real-time performance superior to RT-Linux. It is also being experimented with as the host OS for in-orbit satellites ([Tiansuan Project](http://www.tiansuan.org.cn/)).
 
-Here is an [architecture diagram](https://bupt-os.github.io/website/architecture.png) and a [TODO: demo video](#) of RROS.
+Here is an [architecture diagram](https://bupt-os.github.io/website/architecture.png) and a [demo video](https://bupt-os.github.io/website/docs/introduction/demo.mp4) of RROS.
 
 ## News
 

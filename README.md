@@ -34,11 +34,11 @@ The real-time kernel of RROS is carefully written in Rust, making it safer and m
 
 ## Quick start
 
-Check out the quick-start [documentation](https://bupt-os.github.io/website/docs/introduction/quick-start/) to run and develop RROS.
+[Kick off with RROS easily](https://bupt-os.github.io/website/docs/introduction/quick-start/): boot, run, test, and develop with RROS.
 
-## Documentation
+## Document
 
-Check out our [documentation](https://bupt-os.github.io/website/docs/).
+Check out the detailed [document](https://bupt-os.github.io/website/docs/).
 
 ## Communication & Contribution
 

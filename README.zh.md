@@ -7,7 +7,7 @@
 [![zh](https://img.shields.io/badge/lang-zh-yellow.svg)](https://github.com/BUPT-OS/RROS/blob/master/README.zh.md)
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](https://github.com/BUPT-OS/RROS/blob/master/README.md)
 
-RROS（Rust实时操作系统）是一个双内核操作系统，由实时内核（使用Rust编写）和通用内核（Linux）组成。 RROS几乎可以兼容所有的Linux程序，并提供比RT Linux更好的实时性能。RROS目前正在作为在轨卫星载荷的操作系统进行实验[Tiansuan项目](http://www.tiansuan.org.cn/)。
+RROS（Rust实时操作系统）是一个双内核操作系统，由实时内核（使用Rust编写）和通用内核（Linux）组成。 RROS几乎可以兼容所有的Linux程序，并提供比RT Linux更好的实时性能。RROS目前正在作为在轨卫星载荷的操作系统进行实验[“天算星座”项目](http://www.tiansuan.org.cn/)。
 
 
 你可以在这里找到我们的[架构图](https://bupt-os.github.io/website/architecture.png)
@@ -19,7 +19,7 @@ RROS主要用于卫星（星务计算机、卫星载荷等）。其主要动机�
 RROS的优势包括：
 
 * **硬实时**：
-RROS提供了硬实时能力，而RT-Linux是软实时，RROS能够满足大多数场景的实时需求。 通过设计了一个高效的任务调度程序，可以快速响应外部事件，减少任务切换和处理的延迟。
+相较RT-Linux等软实时操作系统，RROS提供了硬实时能力，能够满足大多数场景的实时需求。通过其高效的任务调度程序，可以快速响应外部事件，减少任务切换和处理的延迟。
 * **兼容性**：
 RROS几乎与所有Linux程序兼容，允许Linux应用程序平滑迁移到RROS，如TensorFlow、Kubernetes等。 另外，您可以修改通用Linux程序以提供一定程度的实时能力。
 * **易于使用**：
@@ -121,10 +121,6 @@ RROS允许在多核处理器上灵活地调度任务。 根据需求和工作量
           -smp 4 \
           -m 4096
     ```
-
-## 演示
-
-[待办事项：将演示视频上传到YouTube并更新链接]
 
 ## 文档
 

@@ -49,10 +49,12 @@ impl Class {
         Ok(Self { ptr })
     }
 
+    /// Add the devnode call back function to the class.
     pub fn set_devnode<T: device::ClassDevnode>(&mut self) {
         unsafe { (*(self.ptr)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback(); }
     }
 
+    /// The `get_ptr` method returns the raw pointer to the underlying `bindings::class` struct.
     pub fn get_ptr(&self) -> *mut bindings::class {
         self.ptr
     }

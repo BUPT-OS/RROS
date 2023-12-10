@@ -143,6 +143,7 @@ impl Drop for FileDescriptorReservation {
     }
 }
 
+/// call linux fd_install
 pub fn fd_install(fd: u32, filp: *mut bindings::file) {
     unsafe { bindings::fd_install(fd, filp); }
 }

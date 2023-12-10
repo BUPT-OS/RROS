@@ -24,10 +24,9 @@ use kernel::{
     irq_work::*,
     prelude::*,
     str::CStr,
-    sync::{ Lock, SpinLock },
-    uidgid::{KgidT, KuidT},
-    user_ptr::{ UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter },
-    vmalloc::{c_kzalloc, c_kzfree}, device::DeviceType,
+    sync::SpinLock,
+    user_ptr::{ UserSlicePtrReader, UserSlicePtrWriter },
+    vmalloc::c_kzalloc, device::DeviceType,
 };
 
 #[derive(Default)]

@@ -1,24 +1,12 @@
 use core::{
-    cell::{Ref, RefCell},
-    clone::Clone,
-    convert::{AsRef, TryInto},
-    default::Default,
-    ffi,
-    marker::PhantomData,
-    mem,
-    ptr::null_mut,
+    cell::RefCell, clone::Clone, convert::TryInto, default::Default, ptr::null_mut,
     result::Result::Ok,
 };
 
-use crate::{
-    clock,
-    control::{self, ControlOps},
-    file::{rros_open_file, RrosFile, RrosFileBinding},
-    proxy, thread, xbuf, Rros,
-};
+use crate::control;
+use crate::{clock, file::RrosFileBinding, proxy, thread, xbuf};
 use alloc::rc::Rc;
 use core::ptr;
-use kernel::{file_operations::{FileOpener, IoctlCommand}, kernelh};
 use kernel::uidgid::{KgidT, KuidT};
 use kernel::{
     bindings,
@@ -27,15 +15,17 @@ use kernel::{
     file::{self, File},
     file_operations::FileOperations,
     fs::{self, Filename},
-    irq_work,
+    irq_work, rbtree, spinlock_init,
     prelude::*,
-    prelude::*,
-    rbtree, spinlock_init,
     str::CStr,
     sync::{Lock, SpinLock},
     sysfs, types, uidgid, workqueue, ThisModule,
 };
-use kernel::{device::DeviceType, file::fd_install, io_buffer::IoBufferWriter};
+use kernel::{device::DeviceType, io_buffer::IoBufferWriter};
+use kernel::{
+    file_operations::{FileOpener, IoctlCommand},
+    kernelh,
+};
 
 extern "C" {
     #[allow(improper_ctypes)]
@@ -52,20 +42,20 @@ pub enum RrosFactoryType {
     SINGLE = 2,
 }
 pub const RROS_THREAD_CLONE_FLAGS: i32 =
-    (RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER);
-pub const RROS_CLONE_PUBLIC: i32 = (1 << 16);
+    RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
+pub const RROS_CLONE_PUBLIC: i32 = 1 << 16;
 #[allow(dead_code)]
-pub const RROS_CLONE_PRIVATE: i32 = (0 << 16);
-pub const RROS_CLONE_OBSERVABLE: i32 = (1 << 17);
+pub const RROS_CLONE_PRIVATE: i32 = 0 << 16;
+pub const RROS_CLONE_OBSERVABLE: i32 = 1 << 17;
 #[allow(dead_code)]
-const RROS_CLONE_NONBLOCK: i32 = (1 << 18);
-pub const RROS_CLONE_MASTER: i32 = (1 << 19);
-pub const RROS_CLONE_INPUT: i32 = (1 << 20);
-pub const RROS_CLONE_OUTPUT: i32 = (1 << 21);
+const RROS_CLONE_NONBLOCK: i32 = 1 << 18;
+pub const RROS_CLONE_MASTER: i32 = 1 << 19;
+pub const RROS_CLONE_INPUT: i32 = 1 << 20;
+pub const RROS_CLONE_OUTPUT: i32 = 1 << 21;
 #[allow(dead_code)]
-const RROS_CLONE_COREDEV: i32 = (1 << 31);
+const RROS_CLONE_COREDEV: i32 = 1 << 31;
 #[allow(dead_code)]
-const RROS_CLONE_MASK: i32 = ((-1 << 16) & !RROS_CLONE_COREDEV);
+const RROS_CLONE_MASK: i32 = (-1 << 16) & !RROS_CLONE_COREDEV;
 
 #[allow(dead_code)]
 const RROS_DEVHASH_BITS: i32 = 8;
@@ -285,7 +275,7 @@ pub enum RustFile {
 pub struct RrosDevnode;
 
 impl device::ClassDevnode for RrosDevnode {
-    fn devnode(dev: &mut device::Device, mode: &mut u16) -> *mut c_types::c_char {
+    fn devnode(dev: &mut device::Device, _mode: &mut u16) -> *mut c_types::c_char {
         kernelh::_kasprintf_1(
             bindings::GFP_KERNEL,
             c_str!("evl/%s").as_char_ptr(),
@@ -299,7 +289,7 @@ pub struct FactoryTypeDevnode;
 impl device::Devnode for FactoryTypeDevnode {
     fn devnode(
         dev: &mut device::Device,
-        mode: &mut u16,
+        _mode: &mut u16,
         uid: Option<&mut KuidT>,
         gid: Option<&mut KgidT>,
     ) -> *mut c_types::c_char {
@@ -895,7 +885,7 @@ fn rros_create_factory(
     let res = match fac_lock.inside {
         Some(ref mut inside) => {
             let mut idevname = CStr::from_bytes_with_nul("clone\0".as_bytes())?;
-            match (flag) {
+            match flag {
                 RrosFactoryType::SINGLE => {
                     //RROS_FACTORY_SINGLE
                     idevname = name;
@@ -920,7 +910,7 @@ fn rros_create_factory(
                 // We use cdev_alloc to replace cdev_init. alloc_chrdev + cdev_alloc + cdev_add
                 // chrdev_reg.as_mut().register::<clock::RustFileClock>()?;
                 // }
-                RROS_FACTORY_CLONE => {
+                RrosFactoryType::CLONE => {
                     // RROS_FACTORY_CLONE
                     // create_element_class
                     inside.minor_map =
@@ -942,7 +932,7 @@ fn rros_create_factory(
                     // here we cannot get the number from the nrdev, because this requires const
                     match name.to_str() {
                         Ok("thread") => {
-                            let mut ele_chrdev_reg: Pin<
+                            let ele_chrdev_reg: Pin<
                                 Box<chrdev::Registration<{ thread::CONFIG_RROS_NR_THREADS }>>,
                             > = chrdev::Registration::new_pinned(name, 0, this_module)?;
                             inside.register = Some(ele_chrdev_reg);
@@ -954,7 +944,7 @@ fn rros_create_factory(
                                 .register::<thread::ThreadOps>()?;
                         }
                         Ok("xbuf") => {
-                            let mut ele_chrdev_reg: Pin<
+                            let ele_chrdev_reg: Pin<
                                 Box<chrdev::Registration<{ xbuf::CONFIG_RROS_NR_XBUFS }>>,
                             > = chrdev::Registration::new_pinned(name, 0, this_module)?;
                             inside.register = Some(ele_chrdev_reg);
@@ -966,7 +956,7 @@ fn rros_create_factory(
                                 .register::<xbuf::XbufOps>()?;
                         }
                         Ok("proxy") => {
-                            let mut ele_chrdev_reg: Pin<
+                            let ele_chrdev_reg: Pin<
                                 Box<chrdev::Registration<{ proxy::CONFIG_RROS_NR_PROXIES }>>,
                             > = chrdev::Registration::new_pinned(name, 0, this_module)?;
                             inside.register = Some(ele_chrdev_reg);
@@ -1187,7 +1177,9 @@ pub fn rros_early_init_factories(
         CStr::from_bytes_with_nul("rros\0".as_bytes())?.as_char_ptr(),
     )?)?;
     unsafe {
-        Arc::get_mut(&mut rros_class).unwrap().set_devnode::<RrosDevnode>();
+        Arc::get_mut(&mut rros_class)
+            .unwrap()
+            .set_devnode::<RrosDevnode>();
     }
     let mut chrdev_reg: Pin<Box<chrdev::Registration<NR_FACTORIES>>> =
         chrdev::Registration::new_pinned(c_str!("rros_factory"), 0, this_module)?;
@@ -1355,7 +1347,6 @@ fn rros_index_factory_element() {}
 // }
 
 use core::mem::size_of;
-use kernel::user_ptr::UserSlicePtr;
 
 extern "C" {
     pub fn rust_helper_copy_from_user(

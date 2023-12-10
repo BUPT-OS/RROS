@@ -19,6 +19,7 @@ use core::marker::PhantomData;
 pub struct DeviceType(bindings::device_type);
 
 impl DeviceType {
+    /// create a raw new device_type
     pub const fn new() -> Self {
         Self(bindings::device_type {
             name: core::ptr::null(),
@@ -30,22 +31,25 @@ impl DeviceType {
         })
     }
 
+    /// get the name of the device type
     pub fn get_name(&self) -> *const c_types::c_char {
         self.0.name
     }
 
-    /// The `name` method sets the name of the device type. It takes a pointer to a C-style string and sets the `name` field of the underlying `bindings::device_type` to that string.
+    /// sets the name of the device type. It takes a pointer to a C-style string and sets the `name` field of the underlying `bindings::device_type` to that string.
     pub fn name(mut self, name: *const c_types::c_char) -> Self {
         (self.0).name = name;
         self
     }
 
+    /// set the devnode call back function to the device type
     pub fn set_devnode<T: Devnode>(&mut self) {
         unsafe {
             self.0.devnode = DevnodeVtable::<T>::get_devnode_callback();
         }
     }
 
+    /// returns the raw pointer to the underlying `bindings::device_type` struct.
     pub fn get_ptr(&self) -> *const bindings::device_type {
         &self.0
     }
@@ -55,6 +59,7 @@ impl DeviceType {
 pub struct Device(*mut bindings::device);
 
 impl Device {
+    /// create a raw new device, only used in factory currently
     // FIXME: temporarily used
     pub unsafe fn raw_new<FUNC>(mut init: FUNC, name: &CStr) -> Self
     where
@@ -68,6 +73,7 @@ impl Device {
         Self(dev as *mut bindings::device)
     }
 
+    /// set the name of the device
     #[inline]
     pub fn dev_name(&self) -> *const c_types::c_char {
         extern "C" {
@@ -76,6 +82,7 @@ impl Device {
         unsafe { rust_helper_dev_name(self.0 as *mut bindings::device as *const bindings::device) }
     }
 
+    /// get the driver data of the device
     #[inline]
     pub fn get_drvdata<T>(&mut self) -> Option<&T> {
         let ptr = unsafe { *self.0 }.driver_data as *const T;
@@ -86,6 +93,7 @@ impl Device {
         }
     }
 
+    /// set the driver data of the device
     #[inline]
     pub fn set_drvdata<T>(&mut self, data: *mut T) {
         // TODO: make sure data is pinned or belonged to dev
@@ -94,6 +102,7 @@ impl Device {
         }
     }
 
+    /// get the device type of the device
     #[inline]
     pub fn dev_type(&self) -> Option<&DeviceType> {
         unsafe {
@@ -106,11 +115,15 @@ impl Device {
     }
 }
 
+/// Class dev_node call back wrapper
 pub trait ClassDevnode {
+    /// dev_node call back function
     fn devnode(dev: &mut Device, mode: &mut u16) -> *mut c_types::c_char;
 }
 
+/// dev_node call back wrapper
 pub trait Devnode {
+    /// dev_node call back function
     fn devnode(
         dev: &mut Device,
         mode: &mut u16,

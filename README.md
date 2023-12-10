@@ -1,4 +1,8 @@
-# RROS
+<div align=center>
+<img src=https://github.com/Richardhongyu/RROS/assets/33805041/d8ccbeb0-c0f5-4634-8108-017367d35a4b width=70% />
+</div>
+
+--------------------------------------------------------------------------------
 
 [![Documentation](https://img.shields.io/badge/view-docs-blue)](https://BUPT-OS.github.io/website/docs/)
 [![.github/workflows/ci.yaml](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml/badge.svg)](https://github.com/BUPT-OS/RROS/actions/workflows/ci.yaml)

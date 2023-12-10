@@ -52,6 +52,24 @@ const CONFIG_RROS_LATENCY_IRQ: KtimeT = 0;
 
 const CONFIG_RROS_NR_CLOCKS: usize = 8;
 
+const RROS_CLOCK_IOCBASE: u32 = 'c' as u32;
+
+const RROS_CLOCK_MONOTONIC: i32 = -(CLOCK_MONOTONIC as i32);
+const RROS_CLOCK_REALTIME: i32 = -(CLOCK_REALTIME as i32);
+const RROS_CLKIOC_SLEEP: u32 = ioctl::_IOW::<__rros_timespec>(RROS_CLOCK_IOCBASE, 0);
+const RROS_CLKIOC_GET_RES: u32 = ioctl::_IOR::<__rros_timespec>(RROS_CLOCK_IOCBASE, 1);
+const RROS_CLKIOC_GET_TIME: u32 = ioctl::_IOR::<__rros_timespec>(RROS_CLOCK_IOCBASE, 2);
+const RROS_CLKIOC_SET_TIME: u32 = ioctl::_IOR::<__rros_timespec>(RROS_CLOCK_IOCBASE, 3);
+const RROS_CLKIOC_NEW_TIMER: u32 = ioctl::_IO(RROS_CLOCK_IOCBASE, 5);
+
+extern "C" {
+    fn rust_helper_minor(dev: bindings::dev_t) -> u32;
+    fn rust_helper_rcu_read_lock();
+    fn rust_helper_rcu_read_unlock();
+    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
+    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
+}
+
 #[derive(Default)]
 pub struct RustFileClock;
 
@@ -239,6 +257,10 @@ impl RrosClock {
 
     pub fn get_gravity_user(&self) -> KtimeT {
         self.gravity.get_user()
+    }
+
+    pub fn set_gravity_user(&mut self, user: KtimeT) {
+        self.gravity.set_user(user);
     }
 
     pub fn get_offset(&self) -> KtimeT {
@@ -505,29 +527,378 @@ pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     })
 };
 
-pub struct ClockOps;
+pub struct RrosTimerFd {
+    timer: Arc<SpinLock<RrosTimer>>,
+    readers: RrosWaitQueue,
+    poll_head: RrosPollHead,
+    efile: RrosFile,
+    ticked: bool,
+}
 
-impl FileOpener<u8> for ClockOps {
-    fn open(shared: &u8, fileref: &File) -> Result<Self::Wrapper> {
-        let mut data = CloneData::default();
-        pr_debug!("open clock device success");
-        Ok(Box::try_new(data)?)
+impl RrosTimerFd {
+    fn new() -> Self {
+        Self {
+            timer: Arc::try_new(unsafe { SpinLock::new(RrosTimer::new(0)) }).unwrap(),
+            //FIXME: readers initiation is not sure
+            readers: RrosWaitQueue::new(core::ptr::null_mut(), 0),
+            poll_head: RrosPollHead::new(),
+            efile: RrosFile::new(),
+            ticked: false,
+        }
     }
 }
 
-impl FileOperations for ClockOps {
-    kernel::declare_file_operations!(read);
+fn get_timer_value(timer: Arc<SpinLock<RrosTimer>>, value: &mut itimerspec64) {
+    let mut inner_timer_lock = timer.lock();
+    let inner_timer: &mut RrosTimer = inner_timer_lock.deref_mut();
+    value.it_interval = ktime_to_timespec64(inner_timer.interval);
+    if rros_timer_is_running(inner_timer as *mut RrosTimer) {
+        value.it_value.tv_sec = 0;
+        value.it_value.tv_nsec = 0;
+    } else {
+        value.it_value = ktime_to_timespec64(rros_get_timer_delta(timer.clone()));
+    }
+}
 
-    type Wrapper = Box<CloneData>;
+fn set_timer_value(timer: Arc<SpinLock<RrosTimer>>, value: &itimerspec64) -> Result<i32> {
+    let start: KtimeT;
+    let period: KtimeT;
 
-    fn read<T: IoBufferWriter>(
-        _this: &CloneData,
+    if value.it_value.tv_nsec == 0 && value.it_value.tv_sec == 0 {
+        rros_stop_timer(timer.clone());
+        return Ok(0);
+    }
+
+    period = timespec64_to_ktime(value.it_interval);
+    start = timespec64_to_ktime(value.it_value);
+    rros_start_timer(timer.clone(), start, period);
+    return Ok(0);
+}
+
+#[cfg(CONFIG_SMP)]
+fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {
+    //TODO: complete this func when smp is useful
+}
+
+#[cfg(not(CONFIG_SMP))]
+fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {}
+
+fn set_timerfd(
+    timerfd: &RrosTimerFd,
+    value: &mut itimerspec64,
+    ovalue: itimerspec64,
+) -> Result<i32> {
+    get_timer_value(timerfd.timer.clone(), value);
+
+    if rros_current() != core::ptr::null_mut() {
+        pin_timer(timerfd.timer.clone());
+    }
+
+    set_timer_value(timerfd.timer.clone(), value)
+}
+
+fn new_timerfd(clock: RrosClock) -> Result<i32> {
+    let timerfd: &mut RrosTimerFd = &mut RrosTimerFd::new();
+    let mut filp: File = File {
+        ptr: core::ptr::null_mut(),
+    };
+    let ret: i32;
+    let fd: i32;
+
+    let element: &RrosElement = unsafe { &(*clock.element.unwrap().as_ptr()) };
+    let cdev: &Cdev = element.cdev.as_ref().unwrap();
+    let fops: *const bindings::file_operations = unsafe { (*(cdev.0)).ops };
+    let name: *const c_types::c_char = CStr::from_bytes_with_nul(b"[rros-timefd]\0")
+        .unwrap()
+        .as_ptr() as *const c_types::c_char;
+    filp.ptr = unsafe {
+        bindings::anon_inode_getfile(
+            name,
+            fops,
+            timerfd as *mut RrosTimerFd as *mut c_void,
+            bindings::O_RDWR as i32 | bindings::O_CLOEXEC as i32,
+        )
+    };
+
+    //TODO:
+    // rros_get_element(clock.element);
+    unimplemented!()
+}
+
+fn clock_common_ioctl(clock: &mut RrosClock, cmd: u32, arg: usize) -> Result<i32> {
+    let mut uts: __rros_timespec = __rros_timespec::new();
+    let u_uts: *mut __rros_timespec;
+    let mut ts64: timespec64 = timespec64 {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    let mut ret: Result<i32> = Ok(0);
+
+    match cmd {
+        RROS_CLKIOC_GET_RES => {
+            ts64 = ktime_to_timespec64(clock.resolution);
+            uts.tv_nsec = ts64.tv_nsec;
+            uts.tv_sec = ts64.tv_sec;
+            u_uts = arg as *mut __rros_timespec;
+            let mut usptr = unsafe {
+                UserSlicePtr::new(
+                    u_uts as *mut c_types::c_void,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+                .writer()
+            };
+            if let Ok(_) = unsafe {
+                usptr.write_raw(
+                    &uts as *const __rros_timespec as *const u8,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+            } {
+                ret = Ok(0)
+            } else {
+                ret = Err(Error::EFAULT);
+            }
+        }
+        RROS_CLKIOC_GET_TIME => {
+            ts64 = ktime_to_timespec64(clock.read());
+            uts.tv_nsec = ts64.tv_nsec;
+            uts.tv_sec = ts64.tv_sec;
+            u_uts = arg as *mut __rros_timespec;
+            let mut usptr = unsafe {
+                UserSlicePtr::new(
+                    u_uts as *mut c_types::c_void,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+                .writer()
+            };
+            if let Ok(_) = unsafe {
+                usptr.write_raw(
+                    &uts as *const __rros_timespec as *const u8,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+            } {
+                ret = Ok(0)
+            } else {
+                ret = Err(Error::EFAULT);
+            }
+        }
+        RROS_CLKIOC_SET_TIME => {
+            u_uts = arg as *mut __rros_timespec;
+            let mut usptr = unsafe {
+                UserSlicePtr::new(
+                    u_uts as *mut c_types::c_void,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+                .reader()
+            };
+            if let Err(_) = unsafe {
+                usptr.read_raw(
+                    &mut uts as *mut __rros_timespec as *mut u8,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+            } {
+                return Err(Error::EFAULT);
+            }
+            if uts.tv_nsec as usize >= 1000_000_000 as usize {
+                return Err(Error::EINVAL);
+            }
+            ts64.tv_nsec = uts.tv_nsec;
+            ts64.tv_sec = uts.tv_sec;
+            clock.set(timespec64_to_ktime(ts64));
+        }
+        _ => {
+            ret = Err(Error::ENOTTY);
+        }
+    }
+
+    ret
+}
+
+fn clock_ioctl(fbind: &RrosFileBinding, cmd: u32, arg: usize) -> Result<i32> {
+    unimplemented!();
+    let clock = unsafe { &mut *((*fbind.element).pointer as *mut RrosClock) };
+    let u_fd: i32;
+    let mut ret: Result<i32>;
+
+    //TODO:
+    match cmd {
+        RROS_CLKIOC_NEW_TIMER => {}
+        _ => {
+            ret = clock_common_ioctl(clock, cmd, arg);
+        }
+    }
+
+    ret
+}
+
+extern "C" fn restart_clock_sleep(param: *mut bindings::restart_block) -> i64 {
+    -(bindings::EINVAL as i64)
+}
+
+fn clock_sleep(clock: &RrosClock, ts64: timespec64) -> Result<i32> {
+    let mut restart: bindings::restart_block;
+    let timeout: KtimeT;
+    let rem: KtimeT;
+    {
+        let mut curr = unsafe { (*rros_current()).lock() };
+
+        if curr.local_info & T_SYSRST != 0 {
+            curr.local_info &= !T_SYSRST;
+            restart = unsafe { (*Task::current_ptr()).restart_block };
+            if restart.fn_.unwrap() != restart_clock_sleep {
+                return Err(Error::EINTR);
+            }
+            unsafe {
+                timeout = restart.__bindgen_anon_1.nanosleep.expires as i64;
+            }
+        } else {
+            timeout = timespec64_to_ktime(ts64);
+        }
+    }
+    if let Ok(_) = evl_delay(timeout, rros_tmode::RROS_ABS, clock) {
+        return Ok(0);
+    } else {
+        if Task::current().signal_pending() {
+            restart = unsafe { (*Task::current_ptr()).restart_block };
+            unsafe {
+                restart.__bindgen_anon_1.nanosleep.expires = timeout as u64;
+            }
+            restart.fn_ = Some(restart_clock_sleep);
+            unsafe { (*rros_current()).lock().local_info |= T_SYSRST };
+            return Err(Error::ERESTARTSYS);
+        }
+    }
+
+    return Err(Error::EINTR);
+}
+
+fn clock_oob_ioctl(fbind: &RrosFileBinding, cmd: u32, arg: usize) -> Result<i32> {
+    //TODO:
+    let clock = unsafe { &mut *((*fbind.element).pointer as *mut RrosClock) };
+    let u_uts: *mut __rros_timespec;
+    let mut uts: __rros_timespec = __rros_timespec::new();
+    let mut ret: Result<i32> = Ok(0);
+
+    match cmd {
+        RROS_CLKIOC_SLEEP => {
+            u_uts = arg as *mut __rros_timespec;
+            let mut usrptr = unsafe {
+                UserSlicePtr::new(
+                    u_uts as *mut c_types::c_void,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+                .reader()
+            };
+            if let Err(_) = unsafe {
+                usrptr.read_raw(
+                    &mut uts as *mut __rros_timespec as *mut u8,
+                    core::mem::size_of::<__rros_timespec>(),
+                )
+            } {
+                return Err(Error::EFAULT);
+            }
+            if uts.tv_sec < 0 {
+                return Err(Error::EINVAL);
+            }
+            if uts.tv_nsec as usize >= 1000_000_000 as usize {
+                return Err(Error::EINVAL);
+            }
+            let ts: timespec64 = timespec64 {
+                tv_sec: uts.tv_sec,
+                tv_nsec: uts.tv_nsec,
+            };
+            //TODO: clock_sleep is not implement
+            ret = clock_sleep(clock, ts);
+        }
+        _ => {
+            clock_common_ioctl(clock, cmd, arg);
+        }
+    }
+
+    ret
+}
+pub struct Clockops;
+
+impl FileOpener<u8> for Clockops {
+    fn open(inode: &u8, file: &kernel::file::File) -> kernel::Result<Self::Wrapper> {
+        let mut flag: u64 = 0;
+        let mut mark = false;
+        //TODO: restruct RrosElement to use rros_open_element instead of different
+        //implement in different fileopener.
+        //The key is using inode and file to get element.
+        let minor =
+            unsafe { rust_helper_minor((*(inode as *const _ as *const bindings::inode)).i_rdev) };
+        let e = match minor {
+            0 => unsafe { RROS_MONO_CLOCK.element.as_ref().unwrap().clone() },
+            _ => unsafe { RROS_REALTIME_CLOCK.element.as_ref().unwrap().clone() },
+        };
+
+        let element = unsafe { &mut *e.as_ref().as_ptr() };
+
+        unsafe {
+            rust_helper_rcu_read_lock();
+        }
+        flag = element.ref_lock.irq_lock_noguard();
+
+        if element.zombie {
+            mark = true;
+        } else {
+            element.refs += 1;
+        }
+
+        element.ref_lock.irq_unlock_noguard(flag);
+        unsafe {
+            rust_helper_rcu_read_unlock();
+        }
+
+        if mark {
+            return Err(Error::ESTALE);
+        }
+
+        factory::bind_file_to_element(file.ptr, e.clone())?;
+
+        Ok(unsafe { Box::from_raw((*(file.ptr)).private_data as *mut RrosFileBinding) })
+    }
+}
+
+impl FileOperations for Clockops {
+    kernel::declare_file_operations!(ioctl, oob_ioctl);
+
+    type Wrapper = Box<RrosFileBinding>;
+
+    fn ioctl(
+        _this: &<<Self::Wrapper as kernel::types::PointerWrapper>::Borrowed as core::ops::Deref>::Target,
         _file: &File,
-        _data: &mut T,
-        _offset: u64,
-    ) -> Result<usize> {
-        pr_debug!("I'm the read ops of the rros clock factory.");
-        Ok(1)
+        _cmd: &mut IoctlCommand,
+    ) -> Result<i32> {
+        clock_ioctl(_this, _cmd.cmd, _cmd.arg)
+    }
+
+    fn oob_ioctl(
+        _this: &<<Self::Wrapper as kernel::types::PointerWrapper>::Borrowed as core::ops::Deref>::Target,
+        _file: &File,
+        _cmd: &mut IoctlCommand,
+    ) -> Result<i32> {
+        clock_oob_ioctl(_this, _cmd.cmd, _cmd.arg)
+    }
+
+    fn release(_obj: Self::Wrapper, _file: &File) {
+        let mut element = unsafe { &mut *_obj.element };
+        rros_release_file(&mut _obj.rfile.as_ref().borrow_mut());
+        {
+            //TODO: restruct RrosFileBinding to use method instead of this block
+            let flag = element.ref_lock.irq_lock_noguard();
+
+            //TODO: RROS_WARN_ON
+            if element.refs == 0 {
+                element.ref_lock.irq_unlock_noguard(flag);
+                return;
+            }
+
+            //only two clock whose refs will not be 0
+            element.refs -= 1;
+
+            element.ref_lock.irq_unlock_noguard(flag);
+        }
     }
 }
 
@@ -672,9 +1043,12 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
     //         return Err(kernel::Error::EINVAL);
     //     }
     // }
-    unsafe{
-        ret = factory::rros_init_element((*clock).element.as_ref().unwrap().clone(),
-            &mut RROS_CLOCK_FACTORY, (*clock).flags & RROS_CLONE_PUBLIC);
+    unsafe {
+        ret = factory::rros_init_element(
+            (*clock).element.as_ref().unwrap().clone(),
+            &mut RROS_CLOCK_FACTORY,
+            (*clock).flags & RROS_CLONE_PUBLIC,
+        );
     }
 
     if let Err(_) = ret {
@@ -685,9 +1059,12 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
         (*clock).master = master;
     }
 
-    unsafe{
-        ret = factory::rros_create_core_element_device((*clock).element.as_ref().unwrap().clone(),
-                &mut RROS_CLOCK_FACTORY, (*clock).name);
+    unsafe {
+        ret = factory::rros_create_core_element_device(
+            (*clock).element.as_ref().unwrap().clone(),
+            &mut RROS_CLOCK_FACTORY,
+            (*clock).name,
+        );
     }
 
     if let Err(_) = ret {
@@ -750,8 +1127,14 @@ pub fn rros_clock_init() -> Result<usize> {
     unsafe {
         RROS_MONO_CLOCK.reset_gravity();
         RROS_REALTIME_CLOCK.reset_gravity();
-        RROS_MONO_CLOCK.element = Some(Rc::try_new(RefCell::new(RrosElement::new().unwrap())).unwrap());
-        RROS_REALTIME_CLOCK.element = Some(Rc::try_new(RefCell::new(RrosElement::new().unwrap())).unwrap());
+
+        let mut element: RrosElement = RrosElement::new()?;
+        element.pointer = &mut RROS_MONO_CLOCK as *mut _ as *mut u8;
+        RROS_MONO_CLOCK.element = Some(Rc::try_new(RefCell::new(element)).unwrap());
+        let mut element: RrosElement = RrosElement::new()?;
+        element.pointer = &mut RROS_REALTIME_CLOCK as *mut _ as *mut u8;
+        RROS_REALTIME_CLOCK.element = Some(Rc::try_new(RefCell::new(element)).unwrap());
+
         rros_init_clock(&mut RROS_MONO_CLOCK, &RROS_OOB_CPUS)?;
     }
     let ret = unsafe { rros_init_slave_clock(&mut RROS_REALTIME_CLOCK, &mut RROS_MONO_CLOCK) };
@@ -775,4 +1158,30 @@ pub fn rros_read_clock(clock: &RrosClock) -> KtimeT {
 
 fn rros_ktime_monotonic() -> KtimeT {
     timekeeping::ktime_get_mono_fast_ns()
+}
+
+// static inline ktime_t evl_read_clock(struct evl_clock *clock)
+// {
+// 	/*
+// 	 * In many occasions on the fast path, evl_read_clock() is
+// 	 * explicitly called with &evl_mono_clock which resolves as
+// 	 * a constant. Skip the clock trampoline handler, branching
+// 	 * immediately to the final code for such clock.
+// 	 */
+// 	if (clock == &evl_mono_clock)
+// 		return evl_ktime_monotonic();
+
+// 	return clock->ops.read(clock);
+// }
+
+pub fn u_timespec_to_ktime(u_ts: __rros_timespec) -> KtimeT {
+    extern "C" {
+        fn rust_helper_timespec64_to_ktime(ts: bindings::timespec64) -> KtimeT;
+    }
+    let ts64 = bindings::timespec64 {
+        tv_sec: u_ts.tv_sec as i64,
+        tv_nsec: u_ts.tv_nsec as i64,
+    };
+
+    unsafe { rust_helper_timespec64_to_ktime(ts64) }
 }

@@ -14,7 +14,8 @@ Here is an [architecture diagram](https://bupt-os.github.io/website/docs/introdu
 
 ## News
 
-- [2023.11.30] RROS is presented in Xenomai Workshop 2023 ([photos](https://bupt-os.github.io/website/news/2023_11_30/xenomai_workshop/)).
+- [2023.12.09] :fire::fire: RROS is successfully launched into space! ([photos](https://bupt-os.github.io/website/news/2023_11_30/xenomai_workshop/)).
+- [2023.11.30] RROS is presented at Xenomai Workshop 2023 ([photos](https://bupt-os.github.io/website/news/2023_11_30/xenomai_workshop/)).
 - [2023.11.28] :fire: RROS is open-sourced!
 
 ## Why RROS

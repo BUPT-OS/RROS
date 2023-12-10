@@ -886,10 +886,11 @@ fn rros_create_factory(
                     chrdev_reg.as_mut().register::<CloneOps>()?;
                 }
                 _ => {
-                    let mut ele_chrdev_reg: Pin<Box<chrdev::Registration<{thread::CONFIG_RROS_NR_THREADS}>>> =
-                    chrdev::Registration::new_pinned(c_str!("RROS_CLOCK_DEV"), 0, this_module)?;
-                    ele_chrdev_reg.as_mut().register::<clock::Clockops>()?;//for monotonic clock
-                    ele_chrdev_reg.as_mut().register::<clock::Clockops>()?;//for realtime clock
+                    let mut ele_chrdev_reg: Pin<
+                        Box<chrdev::Registration<{ thread::CONFIG_RROS_NR_THREADS }>>,
+                    > = chrdev::Registration::new_pinned(c_str!("clock"), 0, this_module)?;
+                    ele_chrdev_reg.as_mut().register::<clock::Clockops>()?; //for monotonic clock
+                    ele_chrdev_reg.as_mut().register::<clock::Clockops>()?; //for realtime clock
                     inside.register = Some(ele_chrdev_reg);
                     pr_alert!("not yet implemented");
                 }

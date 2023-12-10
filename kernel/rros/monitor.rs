@@ -11,7 +11,7 @@ use crate::{
 };
 
 use kernel::{
-    bindings, c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error, device::DeviceType,
+    c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error, device::DeviceType,
 };
 
 use kernel::file::File;
@@ -309,7 +309,7 @@ pub fn monitor_factory_build(
 #[allow(dead_code)]
 pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("monitor\0".as_bytes()) },
+        name: CStr::from_bytes_with_nul_unchecked("monitor\0".as_bytes()),
         // fops: Some(&MonitorOps),
         nrdev: CONFIG_RROS_MONITOR,
         build: None,

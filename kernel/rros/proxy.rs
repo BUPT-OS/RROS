@@ -22,7 +22,6 @@ use kernel::{
     device::DeviceType,
     file::File,
     file_operations::{FileOpener, FileOperations},
-    from_kernel_result,
     io_buffer::{IoBufferReader, IoBufferWriter},
     prelude::*,
     premmpt::running_inband,

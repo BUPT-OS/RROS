@@ -181,6 +181,7 @@ impl<const N: usize> Registration<{ N }> {
         Ok(())
     }
 
+    /// The device number of last registered device
     pub fn last_registered_devt(self: Pin<&mut Self>) -> Option<u32>{
         let this = unsafe { self.get_unchecked_mut() };
         this.inner.as_mut().map(|inner|{

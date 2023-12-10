@@ -11,7 +11,7 @@ use alloc::rc::Rc;
 use kernel::bindings::prepare_creds;
 use kernel::device::DeviceType;
 use kernel::ktime::ktime_sub;
-use core::ops::{Deref, DerefMut};
+use core::ops::DerefMut;
 use core::result::Result::Ok;
 use core::{cell::RefCell, clone::Clone};
 use kernel::completion::Completion;
@@ -151,7 +151,7 @@ pub const CONFIG_RROS_NR_THREADS: usize = 16;
 pub static mut RROS_TRHEAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
         // TODO: move this and clock factory name to a variable 
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("thread\0".as_bytes()) },
+        name: CStr::from_bytes_with_nul_unchecked("thread\0".as_bytes()),
         // fops: Some(&ThreadOps),
         nrdev: CONFIG_RROS_NR_THREADS,
         // TODO: add the corresponding ops

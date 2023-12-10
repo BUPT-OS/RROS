@@ -12,16 +12,14 @@ use kernel::{
     mm::{remap_pfn_range, PAGE_SHARED},
     prelude::*,
     str::CStr,
-    sync::{Lock, Mutex, SpinLock},
-    uidgid::{KgidT, KuidT},
-    user_ptr::{UserSlicePtr, UserSlicePtrWriter},
+    sync::{Mutex, SpinLock},
 };
 
 pub const CONFIG_RROS_NR_CONTROL: usize = 0;
 
 pub static mut RROS_CONTROL_FACTORY: SpinLock<RrosFactory> = unsafe {
     SpinLock::new(RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("control\0".as_bytes()) },
+        name: CStr::from_bytes_with_nul_unchecked("control\0".as_bytes()),
         nrdev: CONFIG_RROS_NR_CONTROL,
         build: None,
         dispose: None,

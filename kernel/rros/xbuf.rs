@@ -8,6 +8,7 @@ use crate::{
     file::*,
     flags::RrosFlag,
     lock::*,
+    poll::{rros_poll_watch, rros_signal_poll_events, OobPollWait, RrosPollHead},
     sched::*,
     thread::rros_init_user_element,
     timeout::{RrosTmode, RROS_INFINITE},
@@ -17,6 +18,7 @@ use crate::{
 use kernel::{
     bindings,
     c_types::*,
+    device::DeviceType,
     error::Error,
     file::File,
     file_operations::{FileOpener, FileOperations},
@@ -45,7 +47,7 @@ impl FileOpener<u8> for XbufOps {
 }
 
 impl FileOperations for XbufOps {
-    kernel::declare_file_operations!(read, write, oob_read, oob_write);
+    kernel::declare_file_operations!(read, write, oob_read, oob_write, oob_poll);
 
     type Wrapper = Box<CloneData>;
 
@@ -101,6 +103,14 @@ impl FileOperations for XbufOps {
         } else {
             Ok(ret as usize)
         }
+    }
+
+    fn oob_poll(
+        _this: &<<Self::Wrapper as kernel::types::PointerWrapper>::Borrowed as core::ops::Deref>::Target,
+        _file: &File,
+        _wait: &kernel::file_operations::OobPollWait,
+    ) -> Result<u32> {
+        xbuf_oob_poll(_file, _wait.ptr)
     }
 
     fn release(_this: Box<CloneData>, _file: &File) {
@@ -644,7 +654,12 @@ pub fn inbound_wait_output(ring: &XbufRing, _len: usize) -> i32 {
 pub fn inbound_signal_output(ring: &XbufRing, sigpoll: bool) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
     if sigpoll {
-        // unsafe{ rros_signal_poll_events((*xbuf).poll_head, POLLOUT | POLLWRNORM) };
+        unsafe {
+            rros_signal_poll_events(
+                &mut (*xbuf).poll_head,
+                bindings::POLLOUT as i32 | bindings::POLLWRNORM as i32,
+            )
+        };
     }
 
     unsafe { (*xbuf).ibnd.o_event.raise() }
@@ -743,7 +758,12 @@ pub fn outbound_signal_input(ring: &XbufRing, sigpoll: bool) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
 
     if sigpoll {
-        // { rros_signal_poll_events((*xbuf).poll_head, POLLIN | POLLRDNORM); }
+        unsafe {
+            rros_signal_poll_events(
+                &mut (*xbuf).poll_head,
+                bindings::POLLIN as i32 | bindings::POLLRDNORM as i32,
+            );
+        }
     }
 
     unsafe {
@@ -806,6 +826,37 @@ pub fn xbuf_oob_write<T: IoBufferReader>(filp: &File, data: &mut T) -> i32 {
             (*filp.get_ptr()).f_flags.try_into().unwrap(),
         )
     }
+}
+
+fn xbuf_oob_poll(filp: &File, wait: *mut bindings::oob_poll_wait) -> Result<u32> {
+    let fbind: *const RrosFileBinding =
+        unsafe { (*filp.ptr).private_data as *const RrosFileBinding };
+    let xbuf: &mut RrosXbuf = unsafe { &mut *((*((*fbind).element)).pointer as *mut RrosXbuf) };
+    let obnd = &xbuf.obnd;
+    let ibnd = &xbuf.ibnd;
+    let mut flags: u32 = 0;
+    let mut ready: u32 = 0;
+    let rwait = unsafe { &mut *(wait as *mut OobPollWait) };
+
+    rros_poll_watch(
+        NonNull::new(&mut xbuf.poll_head as *mut RrosPollHead).unwrap(),
+        rwait,
+        None,
+    );
+
+    flags = obnd.ring.lock();
+    if obnd.ring.fillsz > 0 {
+        ready |= bindings::POLLIN | bindings::POLLRDNORM;
+    }
+    obnd.ring.unlock(flags);
+
+    flags = ibnd.ring.lock();
+    if ibnd.ring.fillsz < ibnd.ring.bufsz {
+        ready |= bindings::POLLOUT | bindings::POLLWRNORM;
+    }
+    ibnd.ring.unlock(flags);
+
+    return Ok(ready);
 }
 
 #[allow(dead_code)]
@@ -940,7 +991,7 @@ fn xbuf_factory_build(
         (*xbuf_ptr).obnd.ring.wait_output = Some(outbound_wait_output);
         (*xbuf_ptr).obnd.ring.signal_output = Some(outbound_signal_output);
 
-        //rros_init_poll_head(&xbuf->poll_head);
+        (*xbuf_ptr).poll_head.init();
         //c_kzfree(xbuf.ibnd.ring.bufmem);
         //c_kzfree(xbuf.obnd.ring.bufmem);
 

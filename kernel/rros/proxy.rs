@@ -11,8 +11,9 @@ use crate::{
     file::RrosFileBinding,
     flags::RrosFlag,
     lock::{raw_spin_lock_init, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
-    sched::{rros_schedule, RrosPollHead},
-    thread::rros_init_user_element,
+    poll::RrosPollHead,
+    sched::rros_schedule,
+    thread::{atomic_read, atomic_set, rros_init_user_element},
     work::*,
 };
 

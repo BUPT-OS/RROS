@@ -13,6 +13,7 @@ use crate::{
     c_types,
     crossing::RrosCrossing, file::RrosFile, list::ListHead,
     wait::RrosWaitQueue,
+    poll::RrosPollHead,
 };
 
 use kernel::{
@@ -88,10 +89,6 @@ pub trait RrosNetProto {
     ) -> isize;
     // fn oob_poll(&mut self, wait:&oob_poll_wait) -> __poll_t;
     fn get_netif(&self, sock: &mut RrosSocket) -> Option<NetDevice>;
-}
-pub struct RrosPollHead {
-    pub watchpoints: ListHead,
-    pub lock: RawSpinLock,
 }
 pub struct Binding {
     pub real_ifindex: i32,

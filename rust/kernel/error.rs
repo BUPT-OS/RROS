@@ -87,6 +87,8 @@ impl Error {
     /// File exists
     pub const EEXIST: Self = Error(-(bindings::EEXIST as i32));
 
+    /// Poll cycles
+    pub const ELOOP: Self = Error(-(bindings::ELOOP as i32));
     /// Creates an [`Error`] from a kernel error code.
     ///
     /// It is a bug to pass an out-of-range `errno`. `EINVAL` would

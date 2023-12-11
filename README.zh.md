@@ -43,7 +43,13 @@ RROS 的实时内核经过精心编写，使用 Rust，使其在内存和并发�
 
 ## 文档
 
-可以从这里查看我们的[文档](https://bupt-os.github.io/website/docs/)。
+可以从这里查看我们的[文档](https://bupt-os.github.io/website/docs/)，包括：
+* [快速上手](https://bupt-os.github.io/website/docs/introduction/quick-start)
+* [配置环境](https://bupt-os.github.io/website/docs/tutorial/setup-the-environment)
+* [选择文件系统](https://bupt-os.github.io/website/docs/tutorial/choose-a-file-system)
+* [部署到树莓派环境](https://bupt-os.github.io/website/docs/tutorial/deploy-rros-on-the-raspberry-pi) 
+* [如何调试RROS](https://bupt-os.github.io/website/docs/tutorial/debug)
+* [内核常用工具](https://bupt-os.github.io/website/docs/tutorial/kernel-tools)
 
 ## 联系方式与贡献方法
 

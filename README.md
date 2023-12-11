@@ -43,7 +43,14 @@ The real-time kernel of RROS is carefully written in Rust, making it safer and m
 
 ## Document
 
-Check out the detailed [document](https://bupt-os.github.io/website/docs/).
+See the [document](https://bupt-os.github.io/website/docs/) including:
+* [Quick Start](https://bupt-os.github.io/website/docs/introduction/quick-start)
+* [Setup the Environment](https://bupt-os.github.io/website/docs/tutorial/setup-the-environment)
+* [Choose a file System](https://bupt-os.github.io/website/docs/tutorial/choose-a-file-system)
+* [Deploy RROS on the Raspberry Pi](https://bupt-os.github.io/website/docs/tutorial/deploy-rros-on-the-raspberry-pi) 
+* [Debug](https://bupt-os.github.io/website/docs/tutorial/debug)
+* [Kernel Tools](https://bupt-os.github.io/website/docs/tutorial/kernel-tools)
+
 
 ## Communication & Contribution
 

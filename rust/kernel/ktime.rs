@@ -15,6 +15,20 @@ extern "C" {
     fn rust_helper_ktime_set(secs: i64, nsecs: usize) -> KtimeT;
     fn rust_helper_ktime_divns(kt: KtimeT, div: i64) -> i64;
     fn rust_helper_ktime_compare(cmp1: KtimeT, cmp2: KtimeT) -> KtimeT;
+    fn rust_helper_timespec64_to_ktime(ts: bindings::timespec64) -> KtimeT;
+    fn rust_helper_ktime_to_timespec64(kt: bindings::ktime_t) -> bindings::timespec64;
+}
+
+#[derive(Default, Copy, Clone)]
+#[repr(transparent)]
+pub struct Timespec64(pub bindings::timespec64);
+
+pub fn timespec64_to_ktime(u_ts: Timespec64) -> KtimeT {
+    unsafe { rust_helper_timespec64_to_ktime(u_ts.0) }
+}
+
+pub fn ktime_to_timespec64(kt: KtimeT) -> Timespec64 {
+    unsafe { Timespec64(rust_helper_ktime_to_timespec64(kt)) }
 }
 
 /// The `ktime_get` function returns the current ktime value. It calls the `bindings::ktime_get` function and casts the result to a `KtimeT`.

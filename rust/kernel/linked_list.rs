@@ -220,6 +220,11 @@ impl<G: GetLinksWrapped> List<G> {
         }
         len
     }
+
+    /// Returns a cursor starting on the last (back) element of the list.
+    pub fn cursor_back(&self) -> Cursor<'_, G> {
+        self.list.cursor_back()
+    }
 }
 
 impl<G: GetLinksWrapped> Default for List<G> {

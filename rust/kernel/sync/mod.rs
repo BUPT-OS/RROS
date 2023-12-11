@@ -35,8 +35,8 @@ pub use arc::{Ref, RefBorrow};
 pub use condvar::CondVar;
 pub use guard::{Guard, Lock};
 pub use locked_by::LockedBy;
-pub use mutex::Mutex;
-pub use spinlock::SpinLock;
+pub use mutex::{mutex_lock, mutex_unlock, Mutex};
+pub use spinlock::{HardSpinlock, RawSpinLock, SpinLock};
 
 extern "C" {
     fn rust_helper_cond_resched() -> c_types::c_int;

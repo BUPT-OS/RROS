@@ -6,7 +6,6 @@
 #![feature(stmt_expr_attributes)]
 use crate::factory;
 use crate::list::*;
-use crate::sched::RrosTimespec;
 use crate::sched::{rros_cpu_rq, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY};
 use crate::thread::T_ROOT;
 use crate::tick;
@@ -28,17 +27,10 @@ use kernel::device::DeviceType;
 use kernel::file::File;
 use kernel::io_buffer::IoBufferWriter;
 use kernel::{
-    bindings, c_types, cpumask,
-    double_linked_list::*,
-    file_operations::{FileOpener, FileOperations},
-    ktime::*,
-    percpu,
-    prelude::*,
-    premmpt, spinlock_init,
-    str::CStr,
-    sync::Lock,
-    sync::SpinLock,
-    sysfs, timekeeping,
+    bindings, c_types, cpumask, double_linked_list::*, file_operations::{FileOperations, FileOpener}, ktime::*,
+    percpu, prelude::*, premmpt, spinlock_init, str::CStr, sync::Lock, sync::SpinLock, sysfs,
+    timekeeping,
+    clockchips,
     uidgid::{KgidT, KuidT},
 };
 
@@ -663,44 +655,47 @@ pub fn do_clock_tick(clock: &mut RrosClock, tmb: *mut RrosTimerbase) {
     //raw_spin_unlock(&tmb->lock);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rros_core_tick(dummy: *mut bindings::clock_event_device) {
-    // pr_debug!("in rros_core_tick");
-    let this_rq = this_rros_rq();
-    //	if (RROS_WARN_ON_ONCE(CORE, !is_rros_cpu(rros_rq_cpu(this_rq))))
-    // pr_info!("in rros_core_tick");
-    unsafe {
-        do_clock_tick(&mut RROS_MONO_CLOCK, rros_this_cpu_timers(&RROS_MONO_CLOCK));
+pub struct RrosCoreTick;
 
-        let rq_has_tproxy = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
-        let assd = (*(*this_rq).get_curr().locked_data().get()).state;
-        let curr_state_is_t_root = (assd & (T_ROOT as u32) != 0x0);
-        //这个if进不去有问题！！
-        // let a = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
-        // if rq_has_tproxy  {
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        // }
-        // let b = ((*this_rq).get_curr().lock().deref_mut().state & (T_ROOT as u32) != 0x0);
+impl clockchips::CoreTick for RrosCoreTick {
+    fn core_tick(dummy: clockchips::ClockEventDevice) {
+        // pr_debug!("in rros_core_tick");
+        let this_rq = this_rros_rq();
+        //	if (RROS_WARN_ON_ONCE(CORE, !is_rros_cpu(rros_rq_cpu(this_rq))))
+        // pr_debug!("in rros_core_tick");
+        unsafe {
+            do_clock_tick(&mut RROS_MONO_CLOCK, rros_this_cpu_timers(&RROS_MONO_CLOCK));
 
-        // if curr_state_is_t_root  {
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        //     pr_debug!("in rros_core_tick");
-        // }
-        if rq_has_tproxy && curr_state_is_t_root {
-            rros_notify_proxy_tick(this_rq);
+            let rq_has_tproxy = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
+            let assd = (*(*this_rq).get_curr().locked_data().get()).state;
+            let curr_state_is_t_root = (assd & (T_ROOT as u32) != 0x0);
+            //这个if进不去有问题！！
+            // let a = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
+            // if rq_has_tproxy  {
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            // }
+            // let b = ((*this_rq).get_curr().lock().deref_mut().state & (T_ROOT as u32) != 0x0);
+
+            // if curr_state_is_t_root  {
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            //     pr_debug!("in rros_core_tick");
+            // }
+            if rq_has_tproxy && curr_state_is_t_root {
+                rros_notify_proxy_tick(this_rq);
+            }
         }
     }
 }
@@ -816,15 +811,3 @@ fn rros_ktime_monotonic() -> KtimeT {
 
 // 	return clock->ops.read(clock);
 // }
-
-pub fn u_timespec_to_ktime(u_ts: RrosTimespec) -> KtimeT {
-    extern "C" {
-        fn rust_helper_timespec64_to_ktime(ts: bindings::timespec64) -> KtimeT;
-    }
-    let ts64 = bindings::timespec64 {
-        tv_sec: u_ts.tv_sec as i64,
-        tv_nsec: u_ts.tv_nsec as i64,
-    };
-
-    unsafe { rust_helper_timespec64_to_ktime(ts64) }
-}

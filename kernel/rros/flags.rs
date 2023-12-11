@@ -4,6 +4,8 @@ use crate::{
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
+use alloc::boxed::Box;
+use kernel::prelude::*;
 use core::{cell::Cell, ptr::NonNull};
 use kernel::bindings;
 
@@ -67,19 +69,10 @@ impl RrosFlag {
     #[inline]
     pub fn raise(&mut self) {
         // let flags = unsafe{bindings::_raw_spin_lock_irqsave(&mut self.wait.lock as *const _ as *mut bindings::raw_spinlock)};
-        let flags = unsafe {
-            rust_helper_raw_spin_lock_irqsave(
-                &mut self.wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-            )
-        };
+        let flags = self.wait.lock.raw_spin_lock_irqsave();
         self.raised.set(true);
         self.wait.flush_locked(0);
-        unsafe {
-            rust_helper_raw_spin_unlock_irqrestore(
-                &mut self.wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                flags,
-            )
-        };
+        self.wait.lock.raw_spin_unlock_irqrestore(flags);
         // unsafe{bindings::_raw_spin_unlock_irqrestore(&mut self.wait.lock as *const _ as *mut bindings::raw_spinlock, flags)};
 
         unsafe { rros_schedule() };
@@ -102,8 +95,3 @@ impl RrosFlag {
 //     }).unwrap());
 
 // }
-
-extern "C" {
-    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
-}

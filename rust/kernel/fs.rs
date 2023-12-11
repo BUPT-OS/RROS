@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! fs
 //!
 //! C header: [`include/linux/fs.h`](../../../../include/linux/fs.h)
 //!
@@ -20,6 +20,17 @@ impl Filename {
         let res;
         unsafe {
             res = bindings::getname_kernel(arg1.as_char_ptr());
+        }
+        if res == core::ptr::null_mut() {
+            return Err(Error::EINVAL);
+        }
+        Ok(Self(res))
+    }
+
+    pub fn getname(arg1: &'static CStr) -> Result<Self> {
+        let res;
+        unsafe {
+            res = bindings::getname(arg1.as_char_ptr());
         }
         if res == core::ptr::null_mut() {
             return Err(Error::EINVAL);
@@ -50,4 +61,30 @@ pub fn hashlen_string(salt: *const c_types::c_char, filename: *mut Filename) -> 
         let name = (*filename).get_name();
         bindings::hashlen_string(salt as *const c_types::c_void, name)
     }
+}
+
+pub fn kernel_write(
+    arg1: *mut bindings::file,
+    arg2: *const c_types::c_void,
+    arg3: usize,
+    arg4: *mut bindings::loff_t,
+) -> isize {
+    unsafe { bindings::kernel_write(arg1, arg2, arg3, arg4) }
+}
+
+pub fn kernel_read(
+    arg1: *mut bindings::file,
+    arg2: *mut c_types::c_void,
+    arg3: usize,
+    arg4: *mut i64,
+) -> isize {
+    unsafe { bindings::kernel_read(arg1, arg2, arg3, arg4) }
+}
+
+pub fn memcpy(
+    arg1: *mut c_types::c_void,
+    arg2: *const c_types::c_void,
+    arg3: c_types::c_ulong,
+) -> *mut c_types::c_void {
+    unsafe { bindings::memcpy(arg1, arg2, arg3) }
 }

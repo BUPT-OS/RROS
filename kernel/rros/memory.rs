@@ -155,7 +155,7 @@ fn init_system_heap(heap: Arc<SpinLock<RrosHeap>>, sysheap_size_arg: u32) -> Res
 
     let res = rros_init_heap(heap, memptr as *mut u8, size);
     match res {
-        Ok(_o) => pr_info!("Rros core system memory success init!\n"),
+        Ok(_o) => pr_debug!("Rros core system memory success init!\n"),
         Err(_e) => {
             vmalloc::c_vfree(memptr);
             return Err(_e);

@@ -19,6 +19,10 @@ pub struct File {
 }
 
 impl File {
+    pub fn from_ptr(ptr: *mut bindings::file) -> Self {
+        Self { ptr }
+    }
+
     /// Constructs a new [`struct file`] wrapper from a file descriptor.
     ///
     /// The file descriptor belongs to the current process.
@@ -32,6 +36,15 @@ impl File {
         // INVARIANTS: We checked that `ptr` is non-null, so it is valid. `fget` increments the ref
         // count before returning.
         Ok(Self { ptr })
+    }
+
+    pub fn anon_inode_getfile(
+        name: *const c_types::c_char,
+        fops: *const bindings::file_operations,
+        priv_: *mut c_types::c_void,
+        flags: c_types::c_int,
+    ) -> *mut bindings::file {
+        unsafe { bindings::anon_inode_getfile(name, fops, priv_, flags) }
     }
 
     /// Returns the current seek/cursor/pointer position (`struct file::f_pos`).
@@ -147,4 +160,22 @@ impl Drop for FileDescriptorReservation {
 pub fn fd_install(fd: u32, filp: *mut bindings::file) {
     /// SAFETY: The caller must ensure that `filp` is a valid pointer.
     unsafe { bindings::fd_install(fd, filp); }
+}
+
+/// Wraps the kernel's `struct files_struct`.
+#[repr(transparent)]
+pub struct FilesStruct {
+    ptr: *mut bindings::files_struct,
+}
+
+impl FilesStruct {
+    /// Returns a `FilesStruct` struct from a non-null and valid pointer.
+    pub fn from_ptr(ptr: *mut bindings::files_struct) -> Self {
+        Self { ptr }
+    }
+
+    /// Get self's `ptr`.
+    pub fn get_ptr(&self) -> *mut bindings::files_struct {
+        self.ptr
+    }
 }

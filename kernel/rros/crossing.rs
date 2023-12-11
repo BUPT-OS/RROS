@@ -71,7 +71,7 @@ impl RrosCrossing {
     }
 }
 
-unsafe extern "C" fn rros_open_crossing(work: *mut bindings::irq_work) {
+unsafe extern "C" fn rros_open_crossing(work: *mut IrqWork) {
     let c = kernel::container_of!(work, RrosCrossing, oob_work) as *mut RrosCrossing;
     unsafe {
         (*c).oob_done.complete();

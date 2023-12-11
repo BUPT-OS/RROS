@@ -81,6 +81,12 @@ impl Error {
     /// Not a typewriter
     pub const ENOTTY: Self = Error(-(bindings::ENOTTY as i32));
 
+    /// No such device or address
+    pub const ENXIO: Self = Error(-(bindings::ENXIO as i32));
+
+    /// File exists
+    pub const EEXIST: Self = Error(-(bindings::EEXIST as i32));
+
     /// Creates an [`Error`] from a kernel error code.
     ///
     /// It is a bug to pass an out-of-range `errno`. `EINVAL` would

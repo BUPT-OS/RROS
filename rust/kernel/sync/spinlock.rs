@@ -26,6 +26,9 @@ extern "C" {
     fn rust_helper_hard_spin_unlock(lock: *mut bindings::raw_spinlock);
     fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
     fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
+    fn rust_helper_raw_spin_lock_init(lock: *mut bindings::raw_spinlock_t);
+    fn rust_helper_raw_spin_lock(lock: *mut bindings::hard_spinlock_t);
+    fn rust_helper_raw_spin_unlock(lock: *mut bindings::hard_spinlock_t);
 }
 
 /// Safely initialises a [`SpinLock`] with the given name, generating a new lock class.
@@ -147,4 +150,71 @@ impl<T: ?Sized> Lock for SpinLock<T> {
     fn locked_data(&self) -> &UnsafeCell<T> {
         &self.data
     }
+}
+
+#[repr(transparent)]
+pub struct HardSpinlock {
+    lock: bindings::hard_spinlock_t,
+}
+
+impl HardSpinlock {
+    pub fn new() -> Self {
+        HardSpinlock {
+            lock: bindings::hard_spinlock_t {
+                rlock: bindings::raw_spinlock {
+                    raw_lock: bindings::arch_spinlock_t {
+                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
+                            val: bindings::atomic_t { counter: 0 },
+                        },
+                    },
+                },
+                dep_map: bindings::phony_lockdep_map {
+                    wait_type_outer: 0,
+                    wait_type_inner: 0,
+                },
+            },
+        }
+    }
+
+    pub fn init(&mut self) {
+        self.lock = bindings::hard_spinlock_t::default();
+        unsafe {
+            rust_helper_raw_spin_lock_init(
+                &mut self.lock as *mut bindings::hard_spinlock_t as *mut bindings::raw_spinlock_t,
+            );
+        }
+    }
+
+    pub fn raw_spin_lock_irqsave(&mut self) -> u64 {
+        unsafe {
+            rust_helper_raw_spin_lock_irqsave(&mut self.lock as *mut bindings::hard_spinlock_t)
+        }
+    }
+
+    pub fn raw_spin_unlock_irqrestore(&mut self, flags: u64) {
+        unsafe {
+            rust_helper_raw_spin_unlock_irqrestore(
+                &mut self.lock as *mut bindings::hard_spinlock_t,
+                flags,
+            );
+        }
+    }
+
+    pub fn raw_spin_lock(&mut self) {
+        unsafe {
+            rust_helper_raw_spin_lock(&mut self.lock as *mut bindings::hard_spinlock_t);
+        }
+    }
+
+    pub fn raw_spin_unlock(&mut self) {
+        unsafe {
+            rust_helper_raw_spin_unlock(&mut self.lock as *mut bindings::hard_spinlock_t);
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct RawSpinLock {
+    #[allow(dead_code)]
+    lock: bindings::raw_spinlock_t
 }

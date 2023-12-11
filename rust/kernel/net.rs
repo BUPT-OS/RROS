@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 //! Rros Net module.
-use crate::{bindings, str::CStr, ARef, AlwaysRefCounted};
+use crate::{bindings, str::CStr, ARef, AlwaysRefCounted, c_types};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 extern "C" {
@@ -62,4 +62,78 @@ unsafe impl AlwaysRefCounted for Namespace {
 /// Returns the network namespace for the `init` process.
 pub fn init_ns() -> &'static Namespace {
     unsafe { &*core::ptr::addr_of!(bindings::init_net).cast() }
+}
+
+pub trait CreateSocket {
+    fn create_socket(net: *mut Namespace, sock: &mut Socket, protocol: i32, kern: i32) -> i32;
+}
+
+pub unsafe extern "C" fn create_socket_callback<T: CreateSocket>(
+    net: *mut bindings::net,
+    sock: *mut bindings::socket,
+    protocol: i32,
+    kern: i32,
+) -> i32 {
+    T::create_socket(
+        net as *mut Namespace,
+        &mut Socket::from_ptr(sock),
+        protocol,
+        kern,
+    )
+}
+
+pub fn sock_register(fam: *const bindings::net_proto_family) -> c_types::c_int {
+    unsafe { bindings::sock_register(fam) }
+}
+
+pub struct NetProtoFamily(pub bindings::net_proto_family);
+
+#[macro_export]
+macro_rules! static_init_net_proto_family {
+    ($($i: ident: $e: expr,)*) => {
+        NetProtoFamily(bindings::net_proto_family{
+            $($i: $e,)*
+        })
+    }
+}
+
+impl NetProtoFamily {
+    pub fn get_ptr(&self) -> *const bindings::net_proto_family {
+        &self.0
+    }
+
+    pub fn new(
+        family: c_types::c_int,
+        create: Option<
+            unsafe extern "C" fn(
+                net: *mut bindings::net,
+                sock: *mut bindings::socket,
+                protocol: c_types::c_int,
+                kern: c_types::c_int,
+            ) -> c_types::c_int,
+        >,
+        owner: *mut bindings::module,
+    ) -> Self {
+        Self(bindings::net_proto_family {
+            family,
+            create,
+            owner,
+        })
+    }
+}
+
+unsafe impl Sync for NetProtoFamily {}
+
+pub struct Socket {
+    ptr: *mut bindings::socket,
+}
+
+impl Socket {
+    pub fn from_ptr(ptr: *mut bindings::socket) -> Self {
+        Self { ptr }
+    }
+
+    pub fn get_ptr(&self) -> *mut bindings::socket {
+        self.ptr
+    }
 }

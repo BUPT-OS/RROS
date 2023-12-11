@@ -17,6 +17,7 @@ use crate::bindings;
 use crate::c_types;
 use crate::error::{Error, Result};
 use crate::file_operations;
+use crate::pr_info;
 use crate::str::CStr;
 
 /// Character device.

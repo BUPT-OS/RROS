@@ -271,6 +271,10 @@ impl<G: GetLinks> RawList<G> {
     pub(crate) fn cursor_back_mut(&mut self) -> CursorMut<'_, G> {
         CursorMut::new(self, self.back())
     }
+
+    pub(crate) fn cursor_back(&self) -> Cursor<'_, G> {
+        Cursor::new(self, self.back())
+    }
 }
 
 struct CommonCursor<G: GetLinks> {

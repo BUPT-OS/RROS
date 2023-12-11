@@ -1,7 +1,8 @@
 use kernel::clockchips::ClockEventDevice;
 use kernel::{
-    bindings, c_types, clockchips, container_of, cpumask, irq_pipeline::*, ktime::*,
-    percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr, sync::Lock,
+    bindings, c_types, clockchips, container_of, cpumask, double_linked_list::*, interrupt,
+    irq_pipeline::*, ktime::*, percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr,
+    sync::Lock, sync::SpinLock, tick,
 };
 
 use crate::{
@@ -9,53 +10,17 @@ use crate::{
 };
 use core::cmp;
 
-fn __this_cpu_write(
-    pcp: *mut bindings::clock_proxy_device,
-    val: *mut bindings::clock_proxy_device,
-) {
-    unsafe {
-        rust_helper__this_cpu_write(pcp, val);
-    }
-}
-
-fn __this_cpu_read(pcp: *mut bindings::clock_proxy_device) -> *mut bindings::clock_proxy_device {
-    unsafe { rust_helper__this_cpu_read(pcp) }
-}
-
 extern "C" {
-    #[allow(dead_code)]
-    #[allow(improper_ctypes)]
-    fn rust_helper__this_cpu_write(
-        pcp: *mut bindings::clock_proxy_device,
-        val: *mut bindings::clock_proxy_device,
-    );
-    #[allow(dead_code)]
-    #[allow(improper_ctypes)]
-    fn rust_helper__this_cpu_read(
-        pcp: *mut bindings::clock_proxy_device,
-    ) -> *mut bindings::clock_proxy_device;
-    #[allow(dead_code)]
-    #[allow(improper_ctypes)]
-    fn rust_helper_proxy_set_next_ktime(
-        expires: KtimeT,
-        dev: *mut bindings::clock_event_device,
-    ) -> c_types::c_int;
-    #[allow(dead_code)]
-    #[allow(improper_ctypes)]
-    fn rust_helper_proxy_set(
-        expires: KtimeT,
-        dev: *mut bindings::clock_event_device,
-    ) -> c_types::c_int;
     fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
     fn rust_helper_hard_local_irq_restore(flags: c_types::c_ulong);
     fn rust_helper_tick_notify_proxy();
     fn rust_helper_IRQF_OOB() -> c_types::c_ulong;
 }
 
-static mut PROXY_DEVICE: *mut *mut bindings::clock_proxy_device =
-    0 as *mut *mut bindings::clock_proxy_device;
+static mut PROXY_DEVICE: *mut clockchips::ClockProxyDevice = 0 as *mut clockchips::ClockProxyDevice;
 
 use core::mem::{align_of, size_of};
+use core::ptr::{null, null_mut};
 
 pub const CLOCK_EVT_FEAT_KTIME: u32 = 0x000004;
 type KtimeT = i64;
@@ -76,70 +41,78 @@ pub fn rros_notify_proxy_tick(rq: *mut RrosRq) {
     unsafe { rust_helper_tick_notify_proxy() };
 }
 
-//未测试
-pub unsafe extern "C" fn proxy_set_next_ktime(
-    expires: KtimeT,
-    _arg1: *mut bindings::clock_event_device,
-) -> i32 {
-    //pr_debug!("proxy_set_next_ktime: in");
-    let delta = ktime_sub(expires, ktime_get());
-    let flags = unsafe { rust_helper_hard_local_irq_save() };
+pub struct RrosProxySetNextKtime;
 
-    let rq = this_rros_rq();
+impl clockchips::ProxySetNextKtime for RrosProxySetNextKtime {
+    // 未测试
+    fn proxy_set_next_ktime(expires: KtimeT, _arg1: clockchips::ClockEventDevice) -> i32 {
+        //pr_debug!("proxy_set_next_ktime: in");
+        let delta = ktime_sub(expires, ktime_get());
+        let flags = unsafe { rust_helper_hard_local_irq_save() };
 
-    // let inband_timer = unsafe{(*rq).get_inband_timer()};
-    //unsafe{rros_program_proxy_tick(&RROS_MONO_CLOCK)};
-    unsafe {
-        rros_start_timer(
-            (*rq).get_inband_timer(),
-            rros_abs_timeout((*rq).get_inband_timer(), delta),
-            RROS_INFINITE,
-        )
-    };
-    unsafe { rust_helper_hard_local_irq_restore(flags) };
-    // pr_debug!("proxy_set_next_ktime: end");
-    return 0;
+        let rq = this_rros_rq();
+
+        // let inband_timer = unsafe{(*rq).get_inband_timer()};
+        //unsafe{rros_program_proxy_tick(&RROS_MONO_CLOCK)};
+        unsafe {
+            rros_start_timer(
+                (*rq).get_inband_timer(),
+                rros_abs_timeout((*rq).get_inband_timer(), delta),
+                RROS_INFINITE,
+            )
+        };
+        unsafe { rust_helper_hard_local_irq_restore(flags) };
+        // pr_debug!("proxy_set_next_ktime: end");
+        return 0;
+    }
 }
 
-//未测试
-unsafe extern "C" fn proxy_set_oneshot_stopped(
-    proxy_dev: *mut bindings::clock_event_device,
-) -> c_types::c_int {
-    pr_debug!("proxy_set_oneshot_stopped: in");
-    let dev = container_of!(proxy_dev, bindings::clock_proxy_device, proxy_device);
+pub struct RrosProxySetOneShotStopped;
 
-    let flags = unsafe { rust_helper_hard_local_irq_save() };
-    let rq = this_rros_rq();
-    unsafe {
-        rros_stop_timer((*rq).get_inband_timer());
-        (*rq).local_flags |= RQ_TSTOPPED;
-        if (*rq).local_flags & RQ_IDLE != 0 {
-            let real_dev = (*dev).real_device;
-            (*real_dev).set_state_oneshot_stopped.unwrap()(real_dev);
+impl clockchips::ProxySetOneshotStopped for RrosProxySetOneShotStopped {
+    // 未测试
+    fn proxy_set_oneshot_stopped(dev: clockchips::ClockProxyDevice) -> c_types::c_int {
+        pr_debug!("proxy_set_oneshot_stopped: in");
+        let flags = unsafe { rust_helper_hard_local_irq_save() };
+        let rq = this_rros_rq();
+        unsafe {
+            rros_stop_timer((*rq).get_inband_timer());
+            (*rq).local_flags |= RQ_TSTOPPED;
+            if (*rq).local_flags & RQ_IDLE != 0 {
+                let real_dev = (*dev.get_ptr()).real_device;
+                (*real_dev).set_state_oneshot_stopped.unwrap()(real_dev);
+            }
         }
+        unsafe { rust_helper_hard_local_irq_restore(flags) };
+        pr_debug!("proxy_set_oneshot_stopped: end");
+        return 0;
     }
-    unsafe { rust_helper_hard_local_irq_restore(flags) };
-    pr_debug!("proxy_set_oneshot_stopped: end");
-    return 0;
 }
 
 #[cfg(CONFIG_SMP)]
-unsafe extern "C" fn clock_ipi_handler(
-    _irq: c_types::c_int,
-    _dev_id: *mut c_types::c_void,
-) -> bindings::irqreturn_t {
-    pr_debug!("god nn");
-    unsafe { rros_core_tick(0 as *mut bindings::clock_event_device) };
-    return bindings::irqreturn_IRQ_HANDLED;
+pub struct RrosClockIpiHandler;
+
+#[cfg(CONFIG_SMP)]
+impl clockchips::ClockIpiHandler for RrosClockIpiHandler {
+    fn clock_ipi_handler(_irq: c_types::c_int, _dev_id: *mut c_types::c_void) -> c_types::c_uint {
+        pr_debug!("god nn");
+        unsafe { clockchips::core_tick::<RrosCoreTick>(null_mut()); }
+        return bindings::irqreturn_IRQ_HANDLED;
+    }
 }
 
 pub fn rros_enable_tick() -> Result<usize> {
     unsafe {
+        // PROXY_DEVICE = alloc_per_cpu(
+        //     size_of::<*mut bindings::clock_proxy_device>() as usize,
+        //     align_of::<*mut bindings::clock_proxy_device>() as usize,
+        // ) as *mut *mut bindings::clock_proxy_device;
         PROXY_DEVICE = alloc_per_cpu(
-            size_of::<*mut bindings::clock_proxy_device>() as usize,
-            align_of::<*mut bindings::clock_proxy_device>() as usize,
-        ) as *mut *mut bindings::clock_proxy_device;
-        if PROXY_DEVICE == 0 as *mut *mut bindings::clock_proxy_device {
+            size_of::<*mut clockchips::ClockProxyDevice>() as usize,
+            align_of::<*mut clockchips::ClockProxyDevice>() as usize,
+        ) as *mut clockchips::ClockProxyDevice;
+        // if PROXY_DEVICE == 0 as *mut *mut bindings::clock_proxy_device {
+        if PROXY_DEVICE == null_mut() {
             return Err(kernel::Error::ENOMEM);
         }
         pr_debug!("PROXY_DEVICE alloc success");
@@ -149,10 +122,9 @@ pub fn rros_enable_tick() -> Result<usize> {
     #[cfg(CONFIG_SMP)]
     if cpumask::num_possible_cpus() > 1 {
         pr_debug!("rros_enable_tick123");
-        let ret = unsafe {
-            bindings::__request_percpu_irq(
+        let ret = unsafe { interrupt::__request_percpu_irq(
                 irq_get_timer_oob_ipi() as c_types::c_uint,
-                Some(clock_ipi_handler),
+                Some(clockchips::clock_ipi_handler::<RrosClockIpiHandler>),
                 rust_helper_IRQF_OOB(),
                 CStr::from_bytes_with_nul_unchecked("RROS_CLOCK_REALTIME_DEV\0".as_bytes())
                     .as_char_ptr(),
@@ -164,12 +136,7 @@ pub fn rros_enable_tick() -> Result<usize> {
         }
     }
 
-    let _ret = unsafe {
-        bindings::tick_install_proxy(
-            Some(setup_proxy),
-            RROS_OOB_CPUS.as_cpumas_ptr() as *const bindings::cpumask_t,
-        )
-    };
+    let _ret = tick::tick_install_proxy(Some(clockchips::setup_proxy::<RrosSetupProxy>), unsafe { RROS_OOB_CPUS.as_cpumas_ptr() });
     pr_info!("enable tick success!");
     // if (ret && IS_ENABLED(CONFIG_SMP) && num_possible_cpus() > 1) {
     // 	free_percpu_irq(TIMER_OOB_IPI, &rros_machine_cpudata);
@@ -179,50 +146,47 @@ pub fn rros_enable_tick() -> Result<usize> {
     Ok(0)
 }
 
-// 新的setup
-unsafe extern "C" fn setup_proxy(_dev: *mut bindings::clock_proxy_device) {
-    let dev;
-    match clockchips::ClockProxyDevice::new(_dev) {
-        Ok(v) => dev = v,
-        Err(_e) => {
-            pr_warn!("dev new error!");
-            return;
+pub struct RrosSetupProxy;
+
+impl clockchips::SetupProxy for RrosSetupProxy {
+    // 新的setup
+    fn setup_proxy(dev: clockchips::ClockProxyDevice) {
+        let _real_dev: ClockEventDevice;
+        match clockchips::ClockEventDevice::from_proxy_device(dev.get_real_device()) {
+            Ok(v) => _real_dev = v,
+            Err(e) => {
+                pr_warn!("1setup real ced new error!");
+                return;
+            }
         }
-    }
 
-    let _real_dev: ClockEventDevice;
-    match clockchips::ClockEventDevice::from_proxy_device(dev.get_real_device()) {
-        Ok(v) => _real_dev = v,
-        Err(_e) => {
-            pr_warn!("1setup real ced new error!");
-            return;
+        let proxy_dev: ClockEventDevice;
+        match clockchips::ClockEventDevice::from_proxy_device(dev.get_proxy_device()) {
+            Ok(v) => proxy_dev = v,
+            Err(_e) => {
+                pr_warn!("1setup proxy ced new error!");
+                return;
+            }
         }
-    }
 
-    let proxy_dev: ClockEventDevice;
-    match clockchips::ClockEventDevice::from_proxy_device(dev.get_proxy_device()) {
-        Ok(v) => proxy_dev = v,
-        Err(_e) => {
-            pr_warn!("1setup proxy ced new error!");
-            return;
+        dev.set_handle_oob_event(clockchips::core_tick::<RrosCoreTick>);
+        let mut temp = proxy_dev.get_features();
+        temp |= CLOCK_EVT_FEAT_KTIME;
+        proxy_dev.set_features(temp);
+
+        proxy_dev.set_set_next_ktime(clockchips::proxy_set_next_ktime::<RrosProxySetNextKtime>);
+        if proxy_dev.get_set_state_oneshot_stopped().is_some() {
+            proxy_dev.set_set_state_oneshot_stopped(
+                clockchips::proxy_set_oneshot_stopped::<RrosProxySetOneShotStopped>,
+            );
         }
-    }
 
-    dev.set_handle_oob_event(rros_core_tick);
-    let mut temp = proxy_dev.get_features();
-    temp |= CLOCK_EVT_FEAT_KTIME;
-    proxy_dev.set_features(temp);
-
-    proxy_dev.set_set_next_ktime(proxy_set_next_ktime);
-    if proxy_dev.get_set_state_oneshot_stopped().is_some() {
-        proxy_dev.set_set_state_oneshot_stopped(proxy_set_oneshot_stopped);
-    }
-
-    unsafe {
-        let tmp_dev =
-            percpu_defs::per_cpu_ptr(PROXY_DEVICE as *mut u8, percpu_defs::smp_processor_id())
-                as *mut *mut bindings::clock_proxy_device;
-        *tmp_dev = dev.get_ptr();
+        unsafe {
+            let tmp_dev =
+                percpu_defs::per_cpu_ptr(PROXY_DEVICE as *mut u8, percpu_defs::smp_processor_id())
+                    as *mut clockchips::ClockProxyDevice;
+            (*tmp_dev).ptr = dev.get_ptr();
+        }
     }
 }
 
@@ -230,12 +194,12 @@ pub fn rros_program_proxy_tick(clock: &RrosClock) {
     let tmp_dev;
     unsafe {
         tmp_dev =
-            *(percpu_defs::per_cpu_ptr(PROXY_DEVICE as *mut u8, percpu_defs::smp_processor_id())
-                as *mut *mut bindings::clock_proxy_device);
+            &*(percpu_defs::per_cpu_ptr(PROXY_DEVICE as *mut u8, percpu_defs::smp_processor_id())
+                as *mut clockchips::ClockProxyDevice);
     }
 
     let dev;
-    match clockchips::ClockProxyDevice::new(tmp_dev) {
+    match clockchips::ClockProxyDevice::new(tmp_dev.get_ptr()) {
         Ok(v) => dev = v,
         Err(_e) => {
             pr_warn!("cpd new error!");

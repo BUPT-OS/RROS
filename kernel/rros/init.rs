@@ -23,9 +23,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 mod control;
 mod idle;
 mod queue;
-mod rros;
 mod sched;
 use sched::rros_init_sched;
+mod rros;
 mod thread;
 // mod weak;
 mod fifo;
@@ -176,7 +176,7 @@ fn set_rros_state(state: RrosRunStates) {
 fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>>>> {
     let res =
         irqstage::enable_oob_stage(CStr::from_bytes_with_nul("rros\0".as_bytes())?.as_char_ptr());
-    pr_info!("hello");
+    pr_debug!("hello");
     match res {
         Ok(_o) => (),
         Err(_e) => {
@@ -184,7 +184,7 @@ fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>
             return Err(kernel::Error::EINVAL);
         }
     }
-    pr_info!("hella");
+    pr_debug!("hella");
     let res = rros_init_memory();
     match res {
         Ok(_o) => (),
@@ -202,7 +202,7 @@ fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>
             return Err(_e);
         }
     }
-    pr_info!("haly");
+    pr_debug!("haly");
 
     let res = rros_clock_init();
     match res {
@@ -359,7 +359,7 @@ impl KernelModule for Rros {
                 )
             };
             match res {
-                Ok(_o) => (pr_info!("load parameters {}\n", str::from_utf8(oobcpus_arg.read())?)),
+                Ok(_o) => (pr_debug!("load parameters {}\n", str::from_utf8(oobcpus_arg.read())?)),
                 Err(_e) => {
                     pr_warn!("wrong oobcpus_arg");
                     unsafe {
@@ -395,7 +395,7 @@ impl KernelModule for Rros {
         test_mem();
         match res {
             Ok(_o) => {
-                pr_info!("Success boot the rros.");
+                pr_debug!("Success boot the rros.");
                 fac_reg = _o;
             }
             Err(_e) => {
@@ -422,11 +422,11 @@ impl KernelModule for Rros {
 
 #[no_mangle]
 unsafe extern "C" fn helloworld() {
-    pr_info!("hello world! from C to rust");
+    pr_debug!("hello world! from C to rust");
 }
 
 impl Drop for Rros {
     fn drop(&mut self) {
-        pr_info!("Bye world from rros!\n");
+        pr_debug!("Bye world from rros!\n");
     }
 }

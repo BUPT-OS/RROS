@@ -71,6 +71,17 @@ RROS has benefitted from the following projects/resources.
 - [Muduo](https://www.cnblogs.com/wsg1100/p/13836497.html): His detailed blog gives us insights for xenomai/evl project.
 - All prospective contributors to RROS in the future!
 
+## Citation
+```
+@misc{li2023rros,
+    title = {RROS: A Dual-kernel Real-time Operating System in Rust},
+    url = {https://github.com/BUPT-OS/RROS},
+    author = {Hongyu Li and Jiangtao Hu and Qichen Qiu and Yuxuan Shan and Bochen Wang and Jiajun Du and Yexuan Yang and Xinge Wang and Shangguang Wang and Mengwei Xu},
+    month = {December},
+    year = {2023}
+}
+```
+
 ## License
 
 The source code of RROS is under the License of GPL-2.0.

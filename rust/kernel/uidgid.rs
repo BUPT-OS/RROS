@@ -19,11 +19,6 @@ pub struct KuidT(pub bindings::kuid_t);
 pub struct KgidT(pub bindings::kgid_t);
 
 impl KuidT {
-    /// Takes a pointer to a `u8` and returns a `KuidT` struct.
-    pub fn from_ptr(ptr: *const u8) -> Self {
-        unsafe { Self((*(ptr as *const bindings::inode)).i_uid) }
-    }
-
     /// Returns a `KuidT` struct with the value of 0.
     /// Corresponds to the C macro GLOBAL_ROOT_UID.
     pub fn global_root_uid() -> Self {
@@ -33,11 +28,6 @@ impl KuidT {
 
 
 impl KgidT {
-    /// Takes a pointer to a `u8` and returns a `KgidT` struct.
-    pub fn from_ptr(ptr: *const u8) -> Self {
-        unsafe { Self((*(ptr as *const bindings::inode)).i_gid) }
-    }
-
     /// Returns a `KgidT` struct with the value of 0.
     /// Corresponds to the C macro GLOBAL_ROOT_GID.
     pub fn global_root_gid() -> Self {

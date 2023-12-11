@@ -498,15 +498,6 @@ pub static mut CLOCK_LIST: List<*mut RrosClock> = List::<*mut RrosClock> {
     },
 };
 
-/*
-struct rros_factory rros_clock_factory = {
-    .name	=	clock,
-    .fops	=	&clock_fops,
-    .nrdev	=	CONFIG_RROS_NR_CLOCKS,
-    .attrs	=	clock_groups,
-    .dispose =	clock_factory_dispose,
-};
-*/
 pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
         name: unsafe { CStr::from_bytes_with_nul_unchecked("clock\0".as_bytes()) },

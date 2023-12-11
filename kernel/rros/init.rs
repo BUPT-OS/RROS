@@ -20,6 +20,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 mod control;
 mod idle;
+mod poll;
 mod queue;
 mod sched;
 use sched::rros_init_sched;

@@ -1,5 +1,7 @@
 use crate::{
+    bindings::ktime_t,
     clock::{RrosClock, RROS_MONO_CLOCK},
+    lock::{raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
     sched::rros_schedule,
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
@@ -65,6 +67,29 @@ impl RrosFlag {
     }
 
     #[inline]
+    pub fn wait_timeout(&mut self, timeout: ktime_t, tmode: RrosTmode) -> i32 {
+        let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
+        unsafe { x.as_mut().wait_timeout(timeout, tmode, || self.read()) }
+    }
+
+    #[inline]
+    pub fn raise_nosched(&mut self) {
+        let flags = unsafe {
+            rust_helper_raw_spin_lock_irqsave(
+                &mut self.wait.lock as *const _ as *mut bindings::hard_spinlock_t,
+            )
+        };
+        self.raised.set(true);
+        self.wait.flush_locked(0);
+        unsafe {
+            rust_helper_raw_spin_unlock_irqrestore(
+                &mut self.wait.lock as *const _ as *mut bindings::hard_spinlock_t,
+                flags,
+            )
+        };
+    }
+
+    #[inline]
     pub fn raise(&mut self) {
         // let flags = unsafe{bindings::_raw_spin_lock_irqsave(&mut self.wait.lock as *const _ as *mut bindings::raw_spinlock)};
         let flags = self.wait.lock.raw_spin_lock_irqsave();
@@ -74,6 +99,19 @@ impl RrosFlag {
         // unsafe{bindings::_raw_spin_unlock_irqrestore(&mut self.wait.lock as *const _ as *mut bindings::raw_spinlock, flags)};
 
         unsafe { rros_schedule() };
+    }
+
+    #[inline]
+    pub fn flush_locked(&mut self, reason: i32) {
+        self.wait.flush_locked(reason);
+    }
+
+    #[inline]
+    pub fn flush_nosched(&mut self, reason: i32) {
+        let mut flags: u64;
+        flags = raw_spin_lock_irqsave();
+        self.wait.flush_locked(reason);
+        raw_spin_unlock_irqrestore(flags);
     }
 }
 

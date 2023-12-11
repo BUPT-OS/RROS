@@ -5,7 +5,7 @@
 //! C headers: [`include/linux/fs.h`](../../../../include/linux/fs.h) and
 //! [`include/linux/file.h`](../../../../include/linux/file.h)
 
-use crate::{bindings, c_types, error::Error, Result};
+use crate::{bindings, c_types, error::Error, str::CStr, Result};
 use core::{mem::ManuallyDrop, ops::Deref};
 
 /// Wraps the kernel's `struct file`.
@@ -72,6 +72,32 @@ impl File {
     /// Returns the raw pointer to the underlying `file` struct.
     pub fn get_ptr(&self) -> *mut bindings::file {
         self.ptr
+    }
+
+    pub fn get_parent_name(&self) -> Result<&str> {
+        let d = unsafe { (*(*self.ptr).f_path.dentry).d_parent };
+        if d.is_null() {
+            return Err(Error::EINVAL);
+        }
+        unsafe {
+            match CStr::from_char_ptr((*d).d_name.name as *const c_types::c_char).to_str() {
+                Ok(s) => Ok(s),
+                Err(_) => Err(Error::EINVAL),
+            }
+        }
+    }
+
+    pub fn get_name(&self) -> Result<&str> {
+        unsafe {
+            match CStr::from_char_ptr(
+                (*(*self.ptr).f_path.dentry).d_name.name as *const c_types::c_char,
+            )
+            .to_str()
+            {
+                Ok(s) => Ok(s),
+                Err(_) => Err(Error::EINVAL),
+            }
+        }
     }
 }
 

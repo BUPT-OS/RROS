@@ -45,6 +45,7 @@ pub mod chrdev;
 pub mod error;
 pub mod file;
 pub mod file_operations;
+pub mod ioctl;
 pub mod miscdev;
 pub mod pages;
 pub mod security;

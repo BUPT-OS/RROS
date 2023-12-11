@@ -1,6 +1,6 @@
 use core::{cell::RefCell, clone::Clone, convert::TryInto, default::Default, result::Result::Ok, ptr, mem::size_of};
 
-use crate::{clock, control, file::RrosFileBinding, proxy, thread, xbuf};
+use crate::{clock, control, file::RrosFileBinding, proxy, thread, xbuf, poll};
 
 use alloc::rc::Rc;
 
@@ -777,6 +777,9 @@ fn rros_create_factory(
                         Ok("control") => {
                             chrdev_reg.as_mut().register::<control::ControlOps>()?;
                         }
+                        Ok("poll") => {
+                            chrdev_reg.as_mut().register::<poll::PollOps>()?;
+                        }
                         Ok(_) => {
                             pr_alert!("not yet implemented");
                         }
@@ -1021,13 +1024,14 @@ pub fn rros_early_init_factories(
     this_module: &'static ThisModule,
 ) -> Result<Pin<Box<chrdev::Registration<NR_FACTORIES>>>> {
     // TODO: move the number of factories to a variable
-    let mut early_factories: [&mut SpinLock<RrosFactory>; 5] = unsafe {
+    let mut early_factories: [&mut SpinLock<RrosFactory>; 6] = unsafe {
         [
             &mut clock::RROS_CLOCK_FACTORY,
             &mut thread::RROS_THREAD_FACTORY,
             &mut xbuf::RROS_XBUF_FACTORY,
             &mut proxy::RROS_PROXY_FACTORY,
             &mut control::RROS_CONTROL_FACTORY,
+            &mut poll::RROS_POLL_FACTORY,
         ]
     };
     // static struct rros_factory *early_factories[] = {

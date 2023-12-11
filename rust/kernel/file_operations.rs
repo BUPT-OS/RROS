@@ -9,6 +9,7 @@ use core::{marker, mem, ops::Deref, ptr};
 
 use alloc::boxed::Box;
 
+use crate::pr_info;
 use crate::{
     bindings, c_types,
     error::{Error, Result},
@@ -64,7 +65,15 @@ impl PollTable {
         }
     }
 }
+pub struct OobPollWait {
+    pub ptr: *mut bindings::oob_poll_wait,
+}
 
+impl OobPollWait {
+    unsafe fn from_ptr(ptr: *mut bindings::oob_poll_wait) -> Self {
+        Self { ptr }
+    }
+}
 /// Equivalent to [`std::io::SeekFrom`].
 ///
 /// [`std::io::SeekFrom`]: https://doc.rust-lang.org/std/io/enum.SeekFrom.html
@@ -84,9 +93,23 @@ unsafe extern "C" fn open_callback<A: FileOpenAdapter, T: FileOpener<A::Arg>>(
     file: *mut bindings::file,
 ) -> c_types::c_int {
     from_kernel_result! {
+        // SAFETY: `A::convert` must return a valid non-null pointer that
+        // should point to data in the inode or file that lives longer
+        // than the following use of `T::open`.
         let arg = unsafe { A::convert(inode, file) };
-        let fileref = unsafe { &FileRef::from_ptr(file) };
-        let ptr = T::open(unsafe { &*arg }, fileref)?.into_pointer();
+        // SAFETY: The C contract guarantees that `file` is valid. Additionally,
+        // `fileref` never outlives this function, so it is guaranteed to be
+        // valid.
+        let fileref = unsafe {
+            FileRef::from_ptr(file)
+        };
+        // SAFETY: `arg` was previously returned by `A::convert` and must
+        // be a valid non-null pointer
+        let ptr = T::open(unsafe { &*arg }, &fileref)?.into_pointer();
+        // SAFETY: The C contract guarantees that `private_data` is available
+        // for implementers of the file operations (no other C code accesses
+        // it), so we know that there are no concurrent threads/CPUs accessing
+        // it (it's not visible to any other Rust code).
         unsafe { (*file).private_data = ptr as *mut c_types::c_void };
         Ok(0)
     }
@@ -256,6 +279,7 @@ unsafe extern "C" fn unlocked_ioctl_callback<T: FileOperations>(
         let f = unsafe { T::Wrapper::borrow((*file).private_data) };
         let mut cmd = IoctlCommand::new(cmd as _, arg as _);
         let ret = T::ioctl(&f, unsafe { &FileRef::from_ptr(file) }, &mut cmd)?;
+        unsafe { pr_info!("the file and oob_data after unlocked_ioctl is {:p}, {:p}", file, (*file).oob_data) };
         Ok(ret as _)
     }
 }
@@ -340,6 +364,23 @@ unsafe extern "C" fn poll_callback<T: FileOperations>(
     let f = unsafe { T::Wrapper::borrow((*file).private_data) };
     match T::poll(&f, unsafe { &FileRef::from_ptr(file) }, unsafe {
         &PollTable::from_ptr(wait)
+    }) {
+        Ok(v) => v,
+        Err(_) => bindings::POLLERR,
+    }
+}
+
+unsafe extern "C" fn oob_poll_callback<T: FileOperations>(
+    file: *mut bindings::file,
+    wait: *mut bindings::oob_poll_wait,
+) -> bindings::__poll_t {
+    // SAFETY: `private_data` was initialised by `open_callback` with a value returned by
+    // `T::Wrapper::into_pointer`. `T::Wrapper::from_pointer` is only called by the `release`
+    // callback, which the C API guarantees that will be called only when all references to `file`
+    // have been released, so we know it can't be called while this function is running.
+    let f = unsafe { T::Wrapper::borrow((*file).private_data) };
+    match T::oob_poll(&f, unsafe { &FileRef::from_ptr(file) }, unsafe {
+        &OobPollWait::from_ptr(wait)
     }) {
         Ok(v) => v,
         Err(_) => bindings::POLLERR,
@@ -439,7 +480,11 @@ impl<A: FileOpenAdapter, T: FileOpener<A::Arg>> FileOperationsVtable<A, T> {
             None
         },
         compat_oob_ioctl: None,
-        oob_poll: None,
+        oob_poll: if T::TO_USE.oob_poll {
+            Some(oob_poll_callback::<T>)
+        } else {
+            None
+        },
     };
 
     /// Builds an instance of [`struct file_operations`].
@@ -793,6 +838,14 @@ pub trait FileOperations: Send + Sync + Sized {
         Err(Error::EINVAL)
     }
 
+    fn compat_oob_ioctl(
+        _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _cmd: &mut IoctlCommand,
+    ) -> Result<i32> {
+        Err(Error::EINVAL)
+    }
+
     /// Syncs pending changes to this file.
     ///
     /// Corresponds to the `fsync` function pointer in `struct file_operations`.
@@ -826,6 +879,18 @@ pub trait FileOperations: Send + Sync + Sized {
         _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
         _file: &File,
         _table: &PollTable,
+    ) -> Result<u32> {
+        Ok(bindings::POLLIN | bindings::POLLOUT | bindings::POLLRDNORM | bindings::POLLWRNORM)
+    }
+
+    /// Checks the state of the file and optionally registers for notification when the state
+    /// changes.
+    ///
+    /// Corresponds to the `poll` function pointer in `struct file_operations`.
+    fn oob_poll(
+        _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _wait: &OobPollWait,
     ) -> Result<u32> {
         Ok(bindings::POLLIN | bindings::POLLOUT | bindings::POLLRDNORM | bindings::POLLWRNORM)
     }

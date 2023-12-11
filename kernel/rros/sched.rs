@@ -42,6 +42,7 @@ use crate::{
     timer::*,
     wait::{RROS_WAIT_PRIO, RrosWaitChannel, RrosWaitQueue},
     flags::RrosFlag,
+    poll::RrosPollWatchpoint
 };
 
 extern "C" {
@@ -983,7 +984,7 @@ impl RrosThread {
 // }
 
 pub struct PollContext {
-    pub table: Option<Rc<RefCell<RrosPollWatchpoint>>>,
+    pub table: Option<Vec<RrosPollWatchpoint, alloc::alloc_rros::RrosMem>>,
     pub generation: u32,
     pub nr: i32,
     pub active: i32,
@@ -999,40 +1000,19 @@ impl PollContext {
     }
 }
 
-pub struct RrosPollWatchpoint {
-    pub fd: u32,
-    pub events_polled: i32,
-    pub pollval: RrosValue,
-    // pub wait:oob_poll_wait,  //ifdef
-    pub flag: Option<Rc<RefCell<RrosFlag>>>,
-    // pub filp:*mut file,
-    pub node: RrosPollNode,
-}
-impl RrosPollWatchpoint {
-    #[allow(dead_code)]
-    fn new() -> Self {
-        RrosPollWatchpoint {
-            fd: 0,
-            events_polled: 0,
-            pollval: RrosValue::new(),
-            flag: None,
-            node: RrosPollNode::new(),
-        }
-    }
+//#[derive(Copy,Clone)]
+pub enum RrosValue {
+    Val(i32),
+    Lval(i64),
+    Ptr(*mut c_types::c_void),
 }
 
-pub struct RrosValue {
-    pub val: i32,
-    pub lval: i64,
-    pub ptr: *mut c_types::c_void,
-}
 impl RrosValue {
     pub fn new() -> Self {
-        RrosValue {
-            val: 0,
-            lval: 0,
-            ptr: null_mut(),
-        }
+        RrosValue::Lval(0)
+    }
+    pub fn new_nil() -> Self {
+        RrosValue::Ptr(null_mut())
     }
 }
 

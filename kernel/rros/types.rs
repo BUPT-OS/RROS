@@ -68,7 +68,7 @@ macro_rules! list_entry_is_head {
 /// It uses the `rust_helper_INIT_LIST_HEAD` function from the C bindings.
 #[macro_export]
 macro_rules! init_list_head {
-    ($list:expr) => {
+    ($list:expr) => {{
         extern "C" {
             #[allow(dead_code)]
             fn rust_helper_INIT_LIST_HEAD(list: *mut $crate::bindings::list_head);
@@ -76,7 +76,7 @@ macro_rules! init_list_head {
         unsafe {
             rust_helper_INIT_LIST_HEAD($list as *mut $crate::bindings::list_head);
         }
-    };
+    }};
 }
 
 /// Function to check if a list is empty.
@@ -91,12 +91,12 @@ pub fn list_empty(list: *const bindings::list_head) -> bool {
 /// It uses the `rust_helper_list_empty` function from the C bindings.
 #[macro_export]
 macro_rules! list_empty {
-    ($list_head_ptr:expr) => {
+    ($list_head_ptr:expr) => {{
         extern "C" {
             fn rust_helper_list_empty(list: *const $crate::bindings::list_head) -> bool;
         }
         unsafe { rust_helper_list_empty($list_head_ptr as *const $crate::bindings::list_head) }
-    };
+    }};
 }
 
 /// Macro to delete a list entry.

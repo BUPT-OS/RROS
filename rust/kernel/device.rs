@@ -44,6 +44,7 @@ impl DeviceType {
 
     /// set the devnode call back function to the device type
     pub fn set_devnode<T: Devnode>(&mut self) {
+        /// SAFETY: T that implement Devnode will certainly return a valid static function pointer
         unsafe {
             self.0.devnode = DevnodeVtable::<T>::get_devnode_callback();
         }
@@ -68,7 +69,9 @@ impl Device {
         let dev = Box::try_new(bindings::device::default()).unwrap();
         let dev = Box::leak(dev);
         init(dev);
+        /// SAFETY: the dev is valid, and the name will be copyed, so it don't have to be 'static
         unsafe { bindings::dev_set_name(dev, name.as_char_ptr()) };
+        /// SAFETY: the dev is valid
         unsafe { bindings::device_register(dev) };
         Self(dev as *mut bindings::device)
     }
@@ -85,6 +88,7 @@ impl Device {
     /// get the driver data of the device
     #[inline]
     pub fn get_drvdata<T>(&mut self) -> Option<&T> {
+        /// SAFETY: must ensure self.0 is valid
         let ptr = unsafe { *self.0 }.driver_data as *const T;
         if ptr.is_null() {
             None
@@ -97,6 +101,7 @@ impl Device {
     #[inline]
     pub fn set_drvdata<T>(&mut self, data: *mut T) {
         // TODO: make sure data is pinned or belonged to dev
+        /// SAFETY: must ensure self.0 is valid
         unsafe {
             (*self.0).driver_data = data as *const T as *mut c_types::c_void;
         }
@@ -105,6 +110,7 @@ impl Device {
     /// get the device type of the device
     #[inline]
     pub fn dev_type(&self) -> Option<&DeviceType> {
+        /// SAFETY: must ensure self.0 is valid
         unsafe {
             if (*self.0).type_.is_null() {
                 None

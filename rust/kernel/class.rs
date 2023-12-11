@@ -31,10 +31,11 @@ impl DevT {
 }
 
 /// The `Class` struct represents a device class in the kernel. It contains a raw pointer to the underlying `bindings::class` struct.
-pub struct Class {
-    /// The `ptr` field in the `Class` struct is a raw pointer to the underlying `bindings::class` struct from the kernel bindings. It represents the actual device class in the kernel that this `Class` struct is wrapping.
-    pub ptr: *mut bindings::class,
-}
+/// 
+/// # Invariants
+///
+/// - [`self.0`] is valid and non-null.
+pub struct Class(*mut bindings::class);
 
 impl Class {
     /// The `new` method is a constructor for `Class`. It takes a reference to the current module and a name, and creates a new device class. If the creation fails, it returns an `EBADF` error.
@@ -46,17 +47,18 @@ impl Class {
         if ptr.is_null() {
             return Err(Error::EBADF);
         }
-        Ok(Self { ptr })
+        Ok(Self(ptr))
     }
 
     /// Add the devnode call back function to the class.
     pub fn set_devnode<T: device::ClassDevnode>(&mut self) {
-        unsafe { (*(self.ptr)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback(); }
+        /// SAFETY: The `self.ptr` is a valid and created by `class_create` function.
+        unsafe { (*(self.0)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback(); }
     }
 
     /// The `get_ptr` method returns the raw pointer to the underlying `bindings::class` struct.
     pub fn get_ptr(&self) -> *mut bindings::class {
-        self.ptr
+        self.0
     }
 }
 

@@ -25,8 +25,8 @@ use kernel::{
     prelude::*,
     str::CStr,
     sync::SpinLock,
-    user_ptr::{UserSlicePtrReader, UserSlicePtrWriter},
-    vmalloc::c_kzalloc,
+    user_ptr::{ UserSlicePtrReader, UserSlicePtrWriter },
+    vmalloc::c_kzalloc, device::DeviceType,
 };
 
 #[derive(Default)]
@@ -1062,15 +1062,15 @@ fn xbuf_factory_build(
 
 pub static mut RROS_XBUF_FACTORY: SpinLock<RrosFactory> = unsafe {
     SpinLock::new(RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("RROS_XBUF_DEV\0".as_bytes()),
+        name: unsafe { CStr::from_bytes_with_nul_unchecked("xbuf\0".as_bytes()) },
         // fops: Some(RustFileXbuf),
         nrdev: CONFIG_RROS_NR_XBUFS,
         build: Some(xbuf_factory_build),
         dispose: Some(xbuf_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
-        flags: 1,
+        flags: RrosFactoryType::CLONE,
         inside: Some(RrosFactoryInside {
-            rrtype: None,
+            type_: DeviceType::new(),
             class: None,
             cdev: None,
             device: None,

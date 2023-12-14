@@ -4,6 +4,7 @@ use crate::factory::{CloneData, RrosFactory, RrosFactoryInside};
 
 use kernel::{
     bindings,
+    device::DeviceType,
     file::File,
     file_operations::{FileOpener, FileOperations, IoctlCommand},
     io_buffer::{IoBufferWriter, WritableToBytes},
@@ -11,21 +12,21 @@ use kernel::{
     mm::{remap_pfn_range, PAGE_SHARED},
     prelude::*,
     str::CStr,
-    sync::SpinLock,
+    sync::{Mutex, SpinLock},
 };
 
 pub const CONFIG_RROS_NR_CONTROL: usize = 0;
 
 pub static mut RROS_CONTROL_FACTORY: SpinLock<RrosFactory> = unsafe {
     SpinLock::new(RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("RROS_CONTROL_DEV\0".as_bytes()),
+        name: CStr::from_bytes_with_nul_unchecked("control\0".as_bytes()),
         nrdev: CONFIG_RROS_NR_CONTROL,
         build: None,
         dispose: None,
         attrs: None,
-        flags: 0,
+        flags: crate::factory::RrosFactoryType::SINGLE,
         inside: Some(RrosFactoryInside {
-            rrtype: None,
+            type_: DeviceType::new(),
             class: None,
             cdev: None,
             device: None,

@@ -21,6 +21,7 @@
     const_panic,
     const_raw_ptr_deref,
     const_unreachable_unchecked,
+    const_fn_fn_ptr_basics,
     receiver_trait,
     try_reserve,
     unsafe_cell_raw_get
@@ -104,6 +105,7 @@ pub mod uapi;
 pub mod uidgid;
 pub mod vmalloc;
 pub mod workqueue;
+pub mod kernelh;
 
 #[doc(hidden)]
 pub use build_error::build_error;

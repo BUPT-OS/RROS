@@ -142,3 +142,9 @@ impl Drop for FileDescriptorReservation {
         unsafe { bindings::put_unused_fd(self.fd) };
     }
 }
+
+/// call linux fd_install
+pub fn fd_install(fd: u32, filp: *mut bindings::file) {
+    /// SAFETY: The caller must ensure that `filp` is a valid pointer.
+    unsafe { bindings::fd_install(fd, filp); }
+}

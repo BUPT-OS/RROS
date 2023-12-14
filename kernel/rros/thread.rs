@@ -8,10 +8,12 @@ use crate::{
     timer, RROS_OOB_CPUS,
 };
 use alloc::rc::Rc;
+use kernel::bindings::prepare_creds;
+use kernel::device::DeviceType;
+use kernel::ktime::ktime_sub;
 use core::ops::DerefMut;
 use core::result::Result::Ok;
 use core::{cell::RefCell, clone::Clone};
-use kernel::bindings::prepare_creds;
 use kernel::completion::Completion;
 use kernel::cpumask::CpumaskT;
 use kernel::error::from_kernel_err_ptr;
@@ -19,7 +21,6 @@ use kernel::file::File;
 use kernel::file_operations::FileOperations;
 use kernel::io_buffer::IoBufferWriter;
 use kernel::irq_work::IrqWork;
-use kernel::ktime::ktime_sub;
 use kernel::str::CStr;
 use kernel::task::Task;
 #[warn(unused_mut)]
@@ -149,8 +150,8 @@ pub const CONFIG_RROS_NR_THREADS: usize = 16;
 
 pub static mut RROS_TRHEAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
-        // TODO: move this and clock factory name to a variable
-        name: CStr::from_bytes_with_nul_unchecked("RROS_THREAD_DEV\0".as_bytes()),
+        // TODO: move this and clock factory name to a variable 
+        name: CStr::from_bytes_with_nul_unchecked("thread\0".as_bytes()),
         // fops: Some(&ThreadOps),
         nrdev: CONFIG_RROS_NR_THREADS,
         // TODO: add the corresponding ops
@@ -160,9 +161,9 @@ pub static mut RROS_TRHEAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
         // TODO: add the corresponding attr
         attrs: None, //sysfs::attribute_group::new(),
         // TODO: rename this flags to the bit level variable RROS_FACTORY_CLONE and RROS_FACTORY_SINGLE
-        flags: 1,
+        flags: factory::RrosFactoryType::CLONE,
         inside: Some(factory::RrosFactoryInside {
-            rrtype: None,
+            type_: DeviceType::new(),
             class: None,
             cdev: None,
             device: None,

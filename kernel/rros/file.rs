@@ -11,8 +11,7 @@ use crate::{
         rros_down_crossing, rros_init_crossing, rros_pass_crossing, rros_up_crossing, RrosCrossing,
     },
     factory::RrosElement,
-    init_list_head, list, list_add, list_del, list_empty,
-    lock::raw_spin_lock_irqsave,
+    init_list_head, list_add, list_del, list_empty,
     poll::{rros_drop_watchpoints, RrosPollNode},
     sched,
 };
@@ -26,6 +25,7 @@ use kernel::{
     str::CStr,
     sync::{Lock, SpinLock},
     task::Task,
+    c_types,
 };
 
 pub struct RrosFileBinding {
@@ -277,17 +277,15 @@ no_mangle_function_declaration! {
             return;
         }
 
-    let rfd = lookup_rfd(fd, files);
-    match rfd {
-        Some(rfd) => {
-            unsafe {
-                drop_watchpoints(&mut *rfd);
-            }
-            unsafe {
-                (*rfd).rfilp = NonNull::new((*filp).oob_data as *const _ as *mut RrosFile).unwrap()
-            };
-            unsafe {
-                sched::rros_schedule();
+        let rfd = lookup_rfd(fd, &mut files);
+        match rfd {
+            Some(rfd) => {
+                unsafe{ rros_drop_watchpoints((*rfd).poll_nodes.as_mut()); }
+                unsafe { (*rfd).rfilp = NonNull::new((*filp).oob_data as *const _ as *mut RrosFile).unwrap() };
+                unsafe { sched::rros_schedule(); } 
+            },
+            None => {
+                install_inband_fd(fd, filp, files.get_ptr());
             }
         }
 
@@ -318,13 +316,16 @@ pub fn rros_get_file(fd: u32) -> Option<NonNull<RrosFile>> {
 }
 
 pub fn rros_watch_fd(fd: u32, node: &mut RrosPollNode) -> Option<NonNull<RrosFile>> {
-    let rfd = lookup_rfd(fd, unsafe { (*Task::current_ptr()).files });
+    let rfd = lookup_rfd(fd, unsafe { &mut FilesStruct::from_ptr((*Task::current_ptr()).files) });
 
     match rfd {
-        Some(rfd) => unsafe {
-            rros_get_fileref((*rfd).rfilp.as_mut());
+        Some(rfd) => {
+            if let Err(_) = unsafe{ rros_get_fileref((*rfd).rfilp.as_mut()) } {
+                pr_err!("rros_watch_fd: rros_get_fileref fail");
+                return None;
+            }
             list_add!(&mut node.next, (*rfd).poll_nodes.as_mut());
-            Some((*rfd).rfilp)
+            unsafe{ Some((*rfd).rfilp) }
         },
         None => None,
     }

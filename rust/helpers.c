@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <asm-generic/irq_pipeline.h>
+#include <asm-generic/int-ll64.h>
+#include <cstddef>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
 #include <linux/clk.h>
@@ -66,6 +68,7 @@
 #include <linux/if_vlan.h>
 #include <linux/skbuff.h>
 #include <linux/hashtable.h>
+#include <sys/types.h>
 void rust_helper_BUG(void)
 {
 	BUG();
@@ -308,6 +311,11 @@ size_t rust_helper_align(size_t x, unsigned long a)
 	return ALIGN(x,a);
 }
 EXPORT_SYMBOL_GPL(rust_helper_align); 
+
+unsigned long rust_helper_pa(unsigned long x) {
+	return __virt_to_phys(x);
+}
+EXPORT_SYMBOL_GPL(rust_helper_pa);
 
 bool rust_helper_running_inband(void)
 {
@@ -1107,10 +1115,6 @@ void* rust_helper_kthread_run_on_cpu(int (*threadfn)(void *data), void *data, in
 }
 EXPORT_SYMBOL_GPL(rust_helper_kthread_run_on_cpu);
 
-int rust_helper_pa(unsigned long x) {
-	return __virt_to_phys(x);
-}
-EXPORT_SYMBOL_GPL(rust_helper_pa);
 
 // void rust_helper_anon_inode_getfile(const char *name,
 // 				const struct file_operations *fops,

@@ -71,5 +71,6 @@ type PgprotT = bindings::pgprot_t;
 
 /// This constant is used to set the protection attributes of a page to shared.
 pub const PAGE_SHARED: PgprotT = PgprotT {
-    pgprot: 4035 as u64,
+    // HACK: temporary hack for pgprot_t
+    pgprot: 0x68000000000fc3 as u64,
 };

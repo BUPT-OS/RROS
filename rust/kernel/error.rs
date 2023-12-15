@@ -14,6 +14,7 @@ use core::convert::From;
 use core::fmt;
 use core::num::TryFromIntError;
 use core::str::{self, Utf8Error};
+use core::cell::BorrowMutError;
 
 /// Generic integer kernel error.
 ///
@@ -89,6 +90,7 @@ impl Error {
 
     /// Poll cycles
     pub const ELOOP: Self = Error(-(bindings::ELOOP as i32));
+    
     /// Creates an [`Error`] from a kernel error code.
     ///
     /// It is a bug to pass an out-of-range `errno`. `EINVAL` would
@@ -195,6 +197,12 @@ impl From<AllocError> for Error {
 impl From<LayoutError> for Error {
     fn from(_: LayoutError) -> Error {
         Error::ENOMEM
+    }
+}
+
+impl From<BorrowMutError> for Error {
+    fn from(_: BorrowMutError) -> Error {
+        Error::EBUSY
     }
 }
 

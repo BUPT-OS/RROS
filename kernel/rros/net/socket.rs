@@ -11,13 +11,13 @@ use crate::{
     THIS_MODULE,
     bindings,
     c_types,
-    crossing::RrosCrossing, file::RrosFile, list::ListHead,
+    crossing::RrosCrossing, file::RrosFile,
     wait::RrosWaitQueue,
     poll::RrosPollHead,
 };
 
 use kernel::{
-    sync::{Mutex, RawSpinLock, SpinLock},
+    sync::{Mutex, SpinLock},
     endian::be16,
     iov_iter::Iovec,
     net::{Socket, NetProtoFamily, Namespace, CreateSocket, create_socket_callback},

@@ -9,7 +9,6 @@ use core::{marker, mem, ops::Deref, ptr};
 
 use alloc::boxed::Box;
 
-use crate::pr_info;
 use crate::{
     bindings, c_types,
     error::{Error, Result},
@@ -65,13 +64,29 @@ impl PollTable {
         }
     }
 }
+
+/// Wraps the kernel's `struct oob_poll_wait`.
+///
+/// # Invariants
+///
+/// The pointer `OobPollWait::ptr` is null or valid.
 pub struct OobPollWait {
-    pub ptr: *mut bindings::oob_poll_wait,
+    ptr: *mut bindings::oob_poll_wait,
 }
 
 impl OobPollWait {
+    /// Constructors a new `struct oob_poll_wait` wrapper.
+    ///
+    /// # Safety
+    ///
+    /// The pointer `ptr` must be either null or a valid pointer for the lifetime of the object.
     unsafe fn from_ptr(ptr: *mut bindings::oob_poll_wait) -> Self {
         Self { ptr }
+    }
+
+    /// get ptr in OobPollWait Wrapper
+    pub fn get_ptr(&self) -> *mut bindings::oob_poll_wait {
+        self.ptr
     }
 }
 /// Equivalent to [`std::io::SeekFrom`].
@@ -279,7 +294,6 @@ unsafe extern "C" fn unlocked_ioctl_callback<T: FileOperations>(
         let f = unsafe { T::Wrapper::borrow((*file).private_data) };
         let mut cmd = IoctlCommand::new(cmd as _, arg as _);
         let ret = T::ioctl(&f, unsafe { &FileRef::from_ptr(file) }, &mut cmd)?;
-        unsafe { pr_info!("the file and oob_data after unlocked_ioctl is {:p}, {:p}", file, (*file).oob_data) };
         Ok(ret as _)
     }
 }
@@ -827,6 +841,7 @@ pub trait FileOperations: Send + Sync + Sized {
     ) -> Result<i32> {
         Err(Error::EINVAL)
     }
+
     /// Performs 32-bit IO control operations on that are specific to the file on 64-bit kernels.
     ///
     /// Corresponds to the `compat_ioctl` function pointer in `struct file_operations`.
@@ -838,6 +853,9 @@ pub trait FileOperations: Send + Sync + Sized {
         Err(Error::EINVAL)
     }
 
+    /// Performs 32-bit IO control operations on that are specific to the file on 64-bit kernels.
+    ///
+    /// Corresponds to the `compat_oob_ioctl` function pointer in `struct file_operations`.
     fn compat_oob_ioctl(
         _this: &<<Self::Wrapper as PointerWrapper>::Borrowed as Deref>::Target,
         _file: &File,

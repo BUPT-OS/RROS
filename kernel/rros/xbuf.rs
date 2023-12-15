@@ -18,7 +18,6 @@ use crate::{
 use kernel::{
     bindings,
     c_types::*,
-    device::DeviceType,
     error::Error,
     file::File,
     file_operations::{FileOpener, FileOperations},
@@ -110,7 +109,7 @@ impl FileOperations for XbufOps {
         _file: &File,
         _wait: &kernel::file_operations::OobPollWait,
     ) -> Result<u32> {
-        xbuf_oob_poll(_file, _wait.ptr)
+        xbuf_oob_poll(_file, _wait.get_ptr())
     }
 
     fn release(_this: Box<CloneData>, _file: &File) {
@@ -834,7 +833,7 @@ fn xbuf_oob_poll(filp: &File, wait: *mut bindings::oob_poll_wait) -> Result<u32>
     let xbuf: &mut RrosXbuf = unsafe { &mut *((*((*fbind).element)).pointer as *mut RrosXbuf) };
     let obnd = &xbuf.obnd;
     let ibnd = &xbuf.ibnd;
-    let mut flags: u32 = 0;
+    let mut flags: u32;
     let mut ready: u32 = 0;
     let rwait = unsafe { &mut *(wait as *mut OobPollWait) };
 

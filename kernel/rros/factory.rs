@@ -22,6 +22,7 @@ use kernel::{
     uidgid::{KgidT, KuidT},
     device::DeviceType,
     io_buffer::IoBufferWriter,
+    kernelh,
 };
 
 extern "C" {

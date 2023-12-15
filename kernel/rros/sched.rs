@@ -41,7 +41,6 @@ use crate::{
     timeout::RROS_INFINITE,
     timer::*,
     wait::{RROS_WAIT_PRIO, RrosWaitChannel, RrosWaitQueue},
-    flags::RrosFlag,
     poll::RrosPollWatchpoint
 };
 
@@ -1001,6 +1000,7 @@ impl PollContext {
 }
 
 //#[derive(Copy,Clone)]
+#[allow(dead_code)]
 pub enum RrosValue {
     Val(i32),
     Lval(i64),
@@ -1011,6 +1011,7 @@ impl RrosValue {
     pub fn new() -> Self {
         RrosValue::Lval(0)
     }
+    #[allow(dead_code)]
     pub fn new_nil() -> Self {
         RrosValue::Ptr(null_mut())
     }

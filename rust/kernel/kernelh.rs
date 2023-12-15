@@ -7,6 +7,7 @@
 use crate::{
     bindings,
     c_types::*,
+    prelude::*,
 };
 
 // FIXME: how to wrapper `...` in parameters
@@ -22,7 +23,25 @@ pub fn _kasprintf_2(gfp: bindings::gfp_t, fmt: *const c_char, arg1: *const c_cha
     unsafe { bindings::kasprintf(gfp, fmt, arg1,arg2) }
 }
 
-/// call linux do_exit
-pub fn do_exit(error_code: c_long) {
-    unsafe { bindings::do_exit(error_code); }
+/// A wrapper to store thread's exit code.
+pub enum ThreadExitCode {
+    Successfully,
+    WithError(Error),
+}
+
+impl ThreadExitCode {
+    /// Get thread's real exit code from self.
+    fn get_exit_code(self) -> c_long {
+        match self {
+            Self::Successfully => 0,
+            Self::WithError(error) => error.to_kernel_errno() as c_long,
+        }
+    }
+}
+
+/// Call Linux do_exit
+pub fn do_exit(exit_code: ThreadExitCode) {
+    unsafe {
+        bindings::do_exit(exit_code.get_exit_code());
+    }
 }

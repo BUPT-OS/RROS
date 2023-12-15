@@ -5,11 +5,13 @@ use kernel::sync::Lock;
 use kernel::{c_types::c_void, sync::SpinLock, vmalloc};
 
 use kernel::prelude::*;
+use kernel::types::HlistNode;
 use kernel::{bindings, spinlock_init};
 
 use crate::net::ethernet::input::rros_net_ether_accept;
 use crate::net::skb::RrosSkBuff;
 use crate::sched::rros_schedule;
+use crate::RROS_NET_CB;
 
 use super::device::NetDevice;
 
@@ -19,7 +21,7 @@ use super::device::NetDevice;
 
 pub struct RrosNetRxqueue {
     pub hkey: u32,
-    pub hash: bindings::hlist_node,
+    pub hash: HlistNode,
     pub subscribers: bindings::list_head,
     pub lock: SpinLock<()>,
     pub next: bindings::list_head,

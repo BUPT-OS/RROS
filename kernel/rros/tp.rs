@@ -2,13 +2,15 @@ use crate::{clock::*, fifo::*, sched::*, thread::*, timeout::*, timer::*};
 use core::mem::size_of;
 use core::ptr::NonNull;
 use kernel::{
-    bindings, c_str, c_types,
-    double_linked_list::*,
     ktime,
-    memory_rros::*,
-    prelude::*,
-    spinlock_init,
-    sync::{Lock, SpinLock},
+    bindings, c_types, prelude::*, ktime::{Timespec64, ktime_to_timespec64, timespec64_to_ktime},str::CStr, c_str,double_linked_list::*,sync::{SpinLock, Lock, Guard},memory_rros::*, spinlock_init, types::Atomic,};
+use crate::{
+    sched::*,
+    clock::*,
+	thread::*,
+    timer::*,
+    timeout::*,
+    fifo::*,
 };
 
 pub static mut RROS_SCHED_TP: RrosSchedClass = RrosSchedClass {
@@ -45,10 +47,6 @@ pub const RROS_TP_NR_PRIO: i32 = RROS_TP_MAX_PRIO - RROS_TP_MIN_PRIO + 1;
 
 type KtimeT = i64;
 
-extern "C" {
-    fn rust_helper_timespec64_to_ktime(ts: bindings::timespec64) -> KtimeT;
-}
-
 pub struct RrosTpRq {
     pub runnable: RrosSchedQueue,
 }
@@ -68,7 +66,7 @@ pub struct RrosTpWindow {
 pub struct RrosTpSchedule {
     pub pwin_nr: i32,
     pub tf_duration: KtimeT,
-    pub refcount: *mut bindings::atomic_t,
+    pub refcount: *mut Atomic,
     pub pwins: [RrosTpWindow; 1 as usize],
 }
 
@@ -209,7 +207,7 @@ pub fn tp_init(rq: *mut rros_rq) -> Result<usize> {
             RROS_TIMER_IGRAVITY,
         );
         // rros_set_timer_name(&tp->tf_timer, "[tp-tick]");
-        pr_info!("tp_init ok");
+        pr_debug!("tp_init ok");
         Ok(0)
     }
 }
@@ -306,7 +304,7 @@ pub fn tp_chkparam(
         //     return Err(kernel::Error::EINVAL);
         // }
     }
-    pr_info!("tp_chkparam success");
+    pr_debug!("tp_chkparam success");
     Ok(0)
 }
 
@@ -333,7 +331,7 @@ pub fn tp_declare(
             .unwrap()
             .add_tail(tp_link.clone().as_mut().unwrap().value.clone());
     }
-    pr_info!("tp_declare success!");
+    pr_debug!("tp_declare success!");
     Ok(0)
 }
 
@@ -572,14 +570,14 @@ pub fn get_tp_schedule(rq: *mut rros_rq) -> *mut RrosTpSchedule {
         return 0 as *mut RrosTpSchedule;
     }
 
-    unsafe { atomic_inc((*gps).refcount) };
+    unsafe { (*(*gps).refcount).atomic_inc() };
 
     return gps;
 }
 
 pub fn put_tp_schedule(gps: *mut RrosTpSchedule) {
     unsafe {
-        if atomic_dec_and_test((*gps).refcount) != false {
+        if (*(*gps).refcount).atomic_dec_and_test() != false {
             RROS_SYSTEM_HEAP.rros_free_chunk(gps as *mut u8);
         }
     }
@@ -638,13 +636,13 @@ pub fn tp_control(
                         if n >= pt.nr_windows {
                             break;
                         }
-                        offset = u_timespec_to_ktime((*p).offset);
+                        offset = timespec64_to_ktime(*(*p).offset);
                         if offset != next_offset {
                             RROS_SYSTEM_HEAP.rros_free_chunk(gps as *mut u8);
                             return Err(kernel::Error::EINVAL);
                         }
 
-                        duration = u_timespec_to_ktime((*p).duration);
+                        duration = timespec64_to_ktime(*(*p).duration);
                         if duration <= 0 {
                             RROS_SYSTEM_HEAP.rros_free_chunk(gps as *mut u8);
                             return Err(kernel::Error::EINVAL);
@@ -660,7 +658,7 @@ pub fn tp_control(
                         next_offset = ktime::ktime_add(next_offset, duration);
                         loop_n += 1;
                     }
-                    atomic_set((*gps).refcount, 1);
+                    (*(*gps).refcount).atomic_set(1);
                     (*gps).pwin_nr = n;
                     (*gps).tf_duration = next_offset;
                     // raw_spin_lock_irqsave(&rq->lock, flags);
@@ -745,51 +743,20 @@ pub fn tp_control(
             if n >= nr_windows {
                 break;
             }
-            (*p).offset = ktime_to_u_timespec((*w).w_offset);
-            (*pp).duration = ktime_to_u_timespec(ktime::ktime_sub((*w).w_offset, (*pw).w_offset));
+            (*p).offset = &mut ktime_to_timespec64((*w).w_offset) as *mut Timespec64;
+            (*pp).duration = &mut ktime_to_timespec64(ktime::ktime_sub((*w).w_offset, (*pw).w_offset)) as *mut Timespec64;
             (*p).ptid = (*w).w_part;
             loop_n += 1;
         }
-
-        (*pp).duration = ktime_to_u_timespec(ktime::ktime_sub((*gps).tf_duration, (*pw).w_offset));
+        (*pp).duration = &mut ktime_to_timespec64(ktime::ktime_sub((*gps).tf_duration, (*pw).w_offset)) as *mut Timespec64;
         put_tp_schedule(gps);
         let ret = size_of::<RrosTpCtlinfo>() + size_of::<RrosTpWindow>() * nr_windows as usize;
         return Ok(ret as i64);
     }
 }
 
-// 下面几个函数应移动到clock.rs中
-pub fn u_timespec_to_ktime(u_ts: *mut RrosTimespec) -> KtimeT {
-    unsafe {
-        let ts64 = bindings::timespec64 {
-            tv_sec: (*u_ts).tv_sec,
-            tv_nsec: (*u_ts).tv_nsec,
-        };
-        return timespec64_to_ktime(ts64);
-    }
-}
-
-pub fn timespec64_to_ktime(ts: bindings::timespec64) -> KtimeT {
-    unsafe {
-        return rust_helper_timespec64_to_ktime(ts);
-    }
-}
-
-pub fn ktime_to_u_timespec(t: KtimeT) -> *mut RrosTimespec {
-    let ts64 = ktime_to_timespec64(t);
-
-    return &mut RrosTimespec {
-        tv_sec: ts64.tv_sec,
-        tv_nsec: ts64.tv_nsec,
-    } as *mut RrosTimespec;
-}
-
-pub fn ktime_to_timespec64(kt: KtimeT) -> bindings::timespec64 {
-    unsafe { return bindings::ns_to_timespec64(kt) };
-}
-
-pub fn rros_timer_is_running(timer: *mut RrosTimer) -> bool {
-    unsafe {
+pub fn rros_timer_is_running(timer: *mut RrosTimer) -> bool{
+    unsafe{
         if (*timer).get_status() & RROS_TIMER_RUNNING != 0 {
             return true;
         } else {

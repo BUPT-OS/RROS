@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! workqueue
 //!
 //! C header: [`include/linux/workqueue.h`](../../../../include/linux/workqueue.h)
 
 use crate::{bindings, c_str, prelude::*, Opaque, Result};
 
 use core::{fmt, ops::Deref, ptr::NonNull};
+
+extern "C" {
+    fn rust_helper_init_work(work: *mut bindings::work_struct, func: fn(*mut Work));
+}
 
 /// Struct `Queue` represents a work queue.
 /// It wraps the `workqueue_struct` struct from the bindings module.
@@ -88,6 +92,7 @@ impl BoxedQueue {
     unsafe fn new(ptr: *mut bindings::workqueue_struct) -> Self {
         Self {
             // SAFETY: We checked above that `ptr` is non-null.
+            // FIXME: can't directly `cast`, Queue is not `#[repr(transparent)]`
             ptr: unsafe { NonNull::new_unchecked(ptr.cast()) },
         }
     }
@@ -106,5 +111,15 @@ impl Drop for BoxedQueue {
     fn drop(&mut self) {
         // SAFETY: The type invariants guarantee that `ptr` is always valid.
         unsafe { bindings::destroy_workqueue(self.ptr.as_ref().0.get()) };
+    }
+}
+
+pub fn queue_work_on(cpu: i32, wq: *mut bindings::workqueue_struct, work: *mut Work) -> bool {
+    unsafe { bindings::queue_work_on(cpu, wq, work as *mut bindings::work_struct) }
+}
+
+pub fn init_work(work: *mut Work, func: fn(*mut Work)) {
+    unsafe {
+        rust_helper_init_work(work as *mut bindings::work_struct, func);
     }
 }

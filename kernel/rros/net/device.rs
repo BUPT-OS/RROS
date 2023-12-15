@@ -8,6 +8,9 @@ use kernel::prelude::*;
 use kernel::sync::Lock;
 use kernel::{bindings, init_static_sync, sync::SpinLock};
 use kernel::{c_str, spinlock_init, vmalloc, Result};
+use kernel::notifier::NotifierBlock;
+use kernel::net::Namespace;
+use alloc::sync::Arc;
 
 use crate::crossing::RrosCrossing;
 use crate::flags::RrosFlag;
@@ -202,10 +205,9 @@ impl NetDevice {
         Self(NonNull::new(dev as *mut _).unwrap())
     }
 
-    pub fn get_net(&self) -> *const bindings::net {
+    pub fn get_net(&self) -> *const Namespace {
         extern "C" {
-            #[allow(improper_ctypes)]
-            fn rust_helper_dev_net(dev: *const bindings::net_device) -> *const bindings::net;
+            fn rust_helper_dev_net(dev: *const bindings::net_device) -> *const Namespace;
         }
         unsafe { rust_helper_dev_net(self.0.as_ptr() as *const bindings::net_device) }
     }
@@ -357,7 +359,7 @@ impl NetDevice {
         }
     }
 
-    pub fn net_get_dev_by_index(net: *mut bindings::net, ifindex: i32) -> Option<Self> {
+    pub fn net_get_dev_by_index(net: *mut Namespace, ifindex: i32) -> Option<Self> {
         assert!(ifindex != 0);
         let flags = ACTIVE_PORT_LIST.irq_lock_noguard();
 
@@ -398,7 +400,7 @@ pub fn netif_oob_switch_port(dev: *mut bindings::net_device, enabled: bool) -> i
 /// netdevice notifier
 #[allow(dead_code)]
 fn rros_netdev_event(
-    _ev_block: *mut bindings::notifier_block,
+    _ev_block: *mut NotifierBlock,
     event: u64,
     ptr: *mut c_void,
 ) -> i32 {

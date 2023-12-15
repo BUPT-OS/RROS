@@ -11,19 +11,40 @@ use crate::timeout::RrosTmode;
 use crate::THIS_MODULE;
 use crate::{bindings, c_types};
 use crate::{
-    crossing::RrosCrossing, file::RrosFile, list::ListHead, sched::RrosTimespec,
+    crossing::RrosCrossing, file::RrosFile, list::ListHead, sched::SsizeT,
     wait::RrosWaitQueue,
 };
+use crate::lock::raw_spin_lock_init;
+use kernel::initialize_lock_hashtable;
+use alloc::rc::Rc;
+use kernel::ktime::{KtimeT, Timespec64};
+use kernel::socket::Sockaddr;
+use kernel::types::HlistNode;
+use kernel::{ThisModule, mutex_init, spinlock_init, container_of};
+use kernel::vmalloc::{c_kzfree, c_kzalloc};
+use kernel::net::{NetProtoFamily, Namespace, CreateSocket, create_socket_callback};
+use core::cell::{RefCell, Ref,UnsafeCell};
+use core::clone::Clone;
 use core::default::Default;
 use core::mem::transmute;
 use core::pin::Pin;
 use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicI32, Ordering};
-use kernel::ktime::KtimeT;
-use kernel::sync::SpinLock;
-use kernel::{container_of, mutex_init, spinlock_init};
-use kernel::{endian::be16, sync::Mutex, vmalloc::c_kzalloc, Error};
+use kernel::{
+    sync::{Mutex, RawSpinLock, SpinLock},
+    double_linked_list::List,
+    endian::be16,
+    file::File,
+    init_static_sync,
+    iov_iter::Iovec,
+    net::Device,
+    net::{Namespace as Net, Socket},
+    prelude::*,
+    static_init_net_proto_family,
+    sock::Sock,
+    Error,
+};
 
 use super::device::NetDevice;
 use super::packet::ETHERNET_NET_PROTO;
@@ -50,33 +71,33 @@ pub struct UserOobMsghdr {
     pub ctllen: u32,
     pub count: i32,
     pub flags: u32,
-    pub timeout: RrosTimespec,
-    pub timestamp: RrosTimespec,
+    pub timeout: Timespec64,
+    pub timestamp: Timespec64,
 }
 
 pub trait RrosNetProto {
     fn attach(&self, sock: &mut RrosSocket, protocol: be16) -> i32;
     fn detach(&self, sock: &mut RrosSocket);
-    fn bind(&self, sock: &mut RrosSocket, addr: &sockaddr, len: i32) -> i32;
+    fn bind(&self, sock: &mut RrosSocket, addr: &Sockaddr, len: i32) -> i32;
     // fn ioctl(&mut self, cmd:u32, arg:u64) -> i32;
     fn oob_send(
         &self,
         sock: &mut RrosSocket,
         msg: *mut UserOobMsghdr,
-        iov_vec: &mut [iovec],
+        iov_vec: &mut [Iovec],
     ) -> isize;
     fn oob_receive(
         &self,
         sock: &mut RrosSocket,
         msg: *mut UserOobMsghdr,
-        iov_vec: &mut [iovec],
+        iov_vec: &mut [Iovec],
     ) -> isize;
     // fn oob_poll(&mut self, wait:&oob_poll_wait) -> __poll_t;
     fn get_netif(&self, sock: &mut RrosSocket) -> Option<NetDevice>;
 }
 pub struct RrosPollHead {
     pub watchpoints: ListHead,
-    pub lock: bindings::raw_spinlock_t,
+    pub lock: RawSpinLock,
 }
 pub struct Binding {
     pub real_ifindex: i32,
@@ -88,13 +109,13 @@ pub struct RrosSocket {
     pub proto: Option<&'static dyn RrosNetProto>,
     pub efile: RrosFile,
     pub lock: Mutex<()>,
-    pub net: *mut bindings::net,
-    pub hash: kernel::bindings::hlist_node,
+    pub net: *mut Namespace,
+    pub hash: HlistNode,
     pub input: kernel::bindings::list_head,
     pub input_wait: RrosWaitQueue,
     pub poll_head: RrosPollHead,
     pub next_sub: kernel::bindings::list_head,
-    pub sk: *mut kernel::bindings::sock,
+    pub sk: *mut Sock,
     pub rmem_count: AtomicI32,
     pub rmem_max: i32,
     pub wmem_count: AtomicI32,
@@ -110,9 +131,9 @@ const RROS_SOCKIOC_RECVMSG: u32 = 3226529285;
 const RROS_SOCKIOC_SENDMSG: u32 = 1079045636;
 
 impl RrosSocket {
-    pub fn from_socket(sock: *mut bindings::socket) -> NonNull<Self> {
+    pub fn from_socket(sock: Socket) -> NonNull<Self> {
         // evk_sk
-        unsafe { NonNull::new((*(*sock).sk).oob_data as *const _ as *mut RrosSocket).unwrap() }
+        unsafe { NonNull::new((*(*sock.get_ptr()).sk).oob_data as *const _ as *mut RrosSocket).unwrap() }
     }
     #[inline]
     pub fn from_file(filp: *mut bindings::file) -> Option<NonNull<Self>> {
@@ -182,7 +203,7 @@ impl RrosSocket {
 
             fn rust_helper_raw_put_user(x: u32, ptr: *mut u32) -> i32;
         }
-        let mut fast_iov: [bindings::iovec; 8] = [bindings::iovec::default(); 8];
+        let mut fast_iov: [Iovec; 8] = [Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default()];
         let mut iov_ptr: u64 = 0;
         let mut iovlen: u32 = 0;
         if unsafe { rust_helper_raw_get_user_64(&mut iov_ptr, &(*msghdr).iov_ptr) } != 0 {
@@ -192,7 +213,7 @@ impl RrosSocket {
         if unsafe { rust_helper_raw_get_user(&mut iovlen, &(*msghdr).iovlen) } != 0 {
             return -(bindings::EFAULT as i32);
         }
-        let u_iov: *mut bindings::iovec = unsafe { transmute(iov_ptr) };
+        let u_iov: *mut Iovec = unsafe { transmute(iov_ptr) };
         let iov = load_iov(u_iov, iovlen as usize, fast_iov.as_mut_ptr()).unwrap();
 
         let proto = self.proto.unwrap();
@@ -223,11 +244,7 @@ pub fn uncharge_socke_wmem(skb: &mut RrosSkBuff) {
         return;
     }
     let rsk = unsafe { &mut *rsk };
-    let flags = unsafe {
-        rust_helper_raw_spin_lock_irqsave(
-            &mut rsk.wmem_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-        )
-    };
+    let flags = rsk.wmem_wait.lock.raw_spin_lock_irqsave();
 
     skb.net_cb_mut().tracker = ptr::null_mut();
 
@@ -239,13 +256,7 @@ pub fn uncharge_socke_wmem(skb: &mut RrosSkBuff) {
     // }
 
     rsk.wmem_drain.up();
-
-    unsafe {
-        rust_helper_raw_spin_unlock_irqrestore(
-            &mut rsk.wmem_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-            flags,
-        );
-    }
+    rsk.wmem_wait.lock.raw_spin_unlock_irqrestore(flags);
 }
 
 // // default operation for socket
@@ -273,13 +284,12 @@ pub fn uncharge_socke_wmem(skb: &mut RrosSkBuff) {
 // 	obj_size	= core::mem::size_of(RrosSocket),
 // };
 
-unsafe extern "C" fn create_rros_socket(
-    _net: *mut bindings::net,
-    _sock: *mut bindings::socket,
-    _protocol: i32,
-    _kern: i32,
-) -> i32 {
-    unimplemented!();
+pub struct CreateRrosSocket;
+
+impl CreateSocket for CreateRrosSocket {
+    fn create_socket(_net: *mut Namespace, _sock: &mut Socket, _protocol: i32, _kern: i32) -> i32 {
+        unimplemented!();
+    }
 }
 //     // extern "C"{
 //     //     fn sk_refcnt_debug_inc()
@@ -330,138 +340,137 @@ unsafe extern "C" fn create_rros_socket(
 //     esk.proto.as_mut().expect("get proto failed").bind(esk,u_addr,len)
 // }
 
-#[no_mangle]
-fn sock_oob_attach(sock: *mut bindings::socket) -> i32 {
-    extern "C" {
-        #[allow(improper_ctypes)]
-        #[allow(dead_code)]
-        fn rust_helper_is_err(ptr: *const c_types::c_void) -> bool;
+no_mangle_function_declaration! {
+    fn sock_oob_attach(sock: Socket) -> i32
+    {
+        extern "C" {
+            #[allow(improper_ctypes)]
+            #[allow(dead_code)]
+            fn rust_helper_is_err(ptr: *const c_types::c_void) -> bool;
 
-        #[allow(improper_ctypes)]
-        #[allow(dead_code)]
-        fn rust_helper_ptr_err(ptr: *const c_types::c_void) -> c_types::c_long;
+            #[allow(improper_ctypes)]
+            #[allow(dead_code)]
+            fn rust_helper_ptr_err(ptr: *const c_types::c_void) -> c_types::c_long;
+            
+            #[allow(improper_ctypes)]
+            fn rust_helper_sock_net(sk: *const Sock) -> *mut Namespace;
 
-        #[allow(improper_ctypes)]
-        fn rust_helper_sock_net(sk: *const bindings::sock) -> *mut bindings::net;
-
-        fn rust_helper_INIT_LIST_HEAD(ptr: *mut bindings::list_head);
-    }
-
-    let sk = unsafe { (*sock).sk };
-    /*
-     * Try finding a suitable out-of-band protocol among those
-     * registered in RROS.
-     */
-    let proto = find_oob_proto(
-        sk_family!(sk).into(),
-        unsafe { (*sk).sk_type }.into(),
-        be16::new(unsafe { (*sk).sk_protocol }),
-    );
-    if proto.is_none() {
-        return -(bindings::EPROTONOSUPPORT as i32);
-    }
-    let proto = proto.unwrap();
-
-    let rsk = if sk_family!(sk) != bindings::PF_OOB as u16 {
-        let tmp = c_kzalloc(core::mem::size_of::<RrosSocket>() as u64);
-        if tmp.is_none() {
-            return -(bindings::ENOMEM as i32);
+            fn rust_helper_INIT_LIST_HEAD(ptr: *mut bindings::list_head);
         }
-        tmp.unwrap() as *mut RrosSocket
-    } else {
-        sk as *const _ as *mut RrosSocket
-    };
-    let mut rsk = unsafe { NonNull::new(rsk).unwrap().as_mut() };
-    rsk.sk = sk;
-    let ret = rsk.efile.rros_open_file(unsafe { (*sock).file });
-    if ret.is_err() {
-        // TODO:
-        unimplemented!();
-    }
-    rsk.net = unsafe { rust_helper_sock_net((*sock).sk) };
-    let pinned = unsafe { Pin::new_unchecked(&mut rsk.lock) };
-    mutex_init!(pinned, "net mutex");
 
-    unsafe {
-        rust_helper_INIT_LIST_HEAD(&mut rsk.input);
-        rust_helper_INIT_LIST_HEAD(&mut rsk.next_sub);
-        rsk.input_wait.init(&mut RROS_MONO_CLOCK, 0);
-        rsk.wmem_wait.init(&mut RROS_MONO_CLOCK, 0);
-    }
-    // rros_init_poll_head(&esk->poll_head);
-    let pinned = unsafe { Pin::new_unchecked(&mut rsk.oob_lock) };
-    spinlock_init!(pinned, "net oob spinlock");
+        let sk = unsafe { (*sock.get_ptr()).sk };
+        /*
+        * Try finding a suitable out-of-band protocol among those
+        * registered in RROS.
+        */
+        let proto = find_oob_proto(
+            sk_family!(sk).into(),
+            unsafe { (*sk).sk_type }.into(),
+            be16::new(unsafe { (*sk).sk_protocol }),
+        );
+        if proto.is_none() {
+            return -(bindings::EPROTONOSUPPORT as i32);
+        }
+        let proto = proto.unwrap();
 
-    rsk.rmem_max = unsafe { (*sk).sk_rcvbuf };
-    rsk.wmem_max = unsafe { (*sk).sk_sndbuf };
-    let _ret = rsk.wmem_drain.init();
-    rsk.proto = Some(proto);
-    proto.attach(&mut rsk, unsafe { be16::new((*sk).sk_protocol) });
+        let rsk = if sk_family!(sk) != bindings::PF_OOB as u16 {
+            let tmp = c_kzalloc(core::mem::size_of::<RrosSocket>() as u64);
+            if tmp.is_none() {
+                return -(bindings::ENOMEM as i32);
+            }
+            tmp.unwrap() as *mut RrosSocket
+        } else{
+            sk as *const _ as *mut RrosSocket
+        };
+        let mut rsk = unsafe { NonNull::new(rsk).unwrap().as_mut() };
+        rsk.sk = sk as *mut Sock;
+        let ret = rsk.efile.rros_open_file(unsafe { (*sock.get_ptr()).file });
+        if ret.is_err() {
+            // TODO:
+            unimplemented!();
+        }
+        rsk.net = unsafe { rust_helper_sock_net((*sock.get_ptr()).sk as *mut Sock as *const Sock) };
+        let pinned = unsafe { Pin::new_unchecked(&mut rsk.lock) };
+        mutex_init!(pinned, "net mutex");
 
-    unsafe {
-        (*sk).oob_data = rsk as *const _ as *mut c_types::c_void;
-    }
-    0
-    //TODO: FAILED handling
-    //     fail_attach:
-    // 	rros_release_file(&esk->efile);
-    // fail_open:
-    // 	if (sk->sk_family != PF_OOB)
-    // 		kfree(esk);
-
-    // 	return ret;
-}
-
-#[no_mangle]
-fn sock_oob_detach(sock: *mut bindings::socket) {
-    let sk = unsafe { (*sock).sk };
-    let rsk = unsafe { RrosSocket::from_socket(sock).as_mut() };
-
-    let _ret = rsk.efile.rros_release_file();
-    rsk.wmem_drain.pass();
-    free_skb_list(&mut rsk.input);
-    if let Some(proto) = rsk.proto {
-        proto.detach(rsk);
-    }
-
-    if (sk_family!(sk) != bindings::PF_OOB as u16) {
         unsafe {
-            bindings::kfree(rsk as *const _ as *mut c_types::c_void);
+            rust_helper_INIT_LIST_HEAD(&mut rsk.input);
+            rust_helper_INIT_LIST_HEAD(&mut rsk.next_sub);
+            rsk.input_wait.init(&mut RROS_MONO_CLOCK, 0);
+            rsk.wmem_wait.init(&mut RROS_MONO_CLOCK, 0);
         }
-    }
-    unsafe {
-        (*sk).oob_data = core::ptr::null_mut();
+        // rros_init_poll_head(&esk->poll_head);
+        let pinned = unsafe { Pin::new_unchecked(&mut rsk.oob_lock) };
+        spinlock_init!(pinned, "net oob spinlock");
+
+        rsk.rmem_max = unsafe { (*sk).sk_rcvbuf };
+        rsk.wmem_max = unsafe { (*sk).sk_sndbuf };
+        let _ret = rsk.wmem_drain.init();
+        rsk.proto = Some(proto);
+        proto.attach(&mut rsk, unsafe { be16::new((*sk).sk_protocol) });
+        
+        unsafe{
+            (*sk).oob_data = rsk as *const _ as *mut c_types::c_void;
+        }
+        0
+        //TODO: FAILED handling
+        //     fail_attach:
+        // 	rros_release_file(&esk->efile);
+        // fail_open:
+        // 	if (sk->sk_family != PF_OOB)
+        // 		kfree(esk);
+
+        // 	return ret;
     }
 }
 
-#[no_mangle]
-pub fn sock_oob_bind(
-    sock: *mut bindings::socket,
-    addr: *const bindings::sockaddr,
-    len: i32,
-) -> i32 {
-    let sk = unsafe { (*sock).sk };
-    if sk_family!(sk) == bindings::PF_OOB as u16 {
-        return 0;
+no_mangle_function_declaration! {
+    fn sock_oob_detach(sock: Socket)
+    {
+        let sk = unsafe { (*sock.get_ptr()).sk };
+        let rsk = unsafe { RrosSocket::from_socket(sock).as_mut() };
+        
+        let _ret = rsk.efile.rros_release_file();
+        rsk.wmem_drain.pass();
+        free_skb_list(&mut rsk.input);
+        if let Some(proto) = rsk.proto {
+            proto.detach(rsk);
+        }
+
+        if (sk_family!(sk) != bindings::PF_OOB as u16) {
+            c_kzfree(rsk as *const _ as *const c_types::c_void);
+        }
+        unsafe { (*sk).oob_data = core::ptr::null_mut(); }
     }
-    let rsk = unsafe { RrosSocket::from_socket(sock).as_mut() };
-    let proto = rsk.proto.unwrap();
-    proto.bind(rsk, unsafe { &*addr }, len)
 }
 
-pub fn sock_inband_ioctl(_sock: *mut bindings::socket, _cmd: i32, _arg: u64) -> i32 {
+no_mangle_function_declaration! {
+    pub fn sock_oob_bind(sock: Socket, addr: *const Sockaddr, len: i32) -> i32
+    {
+        let sk = unsafe { (*sock.get_ptr()).sk };
+        if sk_family!(sk) == bindings::PF_OOB as u16 {
+            return 0;
+        }
+        let rsk = unsafe { RrosSocket::from_socket(sock).as_mut() };
+        let proto = rsk.proto.unwrap();
+        proto.bind(rsk, unsafe { &*addr }, len)
+    }
+}
+
+pub fn sock_inband_ioctl(_sock: &mut Socket, _cmd: i32, _arg: u64) -> i32 {
     // TODO:
     -(bindings::ENOTTY as i32)
 }
 
-#[no_mangle]
-pub fn sock_inband_ioctl_redirect(sock: *mut bindings::socket, cmd: i32, arg: u64) -> i32 {
-    let ret = sock_inband_ioctl(sock, cmd, arg);
+no_mangle_function_declaration! {
+    pub fn sock_inband_ioctl_redirect(sock: Socket, cmd: i32, arg: u64) -> i32 {
+        let ret = sock_inband_ioctl(&mut sock, cmd, arg);
 
-    if ret == -(bindings::ENOTTY as i32) {
-        -(bindings::ENOIOCTLCMD as i32)
-    } else {
-        ret
+        if ret == -(bindings::ENOTTY as i32) {
+            -(bindings::ENOIOCTLCMD as i32)
+        } else {
+            ret
+        }
     }
 }
 
@@ -487,17 +496,12 @@ pub fn sock_oob_ioctl(filp: *mut bindings::file, cmd: u32, arg: u64) -> i64 {
     return ret as i64;
 }
 
-pub fn do_load_iov(iov: *mut iovec, u_iov: *mut iovec, iovlen: usize) -> Result<(), Error> {
+pub fn do_load_iov(iov: *mut Iovec, u_iov: *mut Iovec, iovlen: usize) -> Result<()> {
     extern "C" {
         fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
     }
     unsafe {
-        if rust_helper_raw_copy_from_user(
-            iov as *const _ as *mut u8,
-            u_iov as *const _ as *mut u8,
-            iovlen * core::mem::size_of::<iovec>(),
-        ) != 0
-        {
+        if rust_helper_raw_copy_from_user(iov as *const _ as *mut u8, u_iov as *const _ as *mut u8, iovlen * core::mem::size_of::<Iovec>()) != 0 {
             Err(Error::EFAULT)
         } else {
             Ok(())
@@ -505,11 +509,7 @@ pub fn do_load_iov(iov: *mut iovec, u_iov: *mut iovec, iovlen: usize) -> Result<
     }
 }
 
-pub fn load_iov(
-    u_iov: *mut iovec,
-    iovlen: usize,
-    fast_iov: *mut iovec,
-) -> Result<*mut iovec, Error> {
+pub fn load_iov(u_iov: *mut Iovec, iovlen: usize, fast_iov: *mut Iovec) -> Result<*mut Iovec> {
     assert!(iovlen <= 1024);
     if iovlen < 8 {
         do_load_iov(fast_iov, u_iov, iovlen)?;
@@ -519,13 +519,8 @@ pub fn load_iov(
     }
 }
 
-pub fn rros_import_iov(
-    iov_vec: &[bindings::iovec],
-    data: *mut u8,
-    mut len: u64,
-    remainder: Option<&mut usize>,
-) -> i32 {
-    extern "C" {
+pub fn rros_import_iov(iov_vec: &[Iovec], data: *mut u8, mut len: u64, remainder: Option<&mut usize>) -> i32 {
+    extern "C"{
         fn rust_helper_raw_copy_from_user(to: *mut u8, from: *const u8, n: usize) -> usize;
     }
     let mut n = 0;
@@ -533,17 +528,17 @@ pub fn rros_import_iov(
     let mut avail = 0;
     let mut read = 0;
     for iov in iov_vec.iter() {
-        if iov.iov_len == 0 {
+        if iov.get_iov_len() == 0 {
             n += 1;
             continue;
         }
-        nbytes = iov.iov_len;
+        nbytes = iov.get_iov_len();
         avail += nbytes;
         if nbytes > len {
             nbytes = len;
         }
         let ret = unsafe {
-            rust_helper_raw_copy_from_user(data, iov.iov_base as *const u8, nbytes as usize)
+            rust_helper_raw_copy_from_user(data, iov.get_iov_base() as *const u8, nbytes as usize)
         };
         if ret != 0 {
             return -(bindings::EFAULT as i32);
@@ -565,29 +560,29 @@ pub fn rros_import_iov(
     if let Some(remainder) = remainder {
         for iov_idx in n..iov_vec.len() {
             let iov = &iov_vec[iov_idx];
-            avail += iov.iov_len
+            avail += iov.get_iov_len();
         }
         *remainder = (avail - read) as usize;
     }
     return read as i32;
 }
 
-pub fn rros_export_iov(iov_vec: &mut [bindings::iovec], mut data: *mut u8, len: usize) -> i32 {
-    extern "C" {
+pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> i32 {
+    extern "C"{
         fn rust_helper_raw_copy_to_user(to: *mut u8, from: *const u8, n: usize) -> usize;
     }
     let mut written = 0;
     let mut len = len as u64;
     for iov in iov_vec.iter_mut() {
-        if iov.iov_len == 0 {
+        if iov.get_iov_len() == 0 {
             continue;
         }
-        let mut nbytes = iov.iov_len;
+        let mut nbytes = iov.get_iov_len();
         if nbytes > len {
             nbytes = len;
         }
         let ret = unsafe {
-            rust_helper_raw_copy_to_user(iov.iov_base as *const _ as *mut u8, data, nbytes as usize)
+            rust_helper_raw_copy_to_user(iov.get_iov_base() as *const _ as *mut u8, data, nbytes as usize)
         };
         if ret != 0 {
             return -(bindings::EFAULT as i32);
@@ -741,21 +736,12 @@ fn find_oob_proto(
 // 	}
 
 // }
-pub static RROS_FAMILY_OPS: NetProtoFamily = NetProtoFamily(bindings::net_proto_family {
+
+pub static RROS_FAMILY_OPS: NetProtoFamily = static_init_net_proto_family!(
     family: bindings::PF_OOB as i32,
-    create: Some(create_rros_socket),
+    create: Some(create_socket_callback::<CreateRrosSocket>),
     owner: THIS_MODULE.get_ptr(),
-});
-
-pub struct NetProtoFamily(bindings::net_proto_family);
-
-impl NetProtoFamily {
-    pub fn get_ptr(&self) -> *const bindings::net_proto_family {
-        &self.0
-    }
-}
-
-unsafe impl Sync for NetProtoFamily {}
+);
 
 // pub static mut rros_af_oob_proto : bindings::proto  = bindings::proto::default();
 
@@ -776,33 +762,34 @@ impl RrosNetProto for DummpyProto {
     fn attach(&self, _sock: &mut RrosSocket, _protocol: be16) -> i32 {
         0
     }
+
     fn detach(&self, _sock: &mut RrosSocket) {}
-    fn bind(&self, _sock: &mut RrosSocket, _addr: &sockaddr, _len: i32) -> i32 {
+
+    fn bind(&self, _sock: &mut RrosSocket, _addr: &Sockaddr, _len: i32) -> i32 {
         0
     }
+
     // fn ioctl(&mut self, cmd:u32, arg:u64) -> i32;
+
     fn oob_send(
         &self,
         _sock: &mut RrosSocket,
         _msg: *mut UserOobMsghdr,
-        _iov_vec: &mut [iovec],
+        _iov_vec: &mut [Iovec],
     ) -> isize {
         0
     }
+
     fn oob_receive(
         &self,
         _sock: &mut RrosSocket,
         _msg: *mut UserOobMsghdr,
-        _iov_vec: &mut [iovec],
+        _iov_vec: &mut [Iovec],
     ) -> isize {
         0
     }
+
     fn get_netif(&self, _sock: &mut RrosSocket) -> Option<NetDevice> {
         unimplemented!()
     }
-}
-
-extern "C" {
-    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
 }

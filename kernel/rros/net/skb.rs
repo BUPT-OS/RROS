@@ -1,10 +1,5 @@
-use super::device::NetDevice;
-use super::socket::RrosSocket;
-use crate::clock::RROS_MONO_CLOCK;
-use crate::sched::rros_schedule;
 use crate::timeout::{RrosTmode, RROS_NONBLOCK};
 use crate::wait::RROS_WAIT_PRIO;
-use crate::work::RrosWork;
 use core::default::Default;
 use core::mem::transmute;
 use core::ops::{Deref, DerefMut};
@@ -13,10 +8,16 @@ use core::ptr::NonNull;
 use core::result::Result::Ok;
 use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::ktime::KtimeT;
-use kernel::sync::Lock;
-use kernel::sync::SpinLock;
+use kernel::sync::{Lock, SpinLock};
 use kernel::{bindings, init_static_sync, pr_debug, Result};
+use kernel::skbuff;
+use crate::clock::RROS_MONO_CLOCK;
+use crate::sched::rros_schedule;
+use crate::work::RrosWork;
+use super::device::NetDevice;
+use super::socket::RrosSocket;
 // use super::{socket::RrosSocket, input::RROSNetHandler};
+
 struct CloneControl {
     pub(crate) queue: bindings::list_head,
     pub(crate) count: i32,
@@ -137,13 +138,13 @@ impl RrosSkBuff {
             #[allow(improper_ctypes)]
             fn rust_helper_netdev_alloc_oob_skb(
                 dev: *mut bindings::net_device,
-                dma_addr: *mut bindings::dma_addr_t,
+                dma_addr: *mut u64,
             ) -> *mut bindings::sk_buff;
         }
         if !dev.is_oob_capable() {
             let est = unsafe { dev.dev_state_mut().as_mut() };
             let skb = unsafe {
-                bindings::__netdev_alloc_oob_skb(
+                skbuff::__netdev_alloc_oob_skb(
                     dev.0.as_mut(),
                     est.rstate.buf_size,
                     bindings::GFP_KERNEL,
@@ -151,8 +152,10 @@ impl RrosSkBuff {
             };
             return Some(Self::from_raw_ptr(skb));
         }
-        let mut dma_addr = bindings::dma_addr_t::default();
-        let skb = unsafe { rust_helper_netdev_alloc_oob_skb(dev.0.as_ptr(), &mut dma_addr) };
+        let mut dma_addr = 0 as u64;
+        let skb = unsafe {
+            rust_helper_netdev_alloc_oob_skb(dev.0.as_ptr(), &mut dma_addr)
+        };
         if !skb.is_null() {
             let mut skb = Self::from_raw_ptr(skb);
             unsafe {
@@ -175,11 +178,7 @@ impl RrosSkBuff {
         let mut ret_skb = None;
         let mut flags: u64;
         loop {
-            flags = unsafe {
-                rust_helper_raw_spin_lock_irqsave(
-                    &mut rst.rstate.pool_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                )
-            };
+            flags = rst.rstate.pool_wait.lock.raw_spin_lock_irqsave();
 
             if !unsafe { rust_helper_list_empty(&mut rst.rstate.free_skb_pool) } {
                 let skb = list_get_entry!(
@@ -198,23 +197,13 @@ impl RrosSkBuff {
             pr_debug!("I am in the dev_alloc_skb loop");
             rst.rstate.pool_wait.locked_add(timeout, tmode);
             pr_debug!("I am in the dev_alloc_skb loop after adding");
-            unsafe {
-                rust_helper_raw_spin_unlock_irqrestore(
-                    &mut rst.rstate.pool_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                    flags,
-                );
-            }
+            rst.rstate.pool_wait.lock.raw_spin_unlock_irqrestore(flags);
             let ret = rst.rstate.pool_wait.wait_schedule();
             if ret != 0 {
                 break;
             }
         }
-        unsafe {
-            rust_helper_raw_spin_unlock_irqrestore(
-                &mut rst.rstate.pool_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                flags,
-            );
-        }
+        rst.rstate.pool_wait.lock.raw_spin_unlock_irqrestore(flags);
         return ret_skb;
     }
     #[inline]
@@ -289,9 +278,7 @@ impl RrosSkBuff {
 
     #[inline]
     pub fn put(&mut self, len: u32) {
-        unsafe {
-            bindings::skb_put(self.0.as_ptr(), len);
-        }
+        skbuff::skb_put(self.0.as_ptr(), len);
     }
 
     pub fn free(&mut self) {
@@ -347,24 +334,15 @@ impl RrosSkBuff {
 
     fn free_to_dev(&mut self) {
         // free_skb_to_dev
-        extern "C" {
-            fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-            fn rust_helper_raw_spin_unlock_irqrestore(
-                lock: *mut bindings::hard_spinlock_t,
-                flags: u64,
-            );
-        }
         let mut dev = self.dev().expect("free_to_dev: dev is none");
         let rst = unsafe { dev.dev_state_mut().as_mut() };
-        let flags = unsafe { rust_helper_raw_spin_lock_irqsave(&mut rst.rstate.pool_wait.lock) };
+        let flags = rst.rstate.pool_wait.lock.raw_spin_lock_irqsave();
         list_add!(self.list_mut(), &mut rst.rstate.free_skb_pool);
         rst.rstate.pool_free += 1;
         if rst.rstate.pool_wait.is_active() {
             rst.rstate.pool_wait.wake_up(core::ptr::null_mut(), 0);
         }
-        unsafe {
-            rust_helper_raw_spin_unlock_irqrestore(&mut rst.rstate.pool_wait.lock, flags);
-        }
+        rst.rstate.pool_wait.lock.raw_spin_unlock_irqrestore(flags);
         // // rros_signal_poll_events(&est->poll_head,	POLLOUT|POLLWRNORM); // rros poll
     }
     fn free_skb(&mut self) {
@@ -657,7 +635,7 @@ pub fn rros_net_init_pools() -> Result<()> {
     let head = unsafe { &mut (*(*CLONE_QUEUE.locked_data()).get()).queue };
     // CLONE_QUEUE.
     for _n in 0..NET_CLONES {
-        let clone = unsafe { bindings::skb_alloc_oob_head(bindings::GFP_KERNEL) };
+        let clone = skbuff::skb_alloc_oob_head(bindings::GFP_KERNEL);
         if clone.is_null() {
             unimplemented!()
             // failed
@@ -678,11 +656,6 @@ pub fn rros_net_init_pools() -> Result<()> {
 
     Ok(())
     // TODO: failed
-}
-
-extern "C" {
-    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
 }
 
 #[no_mangle]

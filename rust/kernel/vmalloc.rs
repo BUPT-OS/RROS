@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! vmalloc
 //!
 //! C header: [`include/linux/vmalloc.h`](../../../../include/linux/vmalloc.h)
 

@@ -24,6 +24,11 @@ impl KuidT {
     pub fn global_root_uid() -> Self {
         Self(bindings::kuid_t { val: 0 })
     }
+
+    /// Returns a `KuidT` struct from an existing `inode` structure.
+    pub fn from_inode_ptr(ptr: *const u8) -> Self {
+        unsafe { Self((*(ptr as *const bindings::inode)).i_uid) }
+    }
 }
 
 
@@ -32,5 +37,10 @@ impl KgidT {
     /// Corresponds to the C macro GLOBAL_ROOT_GID.
     pub fn global_root_gid() -> Self {
         Self(bindings::kgid_t { val: 0 })
+    }
+
+    /// Returns a `KgidT` struct from an existing `inode` structure.
+    pub fn from_inode_ptr(ptr: *const u8) -> Self {
+        unsafe { Self((*(ptr as *const bindings::inode)).i_gid) }
     }
 }

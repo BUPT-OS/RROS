@@ -13,6 +13,19 @@ use core::{
     cell::UnsafeCell, marker::PhantomData, mem::MaybeUninit, ops::Deref, pin::Pin, ptr::NonNull,
 };
 
+extern "C" {
+    fn rust_helper_atomic_add(i: i32, v: *mut bindings::atomic_t);
+    fn rust_helper_atomic_sub(i: i32, v: *mut bindings::atomic_t);
+    fn rust_helper_atomic_sub_return(i: i32, v: *mut bindings::atomic_t) -> i32;
+    fn rust_helper_atomic_add_return(i: i32, v: *mut bindings::atomic_t) -> i32;
+    fn rust_helper_atomic_cmpxchg(v: *mut bindings::atomic_t, old: i32, new: i32) -> i32;
+    fn rust_helper_atomic_set(v: *mut bindings::atomic_t, i: i32);
+    fn rust_helper_atomic_inc(v: *mut bindings::atomic_t);
+    fn rust_helper_atomic_dec_and_test(v: *mut bindings::atomic_t) -> bool;
+    fn rust_helper_atomic_dec_return(v: *mut bindings::atomic_t) -> i32;
+    fn rust_helper_atomic_read(v: *mut bindings::atomic_t) -> i32;
+}
+
 /// Permissions.
 ///
 /// C header: [`include/uapi/linux/stat.h`](../../../../include/uapi/linux/stat.h)
@@ -253,6 +266,7 @@ impl<T: FnOnce()> Drop for ScopeGuard<T> {
 /// Stores an opaque value.
 ///
 /// This is meant to be used with FFI objects that are never interpreted by Rust code.
+#[repr(transparent)]
 pub struct Opaque<T>(MaybeUninit<UnsafeCell<T>>);
 
 impl<T> Opaque<T> {
@@ -289,8 +303,10 @@ impl RcuHead {
         Self(bindings::callback_head::default())
     }
 }
+
 /// The `HlistNode` struct is a wrapper around the `bindings::hlist_node` struct from the kernel bindings. It represents a node in a hash list.
-pub struct HlistNode(bindings::hlist_node);
+#[repr(transparent)]
+pub struct HlistNode(pub bindings::hlist_node);
 
 impl HlistNode {
     /// The `new` method is a constructor for `HlistNode`. It creates a new `HlistNode` with a default `bindings::hlist_node`.
@@ -326,6 +342,98 @@ impl HlistHead {
 /// The `hash_init` function is a wrapper around the `rust_helper_hash_init` function from the kernel bindings. It initializes a hash table with the given size. The `ht` parameter is a pointer to the hash table to initialize.
 pub fn hash_init(ht: *mut bindings::hlist_head, size: u32) {
     unsafe { rust_helper_hash_init(ht, size) };
+}
+
+pub struct Hashtable<const N:usize>{
+    pub table : [bindings::hlist_head; N]
+}
+
+unsafe impl<const N:usize> Sync for Hashtable<N> {}
+
+unsafe impl<const N:usize> Send for Hashtable<N> {}
+
+impl<const N:usize> Hashtable<N>{
+    pub const fn new() -> Self{
+        let table = [bindings::hlist_head{first:core::ptr::null_mut()}; N];
+        Self{
+            table:table
+        }
+    }
+    pub fn add(&mut self, node: &mut bindings::hlist_node, key: u32) {
+        extern "C" {
+            fn rust_helper_hash_add(
+                ht: *mut bindings::hlist_head,
+                length: usize,
+                node: *mut bindings::hlist_node,
+                key: u32,
+            );
+        }
+        unsafe {
+            rust_helper_hash_add(
+                &self.table as *const _ as *mut bindings::hlist_head,
+                N,
+                node as *mut bindings::hlist_node,
+                key,
+            );
+        }
+    }
+
+    pub fn del(&self, node: &mut bindings::hlist_node) {
+        extern "C" {
+            fn rust_helper_hash_del(node: *mut bindings::hlist_node);
+        }
+        unsafe {
+            rust_helper_hash_del(node as *mut bindings::hlist_node);
+        }
+    }
+    pub fn head(&mut self, key: u32) -> *const bindings::hlist_head {
+        extern "C" {
+            fn rust_helper_get_hlist_head(
+                ht: *const bindings::hlist_head,
+                length: usize,
+                key: u32,
+            ) -> *const bindings::hlist_head;
+        }
+        unsafe { rust_helper_get_hlist_head(&self.table as *const bindings::hlist_head, N, key) }
+    }
+}
+
+#[macro_export]
+macro_rules! initialize_lock_hashtable {
+    ($name:ident,$bits_to_shift:expr) => {
+        kernel::init_static_sync! {
+            static $name: kernel::sync::Mutex<Hashtable::<$bits_to_shift>> = Hashtable::<$bits_to_shift>::new();
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! hlist_entry{
+    ($ptr:expr,$type:ty,$($f:tt)*) =>{
+        kernel::container_of!($ptr,$type,$($f)*)
+    }
+}
+#[macro_export]
+macro_rules! hlist_entry_safe{
+    ($ptr:expr,$type:ty,$($f:tt)*) =>{
+        if ($ptr).is_null(){
+            core::ptr::null()
+        }else{
+            kernel::container_of!($ptr,$type,$($f)*)
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! hash_for_each_possible {
+    ($pos:ident,$head:expr,$type:ty,$member:ident,{ $($block:tt)* } ) => {
+        let mut $pos = $crate::hlist_entry_safe!(unsafe{(*$head).first},$type,$member);
+        while(!$pos.is_null()){
+            // $code
+            $($block)*
+            $pos = $crate::hlist_entry_safe!(unsafe{(*$pos).$member.0.next},$type,$member);
+        }
+    };
 }
 
 /// Types that are _always_ reference counted.
@@ -429,5 +537,76 @@ impl<T: AlwaysRefCounted> Drop for ARef<T> {
         // SAFETY: The type invariants guarantee that the `ARef` owns the reference we're about to
         // decrement.
         unsafe { T::dec_ref(self.ptr) };
+    }
+}
+
+#[derive(Default)]
+#[repr(transparent)]
+pub struct SchedParam {
+    pub sched_param: bindings::sched_param,
+}
+
+impl SchedParam {
+    pub fn new(n: c_types::c_int) -> Self {
+        Self {
+            sched_param: bindings::sched_param { sched_priority: n },
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct Atomic(bindings::atomic_t);
+
+impl Atomic {
+    pub fn new() -> Self {
+        Atomic(bindings::atomic_t::default())
+    }
+
+    pub fn atomic_add(&mut self, i: i32) {
+        unsafe {
+            rust_helper_atomic_add(i, &mut self.0 as *mut bindings::atomic_t);
+        }
+    }
+
+    pub fn atomic_sub(&mut self, i: i32) {
+        unsafe {
+            rust_helper_atomic_sub(i, &mut self.0 as *mut bindings::atomic_t);
+        }
+    }
+
+    pub fn atomic_sub_return(&mut self, i: i32) -> i32 {
+        unsafe { rust_helper_atomic_sub_return(i, &mut self.0 as *mut bindings::atomic_t) }
+    }
+
+    pub fn atomic_add_return(&mut self, i: i32) -> i32 {
+        unsafe { rust_helper_atomic_add_return(i, &mut self.0 as *mut bindings::atomic_t) }
+    }
+
+    pub fn atomic_cmpxchg(&mut self, old: i32, new: i32) -> i32 {
+        unsafe { rust_helper_atomic_cmpxchg(&mut self.0 as *mut bindings::atomic_t, old, new) }
+    }
+
+    pub fn atomic_set(&mut self, i: i32) {
+        unsafe {
+            rust_helper_atomic_set(&mut self.0 as *mut bindings::atomic_t, i);
+        }
+    }
+
+    pub fn atomic_inc(&mut self) {
+        unsafe {
+            rust_helper_atomic_inc(&mut self.0 as *mut bindings::atomic_t);
+        }
+    }
+
+    pub fn atomic_dec_and_test(&mut self) -> bool {
+        unsafe { rust_helper_atomic_dec_and_test(&mut self.0 as *mut bindings::atomic_t) }
+    }
+
+    pub fn atomic_dec_return(&mut self) -> i32 {
+        unsafe { rust_helper_atomic_dec_return(&mut self.0 as *mut bindings::atomic_t) }
+    }
+
+    pub fn atomic_read(&mut self) -> i32 {
+        unsafe { rust_helper_atomic_read(&mut self.0 as *mut bindings::atomic_t) }
     }
 }

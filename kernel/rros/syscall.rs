@@ -1,15 +1,19 @@
 use core::mem::size_of;
 
 use kernel::{
-    bindings,
+    bindings, c_types,
     c_types::c_void,
+    capability,
     io_buffer::IoBufferWriter,
+    ktime,
     prelude::*,
     premmpt::running_inband,
     sync::{Lock, SpinLock},
     task::Task,
     uapi::time_types::{KernelOldTimespec, KernelTimespec},
     user_ptr::UserSlicePtr,
+    ptrace::{IrqStage, PtRegs},
+    irqstage,
 };
 
 use crate::{
@@ -27,12 +31,6 @@ const FMODE_READ: u32 = 0x1;
 const FMODE_WRITE: u32 = 0x2;
 const SYSCALL_PROPAGATE: i32 = 0;
 const SYSCALL_STOP: i32 = 1;
-
-extern "C" {
-    fn rust_helper_current_cap() -> bindings::kernel_cap_t;
-    fn rust_helper_cap_raised(c: bindings::kernel_cap_t, f: i32) -> i32;
-    fn rust_helper_ktime_to_timespec64(kt: bindings::ktime_t) -> bindings::timespec64;
-}
 
 fn rros_read(fd: i32, u_buf: *mut u8, size: isize) -> i64 {
     pr_debug!("oob_read syscall is called");
@@ -118,7 +116,7 @@ fn rros_ioctl(fd: i32, request: u32, arg: u64) -> i64 {
     ret
 }
 
-fn invoke_syscall(nr: u32, regs: *mut bindings::pt_regs) {
+fn invoke_syscall(nr: u32, regs: PtRegs) {
     let mut ret = 0;
 
     /*
@@ -131,23 +129,23 @@ fn invoke_syscall(nr: u32, regs: *mut bindings::pt_regs) {
             // [TODO: lack __user]
             SYS_RROS_READ => {
                 ret = rros_read(
-                    oob_arg1!(regs) as i32,
-                    oob_arg2!(regs) as *mut u8,
-                    oob_arg3!(regs) as isize,
+                    oob_arg1!((regs.ptr)) as i32,
+                    oob_arg2!((regs.ptr)) as *mut u8,
+                    oob_arg3!((regs.ptr)) as isize,
                 );
             }
             SYS_RROS_WRITE => {
                 ret = rros_write(
-                    oob_arg1!(regs) as i32,
-                    oob_arg2!(regs) as *mut u8,
-                    oob_arg3!(regs) as isize,
+                    oob_arg1!((regs.ptr)) as i32,
+                    oob_arg2!((regs.ptr)) as *mut u8,
+                    oob_arg3!((regs.ptr)) as isize,
                 );
             }
             SYS_RROS_IOCTL => {
                 ret = rros_ioctl(
-                    oob_arg1!(regs) as i32,
-                    oob_arg2!(regs) as u32,
-                    oob_arg3!(regs),
+                    oob_arg1!((regs.ptr)) as i32,
+                    oob_arg2!((regs.ptr)) as u32,
+                    oob_arg3!((regs.ptr)),
                 );
             }
             _ => {
@@ -162,7 +160,7 @@ fn invoke_syscall(nr: u32, regs: *mut bindings::pt_regs) {
 fn prepare_for_signal(
     _p: *mut SpinLock<RrosThread>,
     curr: *mut SpinLock<RrosThread>,
-    regs: *mut bindings::pt_regs,
+    regs: PtRegs,
 ) {
     let flags;
 
@@ -208,7 +206,7 @@ fn prepare_for_signal(
     rros_switch_inband(RROS_HMDIAG_SYSDEMOTE);
 }
 
-fn handle_vdso_fallback(nr: i32, regs: *mut bindings::pt_regs) -> bool {
+fn handle_vdso_fallback(nr: i32, regs: PtRegs) -> bool {
     let u_old_ts;
     let mut uts: KernelOldTimespec = KernelOldTimespec::new();
     let u_uts;
@@ -223,9 +221,9 @@ fn handle_vdso_fallback(nr: i32, regs: *mut bindings::pt_regs) -> bool {
         return false;
     }
 
-    clock_id = unsafe { oob_arg1!(regs) as u32 };
+    clock_id = unsafe { oob_arg1!((regs.ptr)) as u32 };
     match clock_id {
-        bindings::CLOCK_MONOTONIC => {
+    	bindings::CLOCK_MONOTONIC => {
             clock = unsafe { &RROS_MONO_CLOCK };
         }
         bindings::CLOCK_REALTIME => {
@@ -238,41 +236,24 @@ fn handle_vdso_fallback(nr: i32, regs: *mut bindings::pt_regs) -> bool {
         }
     }
 
-    ts64 = unsafe { rust_helper_ktime_to_timespec64(rros_read_clock(clock)) };
+    ts64 = ktime::ktime_to_timespec64(rros_read_clock(clock));
 
     if is_clock_gettime!(nr) {
-        old_ts.spec.tv_sec = ts64.tv_sec as bindings::__kernel_old_time_t;
-        old_ts.spec.tv_nsec = ts64.tv_nsec;
+        old_ts.spec.tv_sec = ts64.0.tv_sec;
+        old_ts.spec.tv_nsec = ts64.0.tv_nsec;
         // [TODO: lack the size of u_old_rs]
-        u_old_ts = unsafe {
-            UserSlicePtr::new(oob_arg2!(regs) as *mut c_void, size_of::<KernelTimespec>())
-        };
-        let res = unsafe {
-            u_old_ts.writer().write_raw(
-                &mut old_ts as *mut KernelTimespec as *mut u8 as *const u8,
-                size_of::<KernelTimespec>(),
-            )
-        };
+        u_old_ts = unsafe { UserSlicePtr::new(oob_arg2!((regs.ptr)) as *mut c_void, size_of::<KernelTimespec>()) }; 
+        let res = unsafe { u_old_ts.writer().write_raw(&mut old_ts as *mut KernelTimespec as *mut u8 as *const u8, size_of::<KernelTimespec>()) };        
         ret = match res {
             Ok(()) => 0,
             Err(_e) => -(bindings::EFAULT as i64),
         };
     } else if is_clock_gettime64!(nr) {
-        uts.spec.tv_sec = ts64.tv_sec;
-        uts.spec.tv_nsec = ts64.tv_nsec;
+        uts.spec.tv_sec = ts64.0.tv_sec;
+        uts.spec.tv_nsec = ts64.0.tv_nsec;
         // [TODO: lack the size of u_uts]
-        u_uts = unsafe {
-            UserSlicePtr::new(
-                oob_arg2!(regs) as *mut c_void,
-                size_of::<KernelOldTimespec>(),
-            )
-        };
-        let res = unsafe {
-            u_uts.writer().write_raw(
-                &mut uts as *mut KernelOldTimespec as *mut u8 as *const u8,
-                size_of::<KernelOldTimespec>(),
-            )
-        };
+        u_uts = unsafe { UserSlicePtr::new(oob_arg2!((regs.ptr)) as *mut c_void, size_of::<KernelOldTimespec>()) };
+        let res = unsafe { u_uts.writer().write_raw(&mut uts as *mut KernelOldTimespec as *mut u8 as *const u8, size_of::<KernelOldTimespec>()) };        
         ret = match res {
             Ok(()) => 0,
             Err(_e) => -(bindings::EFAULT as i64),
@@ -287,7 +268,7 @@ fn handle_vdso_fallback(nr: i32, regs: *mut bindings::pt_regs) -> bool {
     true
 }
 
-fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs) -> i32 {
+fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
     let p;
     let mut nr: u32 = 0;
 
@@ -335,9 +316,8 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
 
     let curr = rros_current();
     unsafe {
-        let res1 =
-            !(rust_helper_cap_raised(rust_helper_current_cap(), bindings::CAP_SYS_NICE as i32)
-                != 0);
+        let res1 = 
+            !(capability::KernelCapStruct::cap_raised(capability::KernelCapStruct::current_cap(), bindings::CAP_SYS_NICE as i32) != 0);
         pr_debug!("curr is {:p} res is {}", curr, res1);
         if curr == 0 as *mut SpinLock<RrosThread> || res1 {
             // [TODO: lack RROS_DEBUG]
@@ -357,7 +337,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
      * switched to OOB context prior to handling the request.
      */
     unsafe {
-        if stage != &mut bindings::oob_stage as *mut bindings::irq_stage {
+        if stage.ptr != IrqStage::get_oob_state().ptr {
             return SYSCALL_PROPAGATE;
         }
     }
@@ -374,11 +354,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
         let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
         let res3 = (Task::current().state() & T_WEAK) != 0;
         // [TODO: lack covert atomic in bindings to atomic in rfl]
-        let res4 = unsafe {
-            atomic_read(
-                &mut (*(*curr).locked_data().get()).inband_disable_count as *mut bindings::atomic_t,
-            )
-        } != 0;
+        let res4 = unsafe { (*(*curr).locked_data().get()).inband_disable_count.atomic_read() != 0 };
         if res1 || res2 {
             prepare_for_signal(p, curr, regs);
         } else if res3 && !res4 {
@@ -400,7 +376,7 @@ fn do_oob_syscall(stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs)
     return SYSCALL_STOP;
 }
 
-fn do_inband_syscall(_stage: *mut bindings::irq_stage, regs: *mut bindings::pt_regs) -> i32 {
+fn do_inband_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
     let curr = rros_current();
     // struct RrosThread *curr = rros_current(); /* Always valid. */
     let p;
@@ -481,11 +457,7 @@ fn do_inband_syscall(_stage: *mut bindings::irq_stage, regs: *mut bindings::pt_r
         let res1 = Task::current().signal_pending();
         let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
         let res3 = (Task::current().state() & T_WEAK) != 0;
-        let res4 = unsafe {
-            atomic_read(
-                &mut (*(*curr).locked_data().get()).inband_disable_count as *mut bindings::atomic_t,
-            )
-        } != 0;
+        let res4 = unsafe { (*(*curr).locked_data().get()).inband_disable_count.atomic_read() != 0 };
         if res1 || res2 {
             prepare_for_signal(p, curr, regs);
         } else if res3 && res4 {
@@ -512,31 +484,30 @@ fn do_inband_syscall(_stage: *mut bindings::irq_stage, regs: *mut bindings::pt_r
 
 // gcc /root/rros_output/lib/librros.so write.c -lpthread -g -o write
 // export C_INCLUDE_PATH=$C_INCLUDE_PATH:/root/rros_output/include
-#[no_mangle]
-unsafe extern "C" fn handle_pipelined_syscall(
-    stage: *mut bindings::irq_stage,
-    regs: *mut bindings::pt_regs,
-) -> i32 {
-    // [TODO: lack unlikely]
-    let res = running_inband();
-    let r = match res {
-        Ok(_o) => true,
-        Err(_e) => false,
-    };
-    if r {
-        return do_inband_syscall(stage, regs);
+no_mangle_function_declaration! {
+    unsafe extern "C" fn handle_pipelined_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
+        // [TODO: lack unlikely]
+        let res = running_inband();
+        let r = match res {
+            Ok(_o) => true,
+            Err(_e) => false,
+        };
+        if r {
+            return do_inband_syscall(stage, regs);
+        }
+        return do_oob_syscall(stage, regs);
     }
-    return do_oob_syscall(stage, regs);
 }
 
-#[no_mangle]
-unsafe extern "C" fn handle_oob_syscall(regs: *mut bindings::pt_regs) {
-    let _ret: i32;
-    // if running_inband().is_ok() {
-    //     // return;
-    // }
+no_mangle_function_declaration! {
+    unsafe extern "C" fn handle_oob_syscall(regs: PtRegs) {
+        let _ret: i32;
+        // if running_inband().is_ok() {
+        //     // return;
+        // }
 
-    _ret = unsafe { do_oob_syscall(&mut bindings::oob_stage as *mut bindings::irq_stage, regs) };
-    // [TODO: lack warn_on]
-    // RROS_WARN_ON(CORE, ret == SYSCALL_PROPAGATE);
+        _ret = unsafe { do_oob_syscall(IrqStage::get_oob_state(), regs) };
+        // [TODO: lack warn_on]
+        // RROS_WARN_ON(CORE, ret == SYSCALL_PROPAGATE);
+    }
 }

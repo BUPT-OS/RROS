@@ -170,6 +170,11 @@ pub fn call_printk_cont(args: fmt::Arguments<'_>) {
     }
 }
 
+#[doc(hidden)]
+pub fn call_kasprintf(gfp: bindings::gfp_t, args: fmt::Arguments<'_>) -> *mut c_char {
+    unsafe { bindings::kasprintf(gfp, b"%s".as_ptr() as _, &args as *const _ as *const c_void) }
+}
+
 /// Performs formatting and forwards the string to [`call_printk`].
 ///
 /// Public but hidden since it should only be used from public macros.

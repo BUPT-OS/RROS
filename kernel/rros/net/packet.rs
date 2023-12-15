@@ -1,25 +1,29 @@
 use super::input::RrosNetRxqueue;
 use super::skb::RrosSkBuff;
-use super::socket::{RrosNetProto, RrosSocket, UserOobMsghdr};
-use crate::clock::u_timespec_to_ktime;
-use crate::net::device::NetDevice;
-use crate::net::ethernet::output::rros_net_ether_transmit;
-use crate::net::socket::{rros_export_iov, rros_import_iov, uncharge_socke_wmem};
-use crate::sched::{rros_disable_preempt, rros_enable_preempt, RrosTimespec};
 use crate::timeout::{RrosTmode, RROS_INFINITE, RROS_NONBLOCK};
-use crate::types::Hashtable;
 use core::convert::TryInto;
 use core::default::Default;
 use core::mem::transmute;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
 use core::u16;
+use super::socket::{RrosSocket,RrosNetProto, UserOobMsghdr};
 use kernel::endian::be16;
-use kernel::ktime::KtimeT;
+use kernel::hash_for_each_possible;
+use kernel::if_packet;
+use kernel::iov_iter::Iovec;
+use kernel::ktime::{timespec64_to_ktime, KtimeT, Timespec64};
 use kernel::prelude::*;
-use kernel::sync::Lock;
-use kernel::{bindings, Error, Result};
-use kernel::{c_types, init_static_sync};
+use kernel::{double_linked_list, sync::{SpinLock, Lock}, c_types, init_static_sync};
+use kernel::{bindings, Result, Error};
+use kernel::types::{HlistHead ,HlistNode, Hashtable};
+use kernel::skbuff;
+use kernel::socket::Sockaddr;
+use crate::net::device::NetDevice;
+use crate::net::ethernet::output::rros_net_ether_transmit;
+use crate::net::socket::{rros_export_iov, rros_import_iov, uncharge_socke_wmem};
+use crate::sched::{rros_disable_preempt, rros_enable_preempt};
+use kernel::types::*;
 
 // protocol hash table
 init_static_sync! {
@@ -86,10 +90,10 @@ impl RrosNetProto for EthernetRrosNetProto {
             // rros_spin_unlock
             unsafe { queue.lock.unlock() };
             rros_enable_preempt();
-        // drop q_guard here
+            // drop q_guard here
         } else {
             let queue = unsafe { &mut *rxq.as_ptr() };
-            unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).add(&mut queue.hash, hkey) };
+            unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).add(&mut queue.hash.0, hkey) };
             unsafe { rust_helper_list_add(&mut sock.next_sub, &mut queue.subscribers) }
         }
         PROTOCOL_HASHTABLE.irq_unlock_noguard(flags);
@@ -116,7 +120,7 @@ impl RrosNetProto for EthernetRrosNetProto {
 
         list_del_init!(&mut sock.next_sub);
         if unsafe { rust_helper_list_empty(&rxq.subscribers) } {
-            unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).del(&mut rxq.hash) };
+            unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).del(&mut rxq.hash.0) };
             list_add!(&mut rxq.next, &mut tmp);
         }
 
@@ -133,7 +137,7 @@ impl RrosNetProto for EthernetRrosNetProto {
             next
         );
     }
-    fn bind(&self, sock: &mut RrosSocket, addr: &bindings::sockaddr, len: i32) -> i32 {
+    fn bind(&self, sock: &mut RrosSocket, addr: &Sockaddr, len: i32) -> i32 {
         extern "C" {
             #[allow(improper_ctypes)]
             fn rust_helper_vlan_dev_vlan_id(dev: *const bindings::net_device) -> u16;
@@ -142,19 +146,19 @@ impl RrosNetProto for EthernetRrosNetProto {
                 dev: *const bindings::net_device,
             ) -> *const bindings::net_device;
         }
-        if len != core::mem::size_of::<bindings::sockaddr_ll>() as i32 {
+        if len != core::mem::size_of::<if_packet::SockaddrLL>() as i32 {
             return -(bindings::EINVAL as i32);
         }
-        let sll = unsafe { &mut *(addr as *const _ as *mut bindings::sockaddr_ll) };
-        if sll.sll_family != bindings::AF_PACKET as u16 {
+        let sll = unsafe { &mut *(addr as *const _ as *mut if_packet::SockaddrLL) };
+        if sll.get_mut().sll_family != bindings::AF_PACKET as u16 {
             return -(bindings::EINVAL as i32);
         }
-        let proto = find_packet_proto(be16::new(sll.sll_protocol));
+        let proto = find_packet_proto(be16::new(sll.get_mut().sll_protocol));
         if proto.is_none() {
             return -(bindings::EINVAL as i32);
         }
         let _proto = proto.unwrap();
-        let new_ifindex = sll.sll_ifindex;
+        let new_ifindex = sll.get_mut().sll_ifindex;
 
         sock.lock.lock_noguard();
         let old_ifindex = sock.binding.vlan_ifindex;
@@ -177,11 +181,11 @@ impl RrosNetProto for EthernetRrosNetProto {
                 real_ifindex = 0;
             }
         }
-        sll.sll_ifindex = real_ifindex;
+        sll.get_mut().sll_ifindex = real_ifindex;
 
-        if sock.protocol != be16::new(sll.sll_protocol) {
+        if sock.protocol != be16::new(sll.get_mut().sll_protocol) {
             self.detach(sock);
-            let ret = self.attach(sock, be16::new(sll.sll_protocol));
+            let ret = self.attach(sock, be16::new(sll.get_mut().sll_protocol));
             if ret != 0 {
                 unsafe { sock.oob_lock.unlock() };
                 if dev.is_some() {
@@ -209,7 +213,7 @@ impl RrosNetProto for EthernetRrosNetProto {
         &self,
         sock: &mut RrosSocket,
         msghdr: *mut UserOobMsghdr,
-        iov_vec: &mut [bindings::iovec],
+        iov_vec: &mut [Iovec],
     ) -> isize {
         extern "C" {
             fn rust_helper_raw_get_user(result: *mut u32, addr: *const u32) -> isize;
@@ -239,15 +243,12 @@ impl RrosNetProto for EthernetRrosNetProto {
         if sock.efile.flags() & bindings::O_NONBLOCK != 0 {
             msg_flags |= bindings::MSG_DONTWAIT;
         }
-        let mut uts: RrosTimespec = RrosTimespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
+        let mut uts = Timespec64::default();
         let ret = unsafe {
             rust_helper_raw_copy_from_user(
                 &mut uts as *const _ as *mut u8,
                 &msghdr.timeout as *const _ as *const u8,
-                core::mem::size_of::<RrosTimespec>(),
+                core::mem::size_of::<Timespec64>(),
             )
         };
         if ret != 0 {
@@ -256,7 +257,7 @@ impl RrosNetProto for EthernetRrosNetProto {
         let timeout = if msg_flags & bindings::MSG_DONTWAIT != 0 {
             RROS_NONBLOCK
         } else {
-            u_timespec_to_ktime(uts)
+            timespec64_to_ktime(uts)
         };
         let tmode = if timeout != 0 {
             RrosTmode::RrosAbs
@@ -280,7 +281,7 @@ impl RrosNetProto for EthernetRrosNetProto {
         skb.reset_mac_header();
         skb.protocol = sock.protocol.raw();
         skb.set_dev(real_dev.0.as_ptr());
-        skb.priority = unsafe { (*sock.sk).sk_priority };
+        skb.priority = unsafe { (*sock.sk).get_mut().sk_priority };
         let skb_tailroom = unsafe { rust_helper_skb_tailroom(skb.0.as_ptr()) } as usize;
         let mut rem: usize = 0;
         let count = rros_import_iov(
@@ -337,12 +338,10 @@ impl RrosNetProto for EthernetRrosNetProto {
         &self,
         sock: &mut RrosSocket,
         msg: *mut UserOobMsghdr,
-        iov_vec: &mut [bindings::iovec],
+        iov_vec: &mut [Iovec],
     ) -> isize {
         // 用户态
         extern "C" {
-            // fn rust_helper_raw_spin_lock_irqsave(lock:*mut bindings::raw_spinlock_t)->u64;
-            // fn rust_helper_raw_spin_unlock_irqrestore(lock:*mut bindings::raw_spinlock_t,flags:u64);
             fn rust_helper_raw_get_user(result: *mut u32, addr: *const u32) -> isize;
             fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
             fn rust_helper_list_empty(list: *const bindings::list_head) -> bool;
@@ -352,7 +351,7 @@ impl RrosNetProto for EthernetRrosNetProto {
         let mut timeout: KtimeT = RROS_INFINITE;
         let mut tmode = RrosTmode::RrosRel;
         let mut msg_flags = 0;
-        let mut uts = RrosTimespec::new();
+        let mut uts = Timespec64::default();
         let mut ret: i32;
         if !msg.is_null() {
             let ret = unsafe { rust_helper_raw_get_user(&mut msg_flags, &(*msg).flags) };
@@ -367,13 +366,13 @@ impl RrosNetProto for EthernetRrosNetProto {
                 rust_helper_raw_copy_from_user(
                     &mut uts as *const _ as *mut u8,
                     &(*msg).timeout as *const _ as *const u8,
-                    core::mem::size_of::<RrosTimespec>(),
+                    core::mem::size_of::<Timespec64>(),
                 )
             } != 0
             {
                 return -(bindings::EFAULT as isize);
             }
-            timeout = u_timespec_to_ktime(uts);
+            timeout = timespec64_to_ktime(uts);
             if timeout != 0 {
                 tmode = RrosTmode::RrosAbs;
             } else {
@@ -387,27 +386,19 @@ impl RrosNetProto for EthernetRrosNetProto {
         }
 
         loop {
-            let flags = unsafe {
-                rust_helper_raw_spin_lock_irqsave(
-                    &mut sock.input_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                )
-            };
+            let flags = sock.input_wait.lock.raw_spin_lock_irqsave();
 
             if !unsafe { rust_helper_list_empty(&mut sock.input) } {
                 let skb =
                     list_get_entry!(&mut sock.input, bindings::sk_buff, __bindgen_anon_1.list);
                 let mut skb = RrosSkBuff::from_raw_ptr(skb);
-                unsafe {
-                    rust_helper_raw_spin_unlock_irqrestore(
-                        &mut sock.input_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                        flags,
-                    );
-                };
+                sock.input_wait.lock.raw_spin_unlock_irqrestore(flags);
+
                 unsafe {
                     let len = skb
                         .data
                         .offset_from(rust_helper_skb_mac_header(skb.0.as_ptr())); //skb->data - skb_mac_header(skb))
-                    bindings::skb_push(skb.0.as_ptr(), len as u32);
+                    skbuff::skb_push(skb.0.as_ptr(), len as u32);
                 }
                 let ret = copy_packet_to_user(msg, iov_vec, &mut skb);
                 sock.uncharge_socke_rmem(&skb);
@@ -416,24 +407,14 @@ impl RrosNetProto for EthernetRrosNetProto {
             }
 
             if msg_flags & bindings::MSG_DONTWAIT != 0 {
-                unsafe {
-                    rust_helper_raw_spin_unlock_irqrestore(
-                        &mut sock.input_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                        flags,
-                    );
-                };
+                sock.input_wait.lock.raw_spin_unlock_irqrestore(flags);
                 return -(bindings::EWOULDBLOCK as isize);
             }
 
             pr_debug!("~~~~~~~~~~ wait for input;");
             sock.input_wait.locked_add(timeout, tmode);
             pr_debug!("~~~~~~~~~~ wait for input;2");
-            unsafe {
-                rust_helper_raw_spin_unlock_irqrestore(
-                    &mut sock.input_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-                    flags,
-                );
-            };
+            sock.input_wait.lock.raw_spin_unlock_irqrestore(flags);
             ret = sock.input_wait.wait_schedule();
             if ret != 0 {
                 break;
@@ -449,7 +430,7 @@ impl RrosNetProto for EthernetRrosNetProto {
 
 fn copy_packet_to_user(
     msg: *mut UserOobMsghdr,
-    iov_vec: &mut [bindings::iovec],
+    iov_vec: &mut [Iovec],
     skb: &mut RrosSkBuff,
 ) -> isize {
     extern "C" {
@@ -463,7 +444,7 @@ fn copy_packet_to_user(
     }
     let mut name_ptr: u64 = 0;
     let mut namelen: u32 = 0;
-    let u_addr: *mut bindings::sockaddr_ll;
+    let u_addr: *mut if_packet::SockaddrLL;
     let mut msg_flags = 0;
     if unsafe { rust_helper_raw_get_user_64(&mut name_ptr, &(*msg).name_ptr) } != 0 {
         return -(bindings::EFAULT as isize);
@@ -472,23 +453,23 @@ fn copy_packet_to_user(
     if unsafe { rust_helper_raw_get_user(&mut namelen, &(*msg).name_len) } != 0 {
         return -(bindings::EFAULT as isize);
     }
-    let mut addr = bindings::sockaddr_ll::default();
+    let mut addr = if_packet::SockaddrLL::default();
     if name_ptr == 0 {
         if namelen != 0 {
             return -(bindings::EINVAL as isize);
         }
     } else {
-        if namelen < core::mem::size_of::<bindings::sockaddr_ll>() as u32 {
+        if namelen < core::mem::size_of::<if_packet::SockaddrLL>() as u32 {
             return -(bindings::EINVAL as isize);
         }
-        addr.sll_family = bindings::AF_PACKET as u16;
-        addr.sll_protocol = skb.protocol;
+        addr.get_mut().sll_family = bindings::AF_PACKET as u16;
+        addr.get_mut().sll_protocol = skb.protocol;
         let dev = skb.dev().unwrap();
-        addr.sll_ifindex = dev.ifindex();
-        addr.sll_hatype = unsafe { dev.0.as_ref().type_ };
-        addr.sll_pkttype = unsafe { skb.0.as_ref().pkt_type() };
-        addr.sll_halen = unsafe {
-            rust_helper_dev_parse_header(skb.0.as_ptr(), &mut addr.sll_addr as *const _ as *mut u8)
+        addr.get_mut().sll_ifindex = dev.ifindex();
+        addr.get_mut().sll_hatype = unsafe { dev.0.as_ref().type_ };
+        addr.get_mut().sll_pkttype = unsafe { skb.0.as_ref().pkt_type() };
+        addr.get_mut().sll_halen = unsafe {
+            rust_helper_dev_parse_header(skb.0.as_ptr(), &mut addr.get_mut().sll_addr as *const _ as *mut u8)
         }
         .try_into()
         .unwrap();
@@ -497,7 +478,7 @@ fn copy_packet_to_user(
             rust_helper_raw_copy_to_user(
                 u_addr as *const _ as *mut u8,
                 &addr as *const _ as *const u8,
-                core::mem::size_of::<bindings::sockaddr_ll>(),
+                core::mem::size_of::<if_packet::SockaddrLL>(),
             )
         } != 0
         {
@@ -554,20 +535,12 @@ fn __packet_deliver(rxq: &mut RrosNetRxqueue, skb: &mut RrosSkBuff, protocol: be
         } else {
             RrosSkBuff::from_raw_ptr(skb.0.as_ptr()) // DANGEROUS
         };
-        unsafe {
-            rust_helper_raw_spin_lock(
-                &mut ref_rsk.input_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-            );
-        }
+        ref_rsk.input_wait.lock.raw_spin_lock();
         list_add_tail!(qskb.list_mut(), &mut ref_rsk.input);
         if ref_rsk.input_wait.is_active() {
             ref_rsk.input_wait.wake_up_head();
         }
-        unsafe {
-            rust_helper_raw_spin_unlock(
-                &mut ref_rsk.input_wait.lock as *const _ as *mut bindings::hard_spinlock_t,
-            );
-        }
+        ref_rsk.input_wait.lock.raw_spin_unlock();
 
         // rros_signal_poll_events(&esk->poll_head,	POLLIN|POLLRDNORM);
         delivered = true;
@@ -633,39 +606,32 @@ fn find_xmit_device(rsk: &mut RrosSocket, msghdr: &mut UserOobMsghdr) -> Result<
         let proto = rsk.proto.unwrap();
         proto.get_netif(rsk)
     } else {
-        if namelen < core::mem::size_of::<bindings::sockaddr_ll>() as u32 {
+        if namelen < core::mem::size_of::<if_packet::SockaddrLL>() as u32 {
             return Err(Error::EINVAL);
         }
 
-        let u_addr: *mut bindings::sockaddr_ll = unsafe { transmute(name_ptr) };
-        let mut addr: bindings::sockaddr_ll = bindings::sockaddr_ll::default();
+        let u_addr: *mut if_packet::SockaddrLL = unsafe { transmute(name_ptr) };
+        let mut addr: if_packet::SockaddrLL = if_packet::SockaddrLL::default();
         let ret = unsafe {
             rust_helper_raw_copy_from_user(
                 &mut addr as *const _ as *mut u8,
                 u_addr as *const _ as *const u8,
-                core::mem::size_of::<bindings::sockaddr_ll>(),
+                core::mem::size_of::<if_packet::SockaddrLL>(),
             )
         };
         if ret != 0 {
             return Err(Error::EFAULT);
         }
 
-        if addr.sll_family != bindings::AF_PACKET as u16
-            && addr.sll_family != bindings::AF_UNSPEC as u16
+        if addr.get_mut().sll_family != bindings::AF_PACKET as u16
+            && addr.get_mut().sll_family != bindings::AF_UNSPEC as u16
         {
             return Err(Error::EINVAL);
         }
-        NetDevice::net_get_dev_by_index(rsk.net, addr.sll_ifindex)
+        NetDevice::net_get_dev_by_index(rsk.net, addr.get_mut().sll_ifindex)
     };
     if dev.is_none() {
-        return Err(Error::EFAULT); // TODO： ENXIO
+        return Err(Error::EFAULT); // TODO: ENXIO
     }
     Ok(dev.unwrap())
-}
-
-extern "C" {
-    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
-    fn rust_helper_raw_spin_lock(lock: *mut bindings::hard_spinlock_t);
-    fn rust_helper_raw_spin_unlock(lock: *mut bindings::hard_spinlock_t);
 }

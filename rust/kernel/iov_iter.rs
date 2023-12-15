@@ -9,7 +9,9 @@ use crate::{
     error::Error,
     io_buffer::{IoBufferReader, IoBufferWriter},
     Result,
+    c_types,
 };
+use core::cell::UnsafeCell;
 
 /// Wraps the kernel's `struct iov_iter`.
 ///
@@ -77,5 +79,23 @@ impl IoBufferReader for IovIter {
         } else {
             Ok(())
         }
+    }
+}
+
+#[derive(Default)]
+#[repr(transparent)]
+pub struct Iovec(pub(crate) UnsafeCell<bindings::iovec>);
+
+impl Iovec {
+    pub fn get_mut(&mut self) -> &mut bindings::iovec {
+        self.0.get_mut()
+    }
+
+    pub fn get_iov_len(&self) -> u64 {
+        unsafe { (*(self.0.get())).iov_len }
+    }
+
+    pub fn get_iov_base(&self) -> *mut c_types::c_void {
+        unsafe { (*(self.0.get())).iov_base }
     }
 }

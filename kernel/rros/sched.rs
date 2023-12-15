@@ -2,6 +2,7 @@ use crate::flags::RrosFlag;
 use crate::wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO};
 use crate::{idle, sched, tp};
 use alloc::rc::Rc;
+use kernel::dovetail::OobMmState;
 use core::cell::RefCell;
 use core::default::Default;
 use core::ops::DerefMut;
@@ -13,13 +14,20 @@ use kernel::linked_list::{GetLinks, Links};
 use kernel::{
     bindings, c_str, c_types, cpumask,
     double_linked_list::*,
+    dovetail,
     irq_work::IrqWork,
     percpu::alloc_per_cpu,
     percpu_defs,
     prelude::*,
     premmpt, spinlock_init,
-    str::CStr,
-    sync::{Lock, SpinLock},
+    str::{kstrdup, CStr},
+    sync::{Guard, HardSpinlock, Lock, SpinLock},
+    types::Atomic,
+    irq_pipeline,
+    ktime::Timespec64,
+    completion,
+    capability,
+    waitqueue,
 };
 
 use core::mem::{align_of, size_of, transmute};
@@ -91,7 +99,7 @@ pub struct rros_rq {
     pub last_account_switch: KtimeT,
     #[cfg(CONFIG_RROS_RUNSTATS)]
     pub current_account: *mut stat::RrosAccount,
-    pub lock: bindings::hard_spinlock_t,
+    pub lock: HardSpinlock,
 }
 
 impl rros_rq {
@@ -117,19 +125,7 @@ impl rros_rq {
             last_account_switch: 0,
             #[cfg(CONFIG_RROS_RUNSTATS)]
             current_account: stat::RrosAccount::new() as *mut stat::RrosAccount,
-            lock: bindings::hard_spinlock_t {
-                rlock: bindings::raw_spinlock {
-                    raw_lock: bindings::arch_spinlock_t {
-                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                            val: bindings::atomic_t { counter: 0 },
-                        },
-                    },
-                },
-                dep_map: bindings::phony_lockdep_map {
-                    wait_type_outer: 0,
-                    wait_type_inner: 0,
-                },
-            },
+            lock: HardSpinlock::new(),
         })
     }
 
@@ -712,34 +708,20 @@ impl Get {
 
 //#[derive(Copy,Clone)]
 pub struct RrosSchedTpWindow {
-    pub offset: *mut RrosTimespec,
-    pub duration: *mut RrosTimespec,
+    pub offset: *mut Timespec64,
+    pub duration: *mut Timespec64,
     pub ptid: i32,
 }
 impl RrosSchedTpWindow {
     #[allow(dead_code)]
     fn new() -> Self {
         RrosSchedTpWindow {
-            offset: 0 as *mut RrosTimespec,
-            duration: 0 as *mut RrosTimespec,
+            offset: 0 as *mut Timespec64,
+            duration: 0 as *mut Timespec64,
             ptid: 0,
         }
     }
 }
-//#[derive(Copy,Clone)]
-pub struct RrosTimespec {
-    pub tv_sec: RrosTime64T,
-    pub tv_nsec: c_types::c_longlong,
-}
-impl RrosTimespec {
-    pub fn new() -> Self {
-        RrosTimespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        }
-    }
-}
-pub type RrosTime64T = c_types::c_longlong;
 use crate::timer::RrosTimer as rros_timer;
 type KtimeT = i64;
 use crate::clock::{RrosClock as rros_clock, RROS_MONO_CLOCK};
@@ -861,7 +843,7 @@ impl GetLinks for RrosThreadWithLock {
 
 //#[derive(Copy,Clone)]
 pub struct RrosThread {
-    pub lock: bindings::hard_spinlock_t,
+    pub lock: HardSpinlock,
 
     pub rq: Option<*mut rros_rq>,
     pub base_class: Option<&'static RrosSchedClass>,
@@ -886,24 +868,24 @@ pub struct RrosThread {
 
     pub rq_next: Option<NonNull<Node<Arc<SpinLock<RrosThread>>>>>,
 
-    pub altsched: bindings::dovetail_altsched_context,
+    pub altsched: dovetail::DovetailAltschedContext,
     pub local_info: u32,
     pub wait_data: *mut c_types::c_void,
     pub poll_context: PollContext,
 
-    pub inband_disable_count: bindings::atomic_t,
+    pub inband_disable_count: Atomic,
     pub inband_work: IrqWork,
     pub stat: RrosStat,
     pub u_window: Option<Rc<RefCell<RrosUserWindow>>>,
 
     // pub trackers: *mut List<Arc<SpinLock<RrosMutex>>>,
-    pub tracking_lock: bindings::hard_spinlock_t,
+    pub tracking_lock: HardSpinlock,
     pub element: Rc<RefCell<RrosElement>>,
     pub affinity: cpumask::CpumaskT,
-    pub exited: bindings::completion,
-    pub raised_cap: bindings::kernel_cap_t,
+    pub exited: completion::Completion,
+    pub raised_cap: capability::KernelCapStruct,
     pub kill_next: ListHead,
-    pub oob_mm: *mut bindings::oob_mm_state,
+    pub oob_mm: OobMmState,
     pub ptsync_next: ListHead,
     pub observable: Option<Rc<RefCell<RrosObservable>>>,
     pub name: &'static str,
@@ -914,19 +896,7 @@ pub struct RrosThread {
 impl RrosThread {
     pub fn new() -> Result<Self> {
         Ok(RrosThread {
-            lock: bindings::hard_spinlock_t {
-                rlock: bindings::raw_spinlock {
-                    raw_lock: bindings::arch_spinlock_t {
-                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                            val: bindings::atomic_t { counter: 0 },
-                        },
-                    },
-                },
-                dep_map: bindings::phony_lockdep_map {
-                    wait_type_outer: 0,
-                    wait_type_inner: 0,
-                },
-            },
+            lock: HardSpinlock::new(),
             rq: None,
             base_class: None,
             sched_class: None,
@@ -949,59 +919,20 @@ impl RrosThread {
             //     prev: 0 as *mut ListHead,
             // },
             next: 0 as *mut Node<Arc<SpinLock<RrosThread>>>, // kernel corrupted bug
-            altsched: bindings::dovetail_altsched_context {
-                task: null_mut(),
-                active_mm: null_mut(),
-                borrowed_mm: false,
-            },
+            altsched: dovetail::DovetailAltschedContext::new(),
             local_info: 0,
             wait_data: null_mut(),
             poll_context: PollContext::new(),
-            inband_disable_count: bindings::atomic_t { counter: 0 },
+            inband_disable_count: Atomic::new(),
             inband_work: IrqWork::new(),
             stat: RrosStat::new(),
             u_window: None,
             // trackers: 0 as *mut List<Arc<SpinLock<RrosMutex>>>,
-            tracking_lock: bindings::hard_spinlock_t {
-                rlock: bindings::raw_spinlock {
-                    raw_lock: bindings::arch_spinlock_t {
-                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                            val: bindings::atomic_t { counter: 0 },
-                        },
-                    },
-                },
-                dep_map: bindings::phony_lockdep_map {
-                    wait_type_outer: 0,
-                    wait_type_inner: 0,
-                },
-            },
+            tracking_lock: HardSpinlock::new(),
             element: Rc::try_new(RefCell::new(RrosElement::new()?))?,
             affinity: cpumask::CpumaskT::from_int(0 as u64),
-            exited: bindings::completion {
-                done: 0,
-                wait: bindings::swait_queue_head {
-                    lock: bindings::raw_spinlock_t {
-                        raw_lock: bindings::arch_spinlock_t {
-                            __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                                val: bindings::atomic_t { counter: 0 },
-                                // __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1__bindgen_ty_1{
-                                // 	locked: 0,
-                                // 	pending: 0,
-                                //  },
-                                // __bindgen_anon_2: bindings::qspinlock__bindgen_ty_1__bindgen_ty_2{
-                                // 	locked_pending: 0,
-                                // 	tail: 0,
-                                // },
-                            },
-                        },
-                    },
-                    task_list: bindings::list_head {
-                        next: null_mut(),
-                        prev: null_mut(),
-                    },
-                },
-            },
-            raised_cap: bindings::kernel_cap_t { cap: [0, 0] },
+            exited: completion::Completion::new(),
+            raised_cap: capability::KernelCapStruct::new(),
             kill_next: ListHead {
                 next: 0 as *mut ListHead,
                 prev: 0 as *mut ListHead,
@@ -1012,20 +943,14 @@ impl RrosThread {
             },
             observable: None,
             name: "thread\0",
-            oob_mm: null_mut(),
+            oob_mm: OobMmState::new(),
             tps: 0 as *mut tp::RrosTpRq,
             tp_link: None,
         })
     }
 
     pub fn init(&mut self) -> Result<usize> {
-        extern "C" {
-            fn rust_helper_raw_spin_lock_init(lock: *mut bindings::hard_spinlock_t);
-        }
-        self.lock = bindings::hard_spinlock_t::default();
-        unsafe {
-            rust_helper_raw_spin_lock_init(&mut self.lock as *mut bindings::hard_spinlock_t);
-        }
+        self.lock.init();
         self.rq = None;
         self.base_class = None;
         self.sched_class = None;
@@ -1042,51 +967,19 @@ impl RrosThread {
         self.info = 0;
         self.rq_next = None;
         self.next = 0 as *mut Node<Arc<SpinLock<RrosThread>>>; // kernel;
-        self.altsched = bindings::dovetail_altsched_context {
-            task: null_mut(),
-            active_mm: null_mut(),
-            borrowed_mm: false,
-        };
+        self.altsched = dovetail::DovetailAltschedContext::new();
         self.local_info = 0;
         self.wait_data = null_mut();
         self.poll_context = PollContext::new();
-        self.inband_disable_count = bindings::atomic_t { counter: 0 };
+        self.inband_disable_count = Atomic::new();
         self.inband_work = IrqWork::new();
         self.stat = RrosStat::new();
         self.u_window = None;
-        self.tracking_lock = bindings::hard_spinlock_t::default();
-        unsafe {
-            rust_helper_raw_spin_lock_init(
-                &mut self.tracking_lock as *mut bindings::hard_spinlock_t,
-            );
-        }
+        self.tracking_lock.init();
         // self.element = Rc::try_new(RefCell::new(RrosElement::new()?))?;
         self.affinity = cpumask::CpumaskT::from_int(0 as u64);
-        self.exited = bindings::completion {
-            done: 0,
-            wait: bindings::swait_queue_head {
-                lock: bindings::raw_spinlock_t {
-                    raw_lock: bindings::arch_spinlock_t {
-                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                            val: bindings::atomic_t { counter: 0 },
-                            // __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1__bindgen_ty_1{
-                            // 	locked: 0,
-                            // 	pending: 0,
-                            //  },
-                            // __bindgen_anon_2: bindings::qspinlock__bindgen_ty_1__bindgen_ty_2{
-                            // 	locked_pending: 0,
-                            // 	tail: 0,
-                            // },
-                        },
-                    },
-                },
-                task_list: bindings::list_head {
-                    next: null_mut(),
-                    prev: null_mut(),
-                },
-            },
-        };
-        self.raised_cap = bindings::kernel_cap_t { cap: [0, 0] };
+        self.exited = completion::Completion::new();
+        self.raised_cap = capability::KernelCapStruct::new();
         self.kill_next = ListHead {
             next: 0 as *mut ListHead,
             prev: 0 as *mut ListHead,
@@ -1097,7 +990,7 @@ impl RrosThread {
         };
         self.observable = None;
         self.name = "thread\0";
-        self.oob_mm = null_mut();
+        self.oob_mm = OobMmState::new();
         // self.tps = 0 as *mut tp::RrosTpRq;
         self.tp_link = None;
 
@@ -1211,11 +1104,11 @@ pub struct RrosObservable {
     pub observers: ListHead,
     pub flush_list: ListHead,
     pub oob_wait: RrosWaitQueue,
-    pub inband_wait: bindings::wait_queue_head_t,
+    pub inband_wait: waitqueue::WaitQueueHead,
     pub poll_head: RrosPollHead,
-    pub wake_irqwork: bindings::irq_work,
-    pub flush_irqwork: bindings::irq_work,
-    pub lock: bindings::hard_spinlock_t,
+    pub wake_irqwork: IrqWork,
+    pub flush_irqwork: IrqWork,
+    pub lock: HardSpinlock,
     pub serial_counter: u32,
     pub writable_observers: i32,
 }
@@ -1231,63 +1124,17 @@ impl RrosObservable {
                 next: 0 as *mut ListHead,
                 prev: 0 as *mut ListHead,
             },
-            oob_wait: unsafe {
+            oob_wait: unsafe{
                 RrosWaitQueue::new(
                     &mut RROS_MONO_CLOCK as *mut RrosClock,
-                    RROS_WAIT_PRIO as i32,
+                    RROS_WAIT_PRIO as i32
                 )
             },
-            inband_wait: bindings::wait_queue_head_t {
-                lock: bindings::spinlock_t {
-                    _bindgen_opaque_blob: 0,
-                },
-                head: bindings::list_head {
-                    next: null_mut(),
-                    prev: null_mut(),
-                },
-            },
+            inband_wait: waitqueue::WaitQueueHead::new(),
             poll_head: RrosPollHead::new(),
-            wake_irqwork: bindings::irq_work {
-                node: bindings::__call_single_node {
-                    llist: bindings::llist_node { next: null_mut() },
-                    __bindgen_anon_1: bindings::__call_single_node__bindgen_ty_1 {
-                        u_flags: 0,
-                        // a_flags:bindings::atomic_t{
-                        // 	counter:0,
-                        // },
-                    },
-                    src: 0,
-                    dst: 0,
-                },
-                func: None,
-            },
-            flush_irqwork: bindings::irq_work {
-                node: bindings::__call_single_node {
-                    llist: bindings::llist_node { next: null_mut() },
-                    __bindgen_anon_1: bindings::__call_single_node__bindgen_ty_1 {
-                        u_flags: 0,
-                        // a_flags:bindings::atomic_t{
-                        // 	counter:0,
-                        // },
-                    },
-                    src: 0,
-                    dst: 0,
-                },
-                func: None,
-            },
-            lock: bindings::hard_spinlock_t {
-                rlock: bindings::raw_spinlock {
-                    raw_lock: bindings::arch_spinlock_t {
-                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                            val: bindings::atomic_t { counter: 0 },
-                        },
-                    },
-                },
-                dep_map: bindings::phony_lockdep_map {
-                    wait_type_outer: 0,
-                    wait_type_inner: 0,
-                },
-            },
+            wake_irqwork: IrqWork::new(),
+            flush_irqwork: IrqWork::new(),
+            lock: HardSpinlock::new(),
             serial_counter: 0,
             writable_observers: 0,
         }
@@ -1298,7 +1145,7 @@ impl RrosObservable {
 pub struct RrosPollHead {
     pub watchpoints: ListHead,
     // FIXME: use ptr here not directly object
-    pub lock: bindings::hard_spinlock_t,
+    pub lock: HardSpinlock,
 }
 impl RrosPollHead {
     pub fn new() -> Self {
@@ -1307,19 +1154,7 @@ impl RrosPollHead {
                 next: 0 as *mut ListHead,
                 prev: 0 as *mut ListHead,
             },
-            lock: bindings::hard_spinlock_t {
-                rlock: bindings::raw_spinlock {
-                    raw_lock: bindings::arch_spinlock_t {
-                        __bindgen_anon_1: bindings::qspinlock__bindgen_ty_1 {
-                            val: bindings::atomic_t { counter: 0 },
-                        },
-                    },
-                },
-                dep_map: bindings::phony_lockdep_map {
-                    wait_type_outer: 0,
-                    wait_type_inner: 0,
-                },
-            },
+            lock: HardSpinlock::new(),
         }
     }
 }
@@ -1529,6 +1364,7 @@ impl RrosSchedAttrs {
 }
 
 use kernel::cpumask::{online_cpus, possible_cpus};
+use kernel::prelude::*;
 
 pub fn rros_init_sched() -> Result<usize> {
     unsafe {
@@ -1627,7 +1463,7 @@ pub fn rros_init_sched() -> Result<usize> {
         }
     }
     // ret = bindings::__request_percpu_irq();
-    pr_info!("sched init success!");
+    pr_debug!("sched init success!");
     Ok(0)
 }
 
@@ -1659,7 +1495,7 @@ fn register_classes() -> Result<usize> {
         )
     };
     match res {
-        Ok(_) => pr_info!("register_one_class(idle) success!"),
+        Ok(_) => pr_debug!("register_one_class(idle) success!"),
         Err(e) => {
             pr_warn!("register_one_class(idle) error!");
             return Err(e);
@@ -1739,13 +1575,13 @@ fn init_rq(rq: *mut rros_rq, cpu: i32) -> Result<usize> {
     // let mut rq_ptr = rq.borrow_mut();
     let mut _rros_nrthreads = 0;
     unsafe {
-        (*rq).proxy_timer_name = bindings::kstrdup(
+        (*rq).proxy_timer_name = kstrdup(
             CStr::from_bytes_with_nul("[proxy-timer]\0".as_bytes())?.as_char_ptr(),
             bindings::GFP_KERNEL,
         )
     };
     unsafe {
-        (*rq).rrb_timer_name = bindings::kstrdup(
+        (*rq).rrb_timer_name = kstrdup(
             CStr::from_bytes_with_nul("[rrb-timer]\0".as_bytes())?.as_char_ptr(),
             bindings::GFP_KERNEL,
         )
@@ -1848,9 +1684,14 @@ fn init_rq(rq: *mut rros_rq, cpu: i32) -> Result<usize> {
         }
     }
     // let mut rq_root_thread_lock = rq_root_thread_2.lock();
-    let add = &mut rq_root_thread_2.lock().deref_mut().altsched
-        as *mut bindings::dovetail_altsched_context;
-    unsafe { bindings::dovetail_init_altsched(add) };
+    // let add = &mut rq_root_thread_2.lock().deref_mut().altsched
+    //     as *mut bindings::dovetail_altsched_context;
+    // unsafe { bindings::dovetail_init_altsched(add) };
+    rq_root_thread_2
+        .lock()
+        .deref_mut()
+        .altsched
+        .dovetail_init_altsched();
 
     // let mut rros_thread_list = list_head::new();
     // list_add_tail(
@@ -2144,9 +1985,7 @@ pub unsafe extern "C" fn rros_schedule() {
         return;
     }
 
-    unsafe {
-        bindings::run_oob_call(Some(__rros_schedule), 0 as *mut c_types::c_void);
-    }
+    irq_pipeline::run_oob_call(Some(__rros_schedule), 0 as *mut c_types::c_void);
 }
 
 extern "C" {
@@ -2249,13 +2088,9 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
         // pr_debug!("the run thread add is  arc next {:p}", next);
 
         // fix!!!!!
-        let prev_sched =
-            &mut (*prev.locked_data().get()).altsched as *mut bindings::dovetail_altsched_context;
-        let next_sched =
-            &mut (*next.locked_data().get()).altsched as *mut bindings::dovetail_altsched_context;
         let inband_tail;
         // pr_debug!("before the inband_tail next state is {}", next.lock().state);
-        inband_tail = bindings::dovetail_context_switch(prev_sched, next_sched, leaving_inband);
+        inband_tail = dovetail::dovetail_context_switch(&mut (*prev.locked_data().get()).altsched, &mut (*next.locked_data().get()).altsched, leaving_inband);
         // next.unlock();
         // finish_rq_switch(inband_tail, flags); //b kernel/rros/sched.rs:1751
 
@@ -2284,8 +2119,8 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
 fn finish_rq_switch() {}
 
 pub fn pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThread>>> {
-    let mut oob_mm: *mut bindings::oob_mm_state;
-    let mut next: Option<Arc<SpinLock<RrosThread>>>;
+    let mut oob_mm = OobMmState::new();
+    let mut next: Option<Arc<SpinLock<RrosThread>>> = None;
     loop {
         next = __pick_next_thread(rq);
         let next_clone = next.clone().unwrap();
@@ -2294,11 +2129,7 @@ pub fn pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThr
             break;
         }
         unsafe {
-            if test_bit(
-                RROS_MM_PTSYNC_BIT,
-                &(*oob_mm).flags as *const _ as *const usize,
-            ) == false
-            {
+            if test_bit(RROS_MM_PTSYNC_BIT, &(*(oob_mm.ptr)).flags as *const _ as *const usize) == false {
                 break;
             }
         }
@@ -2419,7 +2250,7 @@ pub fn set_next_running(rq: Option<*mut rros_rq>, next: Option<Arc<SpinLock<Rros
 }
 
 fn rros_preempt_count() -> i32 {
-    unsafe { return (*rust_helper_dovetail_current_state()).preempt_count };
+    dovetail::dovetail_current_state().preempt_count()
 }
 
 fn test_bit(nr: i32, addr: *const usize) -> bool {
@@ -2587,7 +2418,7 @@ fn rros_set_schedparam(
     // let thread_lock = thread_unwrap.lock();
     let base_class_clone = thread_unwrap.lock().base_class.clone();
     if base_class_clone.is_none() {
-        pr_info!("rros_set_schedparam: finded");
+        pr_debug!("rros_set_schedparam: finded");
     }
     let base_class_unwrap = base_class_clone.unwrap();
     let func = base_class_unwrap.sched_setparam.unwrap();
@@ -2623,7 +2454,7 @@ fn rros_declare_thread(
         }
     }
 
-    pr_info!("rros_declare_thread success!");
+    pr_debug!("rros_declare_thread success!");
     Ok(0)
 }
 
@@ -2720,7 +2551,6 @@ unsafe extern "C" fn rust_resume_oob_task(ptr: *mut c_types::c_void) {
 
 extern "C" {
     fn rust_helper_hard_local_irq_disable();
-    fn rust_helper_dovetail_leave_oob();
     fn rust_helper_hard_local_irq_enable();
 }
 
@@ -2752,10 +2582,11 @@ pub fn rros_switch_inband(cause: i32) {
     curr.lock().info &= !RROS_THREAD_INFO_MASK;
     rros_set_resched(this_rq);
     unsafe {
-        rust_helper_dovetail_leave_oob();
+        dovetail::dovetail_leave_oob();
         __rros_schedule(0 as *mut c_types::c_void);
         rust_helper_hard_local_irq_enable();
-        bindings::dovetail_resume_inband();
+        // bindings::dovetail_resume_inband();
+        dovetail::dovetail_resume_inband();
     }
 
     // curr.lock().stat.isw.inc_counter();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! mm
 //!
 //! C header: [`include/linux/mm.h`](../../../../include/linux/mm.h)
 

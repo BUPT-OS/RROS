@@ -1,4 +1,7 @@
 use kernel::bindings;
+use kernel::c_types::c_ulong;
+use kernel::sync::Mutex;
+use kernel::{container_of, init_static_sync, Opaque};
 
 /// Unofficial Wrap for some binding struct.
 /// Now are mostly used in net module.
@@ -277,125 +280,6 @@ macro_rules! list_add_priff {
             };
         }
     }};
-}
-
-/// Struct to represent a hashtable.
-/// This struct contains an array of `hlist_head` from the C bindings, with a size of `N`.
-pub struct Hashtable<const N: usize> {
-    /// Public member variable `table`.
-    /// This is an array of `hlist_head` from the C bindings, with a size of `N`.
-    pub table: [bindings::hlist_head; N],
-}
-
-unsafe impl<const N: usize> Sync for Hashtable<N> {}
-unsafe impl<const N: usize> Send for Hashtable<N> {}
-impl<const N: usize> Hashtable<N> {
-    /// Method to create a new `Hashtable`.
-    /// This method initializes the `table` field with `N` instances of `hlist_head`, each with a `first` field of `null`.
-    pub const fn new() -> Self {
-        let table = [bindings::hlist_head {
-            first: core::ptr::null_mut(),
-        }; N];
-        Self { table: table }
-    }
-
-    /// Method to add a node to the `Hashtable`.
-    /// This method takes a mutable reference to a node and a key, and adds the node to the hashtable at the position determined by the key.
-    /// It uses the `rust_helper_hash_add` function from the C bindings.
-    pub fn add(&mut self, node: &mut bindings::hlist_node, key: u32) {
-        extern "C" {
-            fn rust_helper_hash_add(
-                ht: *mut bindings::hlist_head,
-                length: usize,
-                node: *mut bindings::hlist_node,
-                key: u32,
-            );
-        }
-        unsafe {
-            rust_helper_hash_add(
-                &self.table as *const _ as *mut bindings::hlist_head,
-                N,
-                node as *mut bindings::hlist_node,
-                key,
-            );
-        }
-    }
-
-    /// Method to delete a node from the `Hashtable`.
-    /// This method takes a mutable reference to a node and removes it from the hashtable.
-    /// The implementation of this method is not shown in the provided code.
-    pub fn del(&self, node: &mut bindings::hlist_node) {
-        extern "C" {
-            fn rust_helper_hash_del(node: *mut bindings::hlist_node);
-        }
-        unsafe {
-            rust_helper_hash_del(node as *mut bindings::hlist_node);
-        }
-    }
-
-    /// Method to get the head of a hashtable.
-    /// This method takes a key and returns a pointer to the `hlist_head` at the position determined by the key.
-    /// It uses the `rust_helper_get_hlist_head` function from the C bindings.
-    pub fn head(&mut self, key: u32) -> *const bindings::hlist_head {
-        extern "C" {
-            fn rust_helper_get_hlist_head(
-                ht: *const bindings::hlist_head,
-                length: usize,
-                key: u32,
-            ) -> *const bindings::hlist_head;
-        }
-        unsafe { rust_helper_get_hlist_head(&self.table as *const bindings::hlist_head, N, key) }
-    }
-}
-
-/// Macro to initialize a lock hashtable.
-/// This macro takes an identifier for the hashtable and a number of bits to shift.
-/// It creates a new hashtable with the given number of bits and wraps it in a mutex for thread safety.
-#[macro_export]
-macro_rules! initialize_lock_hashtable{
-    ($name:ident,$bits_to_shift:expr) => {
-        kernel::init_static_sync! {
-            static $name: kernel::sync::Mutex<Hashtable::<$bits_to_shift>> = Hashtable::<$bits_to_shift>::new();
-        }
-    }
-}
-
-/// Macro to get the hashtable entry from a given pointer.
-/// This macro takes a pointer, a type, and a field, and returns a pointer to the entry containing the hashtable head.
-#[macro_export]
-macro_rules! hlist_entry{
-    ($ptr:expr,$type:ty,$($f:tt)*) =>{
-        kernel::container_of!($ptr,$type,$($f)*)
-    }
-}
-
-/// Macro to safely get the hashtable entry from a given pointer.
-/// This macro takes a pointer, a type, and a field, and returns a pointer to the entry containing the hashtable head.
-/// If the given pointer is null, it returns a null pointer.
-#[macro_export]
-macro_rules! hlist_entry_safe{
-    ($ptr:expr,$type:ty,$($f:tt)*) =>{
-        if ($ptr).is_null(){
-            core::ptr::null()
-        }else{
-            kernel::container_of!($ptr,$type,$($f)*)
-        }
-    }
-}
-
-/// Macro to iterate over all possible entries in a hashtable.
-/// This macro takes an identifier for the loop cursor, a hashtable head, a type, a field, and a block of code to execute for each entry.
-/// It starts from the first entry and continues until it reaches the end of the hashtable, executing the block of code for each entry.
-#[macro_export]
-macro_rules! hash_for_each_possible {
-    ($pos:ident,$head:expr,$type:ty,$member:ident,{ $($block:tt)* } ) => {
-        let mut $pos = $crate::hlist_entry_safe!(unsafe{(*$head).first},$type,$member);
-        while(!$pos.is_null()){
-            // $code
-            $($block)*
-            $pos = $crate::hlist_entry_safe!(unsafe{(*$pos).$member.next},$type,$member);
-        }
-    };
 }
 
 /// Macro to calculate the number of long integers needed to represent a given number of bits.

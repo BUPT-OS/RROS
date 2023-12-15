@@ -432,9 +432,7 @@ pub fn rros_percpu_timers(clock: &RrosClock, cpu: i32) -> *mut RrosTimerbase {
     }
 }
 
-extern "C" {
-    fn rust_helper_cpumask_test_cpu(cpu: i32, cpumask: *const bindings::cpumask) -> i32;
-}
+extern "C" {}
 
 //测试通过
 #[cfg(CONFIG_SMP)]

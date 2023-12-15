@@ -5,13 +5,19 @@ use crate::{
     net::{skb::RrosSkbQueueInner, socket::uncharge_socke_wmem},
 };
 use kernel::{
-    bindings, init_static_sync,
+    bindings,
+    init_static_sync,
     irq_work::IrqWork,
     sync::{Lock, SpinLock},
-    Error, Result,
+    Error,
+    Result,
+    percpu::alloc_per_cpu,
+    pr_info,
 };
-
-use super::skb::RrosSkBuff;
+use super::{device::OOBNetdevState, skb::RrosSkBuff};
+use kernel::interrupt;
+use kernel::netdevice;
+use kernel::percpu;
 
 // NOTE:initialize in rros_net_init_tx
 // TODO: 这里的实现没用DEFINE_PER_CPU，因为Rust还没有支持静态定义的percpu变量
@@ -114,7 +120,7 @@ fn skb_inband_xmit_backlog() {
             {
                 let mut ref_skb = RrosSkBuff::from_raw_ptr(skb);
                 uncharge_socke_wmem(&mut ref_skb);
-                unsafe { bindings::dev_queue_xmit(skb) };
+                netdevice::dev_queue_xmit(skb);
             },
             __bindgen_anon_1.list
         );
@@ -160,14 +166,14 @@ pub fn rros_net_transmit(mut skb: &mut RrosSkBuff) -> Result<()> {
 
     if kernel::premmpt::running_inband().is_ok() {
         uncharge_socke_wmem(&mut skb);
-        unsafe { bindings::dev_queue_xmit(skb.0.as_ptr()) };
+        netdevice::dev_queue_xmit(skb.0.as_ptr());
     }
 
     let flags = OOB_TX_RELAY.irq_lock_noguard();
     unsafe { (*OOB_TX_RELAY.locked_data().get()).add(skb) };
     OOB_TX_RELAY.irq_unlock_noguard(flags);
     unsafe {
-        bindings::irq_work_queue(OOB_XMIT_WORK.get_ptr());
+        OOB_XMIT_WORK.irq_work_queue();
     }
     Ok(())
 }
@@ -180,10 +186,8 @@ pub fn rros_net_transmit(mut skb: &mut RrosSkBuff) -> Result<()> {
 //     }
 // }
 
-unsafe extern "C" fn xmit_inband(_work: *mut bindings::irq_work) {
-    unsafe {
-        bindings::__raise_softirq_irqoff(bindings::NET_TX_SOFTIRQ);
-    }
+unsafe extern "C" fn xmit_inband(_work : *mut IrqWork){
+    interrupt::__raise_softirq_irqoff(bindings::NET_TX_SOFTIRQ);
 }
 
 pub fn rros_init_tx_irqwork() {

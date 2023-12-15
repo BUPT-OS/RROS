@@ -7,6 +7,7 @@ use crate::{
     factory::{RrosElement, RrosFactory},
     fifo::RROS_FIFO_MAX_PRIO,
     list, sched,
+    Box,
     wait::RrosWaitQueue,
 };
 

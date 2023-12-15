@@ -3,6 +3,7 @@
 //! Crate for all kernel procedural macros.
 
 mod module;
+mod no_mangle;
 
 use proc_macro::TokenStream;
 
@@ -124,4 +125,9 @@ pub fn module(ts: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn module_misc_device(ts: TokenStream) -> TokenStream {
     module::module_misc_device(ts)
+}
+
+#[proc_macro]
+pub fn no_mangle_function_declaration(ts: TokenStream) -> TokenStream {
+    no_mangle::no_mangle_function_declaration(ts)
 }

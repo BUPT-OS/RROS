@@ -8,10 +8,25 @@ use crate::{
     bindings, c_types,
     error::{Error, Result},
 };
+
+use core::iter::Iterator;
+
 extern "C" {
     fn rust_helper_num_possible_cpus() -> u32;
+    fn rust_helper_cpulist_parse(
+        buf: *const c_types::c_char,
+        dstp: *mut bindings::cpumask,
+    ) -> c_types::c_int;
+    fn rust_helper_cpumask_copy(dstp: *mut bindings::cpumask, srcp: *const bindings::cpumask);
+    fn rust_helper_cpumask_and(
+        dstp: *mut bindings::cpumask,
+        srcp1: *const bindings::cpumask,
+        srcp2: *const bindings::cpumask,
+    );
+    fn rust_helper_cpumask_empty(srcp: *const bindings::cpumask) -> c_types::c_int;
+    fn rust_helper_cpumask_first(srcp: *const bindings::cpumask);
+    fn rust_helper_cpumask_set_cpu(cpu: u32, dstp: *mut bindings::cpumask);
 }
-use core::iter::Iterator;
 
 /// An possible CPU index iterator.
 ///
@@ -143,24 +158,6 @@ pub fn present_cpus() -> PresentCpusIndexIter {
     // Initial index is set to -1. Since [`bindings::cpumask_next`] return the next set bit in a
     // [`bindings::__cpu_present_mask`], the CPU index should begins from 0.
     PresentCpusIndexIter { index: -1 }
-}
-
-extern "C" {
-    // #[allow(improper_ctypes)]
-    fn rust_helper_cpulist_parse(
-        buf: *const c_types::c_char,
-        dstp: *mut bindings::cpumask,
-    ) -> c_types::c_int;
-    fn rust_helper_cpumask_copy(dstp: *mut bindings::cpumask, srcp: *const bindings::cpumask);
-    fn rust_helper_cpumask_and(
-        dstp: *mut bindings::cpumask,
-        srcp1: *const bindings::cpumask,
-        srcp2: *const bindings::cpumask,
-    );
-    fn rust_helper_cpumask_empty(srcp: *const bindings::cpumask) -> c_types::c_int;
-    fn rust_helper_cpumask_first(srcp: *const bindings::cpumask);
-    fn rust_helper_cpumask_set_cpu(cpu: u32, dstp: *mut bindings::cpumask);
-    //fn rust_helper_per_cpu();
 }
 
 // static mut CPU_ONLINE_MASK: bindings::cpumask = unsafe{ bindings::__cpu_online_mask };

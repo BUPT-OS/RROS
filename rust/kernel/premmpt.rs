@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! premmpt
 //!
 //! C header: [`include/linux/premmpt.h`](../../../../include/linux/premmpt.h)
 

@@ -97,3 +97,15 @@ impl<T: ?Sized> Lock for Mutex<T> {
         &self.data
     }
 }
+
+pub fn mutex_lock(lock: *mut bindings::mutex) {
+    unsafe {
+        bindings::mutex_lock(lock);
+    }
+}
+
+pub fn mutex_unlock(lock: *mut bindings::mutex) {
+    unsafe {
+        bindings::mutex_unlock(lock);
+    }
+}

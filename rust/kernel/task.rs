@@ -140,6 +140,10 @@ impl Task {
         // SAFETY: By the type invariant, we know that `self.ptr` is non-null and valid.
         unsafe { rust_helper_signal_pending(self.ptr) != 0 }
     }
+
+    pub fn wake_up_process(ptr: *mut bindings::task_struct) -> i32 {
+        unsafe { bindings::wake_up_process(ptr) }
+    }
 }
 
 impl PartialEq for Task {

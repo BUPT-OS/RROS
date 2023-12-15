@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! pipeline
 //!
-//! C header: [`include/linux/cpumask.h`](../../../../include/linux/cpumask.h)
+//! C header: [`include/linux/pipeline.h`](../../../../include/linux/pipeline.h)

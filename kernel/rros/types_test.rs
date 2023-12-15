@@ -1,6 +1,7 @@
 use core::ptr::NonNull;
 
-use crate::types::Hashtable;
+use kernel::types::*;
+use kernel::{initialize_lock_hashtable, hash_for_each_possible};
 use kernel::bindings;
 use kernel::pr_debug;
 
@@ -10,7 +11,7 @@ use kernel::prelude::*;
 #[allow(dead_code)]
 struct HashEntry {
     pub data: u32,
-    pub hash: bindings::hlist_node,
+    pub hash: HlistNode,
 }
 
 impl HashEntry {
@@ -18,7 +19,7 @@ impl HashEntry {
     pub fn new(val: u32) -> Self {
         HashEntry {
             data: val,
-            hash: bindings::hlist_node::default(),
+            hash: HlistNode::new(),
         }
     }
 }
@@ -32,9 +33,9 @@ fn test_hashtable() {
     let mut entry2 = HashEntry::new(2);
     let mut entry3 = HashEntry::new(3);
     let mut table_guard = TABLE.lock();
-    table_guard.add(&mut entry1.hash, 1);
-    table_guard.add(&mut entry2.hash, 1);
-    table_guard.add(&mut entry3.hash, 1);
+    table_guard.add(&mut entry1.hash.0, 1);
+    table_guard.add(&mut entry2.hash.0, 1);
+    table_guard.add(&mut entry3.hash.0, 1);
     let mut counter = 0;
     hash_for_each_possible!(cur, table_guard.head(1), HashEntry, hash, {
         result[counter] = unsafe { (*cur).data };
@@ -43,7 +44,7 @@ fn test_hashtable() {
     assert_eq!(result[0], 3);
     assert_eq!(result[1], 2);
     assert_eq!(result[2], 1);
-    table_guard.del(&mut entry2.hash);
+    table_guard.del(&mut entry2.hash.0);
 
     counter = 0;
     hash_for_each_possible!(cur, table_guard.head(1), HashEntry, hash, {

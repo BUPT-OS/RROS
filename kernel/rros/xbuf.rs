@@ -24,9 +24,13 @@ use kernel::{
     irq_work::*,
     prelude::*,
     str::CStr,
-    sync::SpinLock,
-    user_ptr::{ UserSlicePtrReader, UserSlicePtrWriter },
-    vmalloc::c_kzalloc, device::DeviceType,
+    sync::{Lock, SpinLock},
+    uidgid::{KgidT, KuidT},
+    user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
+    vmalloc::{c_kzalloc, c_kzfree},
+    waitqueue,
+    fs,
+    device::DeviceType,
 };
 
 #[derive(Default)]
@@ -53,7 +57,7 @@ impl FileOperations for XbufOps {
         _offset: u64,
     ) -> Result<usize> {
         pr_debug!("I'm the read ops of the xbuf factory.");
-        let ret = xbuf_read(file.get_ptr(), data);
+        let ret = xbuf_read(file, data);
         pr_debug!("the result of xbuf read is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
@@ -64,7 +68,7 @@ impl FileOperations for XbufOps {
 
     fn oob_read<T: IoBufferWriter>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
         pr_debug!("I'm the oob_read ops of the xbuf factory.");
-        let ret = xbuf_oob_read(file.get_ptr(), data);
+        let ret = xbuf_oob_read(file, data);
         pr_debug!("the result of xbuf oob_read is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
@@ -80,7 +84,7 @@ impl FileOperations for XbufOps {
         _offset: u64,
     ) -> Result<usize> {
         pr_debug!("I'm the write ops of the xbuf factory.");
-        let ret = xbuf_write(file.get_ptr(), data);
+        let ret = xbuf_write(file, data);
         pr_debug!("the result of xbuf write is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
@@ -91,7 +95,7 @@ impl FileOperations for XbufOps {
 
     fn oob_write<T: IoBufferReader>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
         pr_debug!("I'm the oob_write ops of the xbuf factory.");
-        let ret = xbuf_oob_write(file.get_ptr(), data);
+        let ret = xbuf_oob_write(file, data);
         pr_debug!("the result of xbuf oob_write is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret))
@@ -189,7 +193,7 @@ impl XbufRing {
 
 // oob_write -> read
 pub struct XbufInbound {
-    pub i_event: bindings::wait_queue_head,
+    pub i_event: waitqueue::WaitQueueHead,
     pub o_event: RrosFlag,
     pub irq_work: IrqWork,
     pub ring: XbufRing,
@@ -199,7 +203,7 @@ pub struct XbufInbound {
 impl XbufInbound {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            i_event: bindings::wait_queue_head::default(),
+            i_event: waitqueue::WaitQueueHead::default(),
             o_event: RrosFlag::new(),
             irq_work: IrqWork::new(),
             ring: XbufRing::new()?,
@@ -211,7 +215,7 @@ impl XbufInbound {
 // write -> oob_read
 pub struct XbufOutbound {
     pub i_event: RrosWaitQueue,
-    pub o_event: bindings::wait_queue_head,
+    pub o_event: waitqueue::WaitQueueHead,
     pub irq_work: IrqWork,
     pub ring: XbufRing,
 }
@@ -225,7 +229,7 @@ impl XbufOutbound {
                     RROS_WAIT_PRIO as i32,
                 )
             },
-            o_event: bindings::wait_queue_head::default(),
+            o_event: waitqueue::WaitQueueHead::default(),
             irq_work: IrqWork::new(),
             ring: XbufRing::new()?,
         })
@@ -315,13 +319,11 @@ pub fn write_to_user(rd: &mut XbufRdesc, src: *mut c_char, len: usize) -> i32 {
 
 #[allow(dead_code)]
 pub fn write_to_kernel(rd: &mut XbufRdesc, src: *mut c_char, len: usize) -> i32 {
-    unsafe {
-        bindings::memcpy(
-            rd.buf_ptr as *mut c_void,
-            src as *const c_void,
-            len as c_ulong,
-        );
-    }
+    fs::memcpy(
+        rd.buf_ptr as *mut c_void,
+        src as *const c_void,
+        len as c_ulong,
+    );
     0
 }
 
@@ -365,13 +367,11 @@ pub fn read_from_user(wd: &mut XbufWdesc, dst: *mut c_char, len: usize) -> i32 {
 
 #[allow(dead_code)]
 pub fn read_from_kernel(wd: &mut XbufWdesc, dst: *mut c_char, len: usize) -> i32 {
-    unsafe {
-        bindings::memcpy(
-            dst as *mut c_void,
-            wd.buf_ptr as *const c_void,
-            len as c_ulong,
-        );
-    }
+    fs::memcpy(
+        dst as *mut c_void,
+        wd.buf_ptr as *const c_void,
+        len as c_ulong,
+    );
     0
 }
 
@@ -591,17 +591,6 @@ pub fn inbound_unlock(_ring: &XbufRing, flags: u32) {
     raw_spin_unlock_irqrestore(flags.into());
 }
 
-extern "C" {
-    fn rust_helper_wait_event_interruptible(
-        wq_head: *mut bindings::wait_queue_head,
-        condition: bool,
-    ) -> i32;
-}
-
-pub fn wait_event_interruptible(wq_head: *mut bindings::wait_queue_head, condition: bool) -> i32 {
-    unsafe { rust_helper_wait_event_interruptible(wq_head, condition) }
-}
-
 pub fn inbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
     let ibnd: &mut XbufInbound = unsafe { &mut (*xbuf).ibnd };
@@ -618,32 +607,27 @@ pub fn inbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
         }
     }
 
-    wait_event_interruptible(
-        &ibnd.i_event as *const _ as *mut bindings::wait_queue_head,
-        ring.fillsz >= len,
-    )
+    ibnd.i_event.wait_event_interruptible(ring.fillsz >= len)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn c_resume_inband_reader(work: *mut bindings::irq_work) {
+pub unsafe extern "C" fn c_resume_inband_reader(work: *mut IrqWork) {
     resume_inband_reader(work);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn c_resume_inband_writer(work: *mut bindings::irq_work) {
+pub unsafe extern "C" fn c_resume_inband_writer(work: *mut IrqWork) {
     resume_inband_writer(work);
 }
 
-pub fn resume_inband_reader(work: *mut bindings::irq_work) {
+pub fn resume_inband_reader(work: *mut IrqWork) {
     let xbuf = kernel::container_of!(work, RrosXbuf, ibnd.irq_work) as *mut RrosXbuf;
 
     unsafe {
-        bindings::__wake_up(
-            &mut (*xbuf).ibnd.i_event as *mut bindings::wait_queue_head,
-            bindings::TASK_NORMAL,
-            1,
-            0 as *mut c_void,
-        );
+        (*xbuf)
+            .ibnd
+            .i_event
+            .wake_up(bindings::TASK_NORMAL, 1, 0 as *mut c_void);
     }
 }
 
@@ -669,8 +653,9 @@ pub fn inbound_signal_output(ring: &XbufRing, sigpoll: bool) {
     unsafe { (*xbuf).ibnd.o_event.raise() }
 }
 
-pub fn xbuf_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn xbuf_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> i32 {
+    let fbind: *const RrosFileBinding =
+        unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut rd: XbufRdesc = XbufRdesc {
@@ -684,13 +669,13 @@ pub fn xbuf_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> 
         do_xbuf_read(
             &mut (*xbuf).ibnd.ring,
             &mut rd,
-            (*filp).f_flags.try_into().unwrap(),
+            (*filp.get_ptr()).f_flags.try_into().unwrap(),
         )
     }
 }
 
-pub fn xbuf_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn xbuf_write<T: IoBufferReader>(filp: &File, data: &mut T) -> i32 {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut wd: XbufWdesc = XbufWdesc {
@@ -705,13 +690,13 @@ pub fn xbuf_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) ->
         do_xbuf_write(
             &mut (*xbuf).obnd.ring,
             &mut wd,
-            (*filp).f_flags.try_into().unwrap(),
+            (*filp.get_ptr()).f_flags.try_into().unwrap(),
         )
     }
 }
 
 #[allow(dead_code)]
-pub fn xbuf_ioctl(_filp: *mut bindings::file, _cmd: u32, _arg: u32) -> i32 {
+pub fn xbuf_ioctl(_filp: &File, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
 }
 
@@ -744,7 +729,7 @@ pub fn xbuf_ioctl(_filp: *mut bindings::file, _cmd: u32, _arg: u32) -> i32 {
 // }
 
 #[allow(dead_code)]
-pub fn xbuf_oob_ioctl(_filp: *mut bindings::file, _cmd: u32, _arg: u32) -> i32 {
+pub fn xbuf_oob_ioctl(_filp: &File, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
 }
 
@@ -756,19 +741,11 @@ pub fn outbound_unlock(_ring: &XbufRing, flags: u32) {
     raw_spin_unlock_irqrestore(flags.into());
 }
 
-extern "C" {
-    fn rust_helper_wq_has_sleeper(wq_head: *mut bindings::wait_queue_head) -> bool;
-}
-
 pub fn outbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
     let obnd: &mut XbufOutbound = unsafe { &mut (*xbuf).obnd };
 
-    if avail > 0
-        && unsafe {
-            rust_helper_wq_has_sleeper(&obnd.o_event as *const _ as *mut bindings::wait_queue_head)
-        }
-    {
+    if avail > 0 && obnd.o_event.wq_has_sleeper() {
         return -(bindings::EAGAIN as i32);
     }
 
@@ -782,16 +759,14 @@ pub fn outbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
         })
 }
 
-pub fn resume_inband_writer(work: *mut bindings::irq_work) {
+pub fn resume_inband_writer(work: *mut IrqWork) {
     let xbuf = kernel::container_of!(work, RrosXbuf, obnd.irq_work) as *mut RrosXbuf;
 
     unsafe {
-        bindings::__wake_up(
-            &mut (*xbuf).obnd.o_event as *mut bindings::wait_queue_head,
-            bindings::TASK_NORMAL,
-            1,
-            0 as *mut c_void,
-        );
+        (*xbuf)
+            .obnd
+            .o_event
+            .wake_up(bindings::TASK_NORMAL, 1, 0 as *mut c_void);
     }
 }
 
@@ -812,10 +787,10 @@ pub fn outbound_wait_output(ring: &XbufRing, len: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
 
     unsafe {
-        wait_event_interruptible(
-            &(*xbuf).obnd.o_event as *const _ as *mut bindings::wait_queue_head,
-            ring.fillsz + len <= ring.bufsz,
-        )
+        (*xbuf)
+            .obnd
+            .o_event
+            .wait_event_interruptible(ring.fillsz + len <= ring.bufsz)
     }
 }
 
@@ -825,8 +800,8 @@ pub fn outbound_signal_output(ring: &XbufRing, _sigpoll: bool) {
     let _ret = unsafe { (&mut (*xbuf).obnd.irq_work).irq_work_queue() };
 }
 
-pub fn xbuf_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn xbuf_oob_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> i32 {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut rd: XbufRdesc = XbufRdesc {
@@ -840,13 +815,13 @@ pub fn xbuf_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T)
         do_xbuf_read(
             &mut (*xbuf).obnd.ring,
             &mut rd,
-            (*filp).f_flags.try_into().unwrap(),
+            (*filp.get_ptr()).f_flags.try_into().unwrap(),
         )
     }
 }
 
-pub fn xbuf_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn xbuf_oob_write<T: IoBufferReader>(filp: &File, data: &mut T) -> i32 {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut wd: XbufWdesc = XbufWdesc {
@@ -860,7 +835,7 @@ pub fn xbuf_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T
         do_xbuf_write(
             &mut (*xbuf).ibnd.ring,
             &mut wd,
-            (*filp).f_flags.try_into().unwrap(),
+            (*filp.get_ptr()).f_flags.try_into().unwrap(),
         )
     }
 }
@@ -958,15 +933,6 @@ pub fn rros_write_xbuf(xbuf: &mut RrosXbuf, buf: *const i8, count: usize, f_flag
     do_xbuf_write(&mut xbuf.ibnd.ring, &mut wd, f_flags)
 }
 
-extern "C" {
-    #[allow(improper_ctypes)]
-    pub fn __init_waitqueue_head(
-        wq_head: *mut bindings::wait_queue_head,
-        name: *const c_char,
-        arg1: *mut bindings::lock_class_key,
-    );
-}
-
 fn xbuf_factory_build(
     fac: &'static mut SpinLock<RrosFactory>,
     uname: &'static CStr,
@@ -1000,14 +966,10 @@ fn xbuf_factory_build(
         }
 
         /* Inbound traffic: oob_write() -> read(). */
-        let key1 = bindings::lock_class_key::default();
+        let mut key1 = waitqueue::LockClassKey::default();
         let name1 =
             CStr::from_bytes_with_nul_unchecked("XBUF RING IBOUND WAITQUEUE HEAD\0".as_bytes());
-        __init_waitqueue_head(
-            &(*xbuf_ptr).ibnd.i_event as *const _ as *mut bindings::wait_queue_head,
-            name1.as_ptr() as *const i8,
-            &key1 as *const _ as *mut bindings::lock_class_key,
-        );
+        (*xbuf_ptr).ibnd.i_event.init_waitqueue_head(name1.as_ptr() as *const i8, &mut key1);
 
         (*xbuf_ptr).ibnd.o_event.init();
         raw_spin_lock_init(&mut (*xbuf_ptr).ibnd.lock);
@@ -1029,14 +991,10 @@ fn xbuf_factory_build(
             &mut RROS_MONO_CLOCK as *mut RrosClock,
             RROS_WAIT_PRIO as i32,
         );
-        let key2 = bindings::lock_class_key::default();
+        let mut key2 = waitqueue::LockClassKey::default();
         let _name2 =
             CStr::from_bytes_with_nul_unchecked("XBUF RING OUTBOUND WAITQUEUE HEAD\0".as_bytes());
-        __init_waitqueue_head(
-            &(*xbuf_ptr).obnd.o_event as *const _ as *mut bindings::wait_queue_head,
-            uname.as_ptr() as *const i8,
-            &key2 as *const _ as *mut bindings::lock_class_key,
-        );
+        (*xbuf_ptr).obnd.o_event.init_waitqueue_head(uname.as_ptr() as *const i8, &mut key2);
 
         let _ret = (*xbuf_ptr)
             .obnd

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! irqstage
 //!
 //! C header: [`include/linux/irqstage.h`](../../../../include/linux/irqstage.h)
 

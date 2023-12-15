@@ -115,6 +115,26 @@ void rust_helper_init_wait(struct wait_queue_entry *wq_entry)
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_wait);
 
+// 此处是wait.h文件中的__add_wait_queue函数的接口
+void rust_helper_add_wait_queue(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry)
+{
+	struct list_head *head = &wq_head->head;
+	struct wait_queue_entry *wq;
+	list_for_each_entry(wq, &wq_head->head, entry) {
+		if (!(wq->flags & (0x20)))
+			break;
+		head = &wq->entry;
+	}
+	list_add(&wq_entry->entry, head);
+}
+EXPORT_SYMBOL_GPL(rust_helper_add_wait_queue);
+
+void rust_helper_set_current_state(long state_value)
+{
+	smp_store_mb(current->state, (state_value));
+}
+EXPORT_SYMBOL_GPL(rust_helper_set_current_state);
+
 int rust_helper_signal_pending(struct task_struct *t)
 {
 	return signal_pending(t);
@@ -425,6 +445,7 @@ void rust_helper_list_add_tail(struct list_head *new,struct list_head *head)
 	list_add_tail(new,head);
 }
 EXPORT_SYMBOL_GPL(rust_helper_list_add_tail);
+
 void rust_helper_rcu_read_lock(void)
 {
 	rcu_read_lock();
@@ -795,10 +816,10 @@ void rust_helper_cap_raise(kernel_cap_t *c, int flag) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_cap_raise);
 
-struct oob_mm_state* rust_helper_doveail_mm_state(void) {
+struct oob_mm_state* rust_helper_dovetail_mm_state(void) {
 	return dovetail_mm_state();
 }
-EXPORT_SYMBOL_GPL(rust_helper_doveail_mm_state);
+EXPORT_SYMBOL_GPL(rust_helper_dovetail_mm_state);
 
 int rust_helper_put_user(int i, int *addr) {
 	return put_user(i, addr);
@@ -866,6 +887,18 @@ bool rust_helper_list_empty(struct list_head *head){
 }
 EXPORT_SYMBOL_GPL(rust_helper_list_empty);
 
+void rust_helper_spin_unlock_irqrestore(spinlock_t *lock, unsigned long flags)
+{
+	spin_unlock_irqrestore(lock, flags);
+}
+EXPORT_SYMBOL_GPL(rust_helper_spin_unlock_irqrestore);
+
+void *rust_helper_ERR_PTR(long error)
+{
+	return ERR_PTR(error);
+}
+EXPORT_SYMBOL_GPL(rust_helper_ERR_PTR);
+
 u_int64_t rust_helper_BITS_TO_LONGS(int nr) {
 	return BITS_TO_LONGS(nr);
 }
@@ -915,7 +948,6 @@ void rust_helper_hash_del(struct hlist_node* node){
 	hlist_del_init(node);
 }
 EXPORT_SYMBOL_GPL(rust_helper_hash_del);
-
 
 // 这个函数是自己加的
 struct hlist_head* rust_helper_get_hlist_head(struct hlist_head *hashtable,size_t length,u32 key){

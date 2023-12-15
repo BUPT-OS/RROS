@@ -3,11 +3,39 @@
 //! clockchips
 //!
 //! C header: [`include/linux/clockchips.h`](../../../../include/linux/clockchips.h)
-use crate::{bindings, c_types, prelude::*};
+use crate::{bindings, c_types, prelude::*, container_of};
+
+extern "C" {
+    #[allow(dead_code)]
+    #[allow(improper_ctypes)]
+    fn rust_helper__this_cpu_write(
+        pcp: *mut bindings::clock_proxy_device,
+        val: *mut bindings::clock_proxy_device,
+    );
+    #[allow(dead_code)]
+    #[allow(improper_ctypes)]
+    fn rust_helper__this_cpu_read(
+        pcp: *mut bindings::clock_proxy_device,
+    ) -> *mut bindings::clock_proxy_device;
+    #[allow(dead_code)]
+    #[allow(improper_ctypes)]
+    fn rust_helper_proxy_set_next_ktime(
+        expires: KtimeT,
+        dev: *mut bindings::clock_event_device,
+    ) -> c_types::c_int;
+    #[allow(dead_code)]
+    #[allow(improper_ctypes)]
+    fn rust_helper_proxy_set(
+        expires: KtimeT,
+        dev: *mut bindings::clock_event_device,
+    ) -> c_types::c_int;
+}
 
 type KtimeT = i64;
+
 // TODO Correct the format of the following doc comment.
 /// The `ClockProxyDevice` struct is a wrapper around the `bindings::clock_proxy_device` struct from the kernel bindings. It represents a clock proxy device in the kernel.
+#[repr(transparent)]
 pub struct ClockProxyDevice {
     /// The `ptr` field in the `ClockProxyDevice` struct is a raw pointer to the underlying `bindings::clock_proxy_device` struct from the kernel bindings. It represents the actual clock proxy device in the kernel that this `ClockProxyDevice` struct is wrapping.
     pub ptr: *mut bindings::clock_proxy_device,
@@ -158,4 +186,59 @@ impl ClockEventDevice {
             return 1;
         }
     }
+}
+
+pub trait ProxySetOneshotStopped {
+    fn proxy_set_oneshot_stopped(dev: ClockProxyDevice) -> c_types::c_int;
+}
+
+pub unsafe extern "C" fn proxy_set_oneshot_stopped<T: ProxySetOneshotStopped>(
+    proxy_dev: *mut bindings::clock_event_device,
+) -> c_types::c_int {
+    let dev = ClockProxyDevice::new(container_of!(proxy_dev, bindings::clock_proxy_device, proxy_device) as *mut bindings::clock_proxy_device).unwrap();
+    T::proxy_set_oneshot_stopped(dev)
+}
+
+pub trait ProxySetNextKtime {
+    fn proxy_set_next_ktime(expires: KtimeT, arg1: ClockEventDevice) -> i32;
+}
+
+pub unsafe extern "C" fn proxy_set_next_ktime<T: ProxySetNextKtime>(
+    expires: KtimeT,
+    arg1: *mut bindings::clock_event_device,
+) -> i32 {
+    let arg1 = ClockEventDevice::from_proxy_device(arg1).unwrap();
+    T::proxy_set_next_ktime(expires, arg1)
+}
+
+pub trait SetupProxy {
+    fn setup_proxy(dev: ClockProxyDevice);
+}
+
+pub unsafe extern "C" fn setup_proxy<T: SetupProxy>(_dev: *mut bindings::clock_proxy_device) {
+    match ClockProxyDevice::new(_dev) {
+        Ok(dev) => T::setup_proxy(dev),
+        Err(_e) => pr_warn!("dev new error!"),
+    }
+}
+
+pub trait CoreTick {
+    fn core_tick(dummy: ClockEventDevice);
+}
+
+pub unsafe extern "C" fn core_tick<T: CoreTick>(dummy: *mut bindings::clock_event_device) {
+    T::core_tick(ClockEventDevice::from_proxy_device(dummy).unwrap());
+}
+
+#[cfg(CONFIG_SMP)]
+pub trait ClockIpiHandler {
+    fn clock_ipi_handler(irq: c_types::c_int, dev_id: *mut c_types::c_void) -> c_types::c_uint;
+}
+
+#[cfg(CONFIG_SMP)]
+pub unsafe extern "C" fn clock_ipi_handler<T: ClockIpiHandler>(
+    irq: c_types::c_int,
+    dev_id: *mut c_types::c_void,
+) -> bindings::irqreturn_t {
+    T::clock_ipi_handler(irq, dev_id)
 }

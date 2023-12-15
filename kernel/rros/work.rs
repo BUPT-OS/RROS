@@ -1,19 +1,27 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
-use kernel::{bindings, container_of, irq_work::IrqWork, pr_debug};
-
+use kernel::{
+    bindings,
+    c_types::c_void,
+    irq_work::IrqWork,
+    container_of,
+    Result,
+    pr_debug,
+    workqueue::{Queue, Work, queue_work_on, init_work},
+};
 use crate::factory::RrosElement;
-pub struct RrosWork {
-    irq_work: IrqWork,
-    wq_work: bindings::work_struct,
-    wq: *mut bindings::workqueue_struct,
+
+pub struct RrosWork{
+    irq_work : IrqWork,
+    wq_work: Work,
+    wq : *mut bindings::workqueue_struct,
     pub handler: Option<fn(arg: &mut RrosWork) -> i32>,
     // element : Rc<RefCell<RrosElement>>
     element: Option<Rc<RefCell<RrosElement>>>,
 }
 
-fn do_wq_work(wq_work: *mut bindings::work_struct) {
+fn do_wq_work(wq_work: *mut Work) {
     let work = container_of!(wq_work, RrosWork, wq_work);
     let handler = unsafe { (*work).handler.unwrap() };
     let work = unsafe { &mut *(work as *mut RrosWork) };
@@ -24,24 +32,13 @@ fn do_wq_work(wq_work: *mut bindings::work_struct) {
     // rros_put_element(work->element);
 }
 
-extern "C" fn do_wq_work_bridge(work: *mut bindings::work_struct) {
-    do_wq_work(work);
-}
-
-unsafe extern "C" fn do_irq_work(irq_work: *mut bindings::irq_work) {
-    extern "C" {
-        #[allow(dead_code)]
-        fn rust_helper_queue_work(
-            wq: *mut bindings::workqueue_struct,
-            work: *mut bindings::work_struct,
-        ) -> bool;
-    }
+unsafe extern "C" fn do_irq_work(irq_work: *mut IrqWork) {
     let work = container_of!(irq_work, RrosWork, irq_work) as *mut RrosWork;
     if unsafe {
-        !bindings::queue_work_on(
+        !queue_work_on(
             bindings::WORK_CPU_UNBOUND as _,
             (*work).wq,
-            &mut (*work).wq_work as *mut bindings::work_struct,
+            &mut (*work).wq_work
         ) && (*work).element.is_some()
     } {
         pr_debug!("uncompleted rros_put_element()");
@@ -77,14 +74,8 @@ impl RrosWork {
         // }
     }
     pub fn init(&mut self, handler: fn(arg: &mut RrosWork) -> i32) {
-        extern "C" {
-            fn rust_helper_init_work(
-                work: *mut bindings::work_struct,
-                func: extern "C" fn(*mut bindings::work_struct),
-            );
-        }
         let _ret = self.irq_work.init_irq_work(do_irq_work);
-        unsafe { rust_helper_init_work(&mut self.wq_work, do_wq_work_bridge) };
+        init_work(&mut self.wq_work, do_wq_work);
         self.handler = Some(handler);
         self.element = Some(Rc::try_new(RefCell::new(RrosElement::new().unwrap())).unwrap());
     }
@@ -93,14 +84,8 @@ impl RrosWork {
         handler: fn(arg: &mut RrosWork) -> i32,
         element: Rc<RefCell<RrosElement>>,
     ) {
-        extern "C" {
-            fn rust_helper_init_work(
-                work: *mut bindings::work_struct,
-                func: extern "C" fn(*mut bindings::work_struct),
-            );
-        }
         let _ret = self.irq_work.init_irq_work(do_irq_work);
-        unsafe { rust_helper_init_work(&mut self.wq_work, do_wq_work_bridge) };
+        init_work(&mut self.wq_work, do_wq_work);
         self.handler = Some(handler);
         self.element = Some(element);
     }

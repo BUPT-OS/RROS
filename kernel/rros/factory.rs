@@ -1,12 +1,7 @@
-use core::{
-    cell::RefCell, clone::Clone, convert::TryInto, default::Default, ptr::null_mut,
-    result::Result::Ok,
-};
-
-use crate::control;
-use crate::{clock, file::RrosFileBinding, proxy, thread, xbuf};
+use core::{cell::RefCell, clone::Clone, convert::TryInto, default::Default, result::Result::Ok, ptr};
+use crate::{clock, control, file::RrosFileBinding, proxy, thread, xbuf};
 use alloc::rc::Rc;
-use core::ptr;
+use kernel::file::fd_install;
 use kernel::uidgid::{KgidT, KuidT};
 use kernel::{
     bindings,
@@ -15,17 +10,18 @@ use kernel::{
     file::{self, File},
     file_operations::FileOperations,
     fs::{self, Filename},
-    irq_work, rbtree, spinlock_init,
+    irq_work, rbtree, spinlock_init, kernelh,
     prelude::*,
     str::CStr,
-    sync::{Lock, SpinLock},
-    sysfs, types, uidgid, workqueue, ThisModule,
+    sync::{Guard, Lock, SpinLock},
+    sysfs,
+    task::Task,
+    types::{self, hash_init},
+    uidgid, workqueue, ThisModule,
+    file_operations::{FileOpener, IoctlCommand},
 };
 use kernel::{device::DeviceType, io_buffer::IoBufferWriter};
-use kernel::{
-    file_operations::{FileOpener, IoctlCommand},
-    kernelh,
-};
+
 
 extern "C" {
     #[allow(improper_ctypes)]
@@ -278,7 +274,7 @@ impl device::ClassDevnode for RrosDevnode {
     fn devnode(dev: &mut device::Device, _mode: &mut u16) -> *mut c_types::c_char {
         kernelh::_kasprintf_1(
             bindings::GFP_KERNEL,
-            c_str!("evl/%s").as_char_ptr(),
+            c_str!("rros/%s").as_char_ptr(),
             dev.dev_name(),
         )
     }
@@ -365,7 +361,7 @@ fn create_element_device(
     // unsafe { bindings::fd_install(e_mut.fpriv.efd.reserved_fd(), filp) };
     // e.fpriv.efd.commit(File{ptr: filp});
     // }
-    unsafe { bindings::fd_install(e_mut.fpriv.efd.reserved_fd(), filp) };
+    fd_install(e_mut.fpriv.efd.reserved_fd(), filp);
     pr_debug!("the address of filp location 8 is {:p}, {:p}", filp, &filp);
     // 	e->refs++;
     // 	fd_install(e->fpriv.efd, e->fpriv.filp);
@@ -515,14 +511,12 @@ fn do_element_visibility(
     let inner = reg.unwrap().inner.as_ref();
     let cdev = (inner.unwrap().cdevs[0]).as_ref();
     let ops = unsafe { (*(cdev.unwrap().0)).ops };
-    let filp = unsafe {
-        bindings::anon_inode_getfile(
-            e_mut.devname.as_mut().unwrap().get_name(),
-            ops,
-            ptr::null_mut(),
-            bindings::O_RDWR as i32,
-        )
-    };
+    let filp = File::anon_inode_getfile(
+        e_mut.devname.as_mut().unwrap().get_name(),
+        ops,
+        ptr::null_mut(),
+        bindings::O_RDWR as i32,
+    );
 
     pr_debug!("the address of filp location 1 is {:p}, {:p}", filp, &filp);
     // /*
@@ -1007,7 +1001,7 @@ fn rros_create_factory(
                 }
             }
             let rdev = chrdev_reg.as_mut().last_registered_devt().unwrap();
-            let dev = create_sys_device(rdev, inside, null_mut() as *mut u8, idevname);
+            let dev = create_sys_device(rdev, inside, ptr::null_mut() as *mut u8, idevname);
             inside.device = Some(dev);
 
             let mut index = RrosIndex {
@@ -1060,14 +1054,14 @@ impl FileOpener<u8> for CloneOps {
         let mut data = CloneData::default();
         unsafe {
             data.ptr = shared as *const u8 as *mut u8;
-            let a = KuidT((*(shared as *const u8 as *const bindings::inode)).i_uid);
-            let b = KgidT((*(shared as *const u8 as *const bindings::inode)).i_gid);
-            (*thread::RROS_TRHEAD_FACTORY.locked_data().get())
+            let a = KuidT::from_inode_ptr(shared as *const u8);
+            let b = KgidT::from_inode_ptr(shared as *const u8);
+            (*thread::RROS_THREAD_FACTORY.locked_data().get())
                 .inside
                 .as_mut()
                 .unwrap()
                 .kuid = Some(a);
-            (*thread::RROS_TRHEAD_FACTORY.locked_data().get())
+            (*thread::RROS_THREAD_FACTORY.locked_data().get())
                 .inside
                 .as_mut()
                 .unwrap()
@@ -1086,7 +1080,7 @@ impl FileOpener<u8> for CloneOps {
     //     pr_debug!("I'm the open ops from the clone ops.");
 
     //     unsafe {
-    //         (*thread::RROS_TRHEAD_FACTORY.get_locked_data().get()).inside.as_ref().unwrap().kuid = i
+    //         (*thread::RROS_THREAD_FACTORY.get_locked_data().get()).inside.as_ref().unwrap().kuid = i
 
     //     };
     //     Ok(1)
@@ -1147,7 +1141,7 @@ pub fn rros_early_init_factories(
     let mut early_factories: [&mut SpinLock<RrosFactory>; 5] = unsafe {
         [
             &mut clock::RROS_CLOCK_FACTORY,
-            &mut thread::RROS_TRHEAD_FACTORY,
+            &mut thread::RROS_THREAD_FACTORY,
             &mut xbuf::RROS_XBUF_FACTORY,
             &mut proxy::RROS_PROXY_FACTORY,
             &mut control::RROS_CONTROL_FACTORY,
@@ -1176,11 +1170,15 @@ pub fn rros_early_init_factories(
         this_module,
         CStr::from_bytes_with_nul("rros\0".as_bytes())?.as_char_ptr(),
     )?)?;
+    // TODO: 创建一个结构体，实现rros_devnode
     unsafe {
         Arc::get_mut(&mut rros_class)
             .unwrap()
             .set_devnode::<RrosDevnode>();
     }
+    // unsafe {
+    //     (*rros_class.ptr).devnode = Option::Some(rros_devnode);
+    // }
     let mut chrdev_reg: Pin<Box<chrdev::Registration<NR_FACTORIES>>> =
         chrdev::Registration::new_pinned(c_str!("rros_factory"), 0, this_module)?;
     chrdev_reg.as_mut().register::<RRosRustFile>()?;
@@ -1347,6 +1345,7 @@ fn rros_index_factory_element() {}
 // }
 
 use core::mem::size_of;
+use kernel::user_ptr::UserSlicePtr;
 
 extern "C" {
     pub fn rust_helper_copy_from_user(
@@ -1457,10 +1456,10 @@ pub fn ioctl_clone_device(_file: &File, _cmd: u32, arg: usize) -> Result<usize> 
     } else {
         pr_debug!("maybe a thread");
         unsafe {
-            (*thread::RROS_TRHEAD_FACTORY.locked_data().get())
+            (*thread::RROS_THREAD_FACTORY.locked_data().get())
                 .build
                 .unwrap()(
-                &mut thread::RROS_TRHEAD_FACTORY,
+                &mut thread::RROS_THREAD_FACTORY,
                 cstr_u_name,
                 Some(u_attrs),
                 0,
@@ -1490,7 +1489,7 @@ pub fn ioctl_clone_device(_file: &File, _cmd: u32, arg: usize) -> Result<usize> 
         create_element_device(e.clone(), unsafe { &mut proxy::RROS_PROXY_FACTORY })
     } else {
         pr_debug!("maybe a thread");
-        create_element_device(e.clone(), unsafe { &mut thread::RROS_TRHEAD_FACTORY })
+        create_element_device(e.clone(), unsafe { &mut thread::RROS_THREAD_FACTORY })
     };
     let e_clone = e.clone();
     let mut e_mut = e_clone.borrow_mut();

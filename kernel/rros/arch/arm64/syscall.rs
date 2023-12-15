@@ -1,5 +1,6 @@
 use kernel::bindings;
 use kernel::prelude::*;
+use kernel::ptrace::{IrqStage, PtRegs};
 
 /// Returns the first register value from the given out-of-bounds pointer.
 #[macro_export]
@@ -77,30 +78,30 @@ macro_rules! is_clock_gettime64 {
     };
 }
 
-pub fn is_oob_syscall(regs: *const bindings::pt_regs) -> bool {
-    (unsafe { (*regs).syscallno } & bindings::__OOB_SYSCALL_BIT as i32) != 0
+pub fn is_oob_syscall(regs: PtRegs) -> bool {
+    (unsafe { (*(regs.ptr)).syscallno } & bindings::__OOB_SYSCALL_BIT as i32) != 0
 }
 
-pub fn oob_syscall_nr(regs: *const bindings::pt_regs) -> u32 {
-    unsafe { pr_debug!("the sys call number is {}", (*regs).syscallno as u32) };
-    (unsafe { (*regs).syscallno as u32 } & !bindings::__OOB_SYSCALL_BIT as u32)
+pub fn oob_syscall_nr(regs: PtRegs) -> u32 {
+    unsafe { pr_debug!("the sys call number is {}", (*(regs.ptr)).syscallno as u32) };
+    (unsafe { (*regs.ptr).syscallno as u32 } & !bindings::__OOB_SYSCALL_BIT as u32)
 }
 
-pub fn inband_syscall_nr(regs: *mut bindings::pt_regs, nr: *mut u32) -> bool {
+pub fn inband_syscall_nr(regs: PtRegs, nr: *mut u32) -> bool {
     unsafe {
         *nr = oob_syscall_nr(regs);
     }
     !is_oob_syscall(regs)
 }
 
-pub fn set_oob_error(regs: *mut bindings::pt_regs, err: i32) {
+pub fn set_oob_error(regs: PtRegs, err: i32) {
     unsafe {
-        oob_retval!(regs) = err as u64;
+        oob_retval!((regs.ptr)) = err as u64;
     }
 }
 
-pub fn set_oob_retval(regs: *mut bindings::pt_regs, err: i64) {
+pub fn set_oob_retval(regs: PtRegs, err: i64) {
     unsafe {
-        oob_retval!(regs) = err as u64;
+        oob_retval!((regs.ptr)) = err as u64;
     }
 }

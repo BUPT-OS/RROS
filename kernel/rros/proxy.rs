@@ -12,9 +12,8 @@ use crate::{
     flags::RrosFlag,
     lock::{raw_spin_lock_init, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
     sched::{rros_schedule, RrosPollHead},
-    thread::{atomic_read, atomic_set, rros_init_user_element},
+    thread::rros_init_user_element,
     work::*,
-    xbuf::wait_event_interruptible,
 };
 
 use kernel::{
@@ -25,11 +24,16 @@ use kernel::{
     io_buffer::{IoBufferReader, IoBufferWriter},
     prelude::*,
     premmpt::running_inband,
+    spinlock_init,
     str::CStr,
-    sync::SpinLock,
-    user_ptr::{UserSlicePtrReader, UserSlicePtrWriter},
+    sync::{mutex_lock, mutex_unlock, Lock, Mutex, SpinLock},
+    types::Atomic,
+    uidgid::{KgidT, KuidT},
+    user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
     vmalloc::c_kzalloc,
+    waitqueue,
     workqueue::*,
+    fs,
 };
 
 const FMODE_ATOMIC_POS: u32 = 0x8000;
@@ -40,7 +44,7 @@ pub const CONFIG_RROS_NR_PROXIES: usize = 16;
 const RROS_PROXY_CLONE_FLAGS: i32 = RROS_CLONE_PUBLIC | RROS_CLONE_OUTPUT | RROS_CLONE_INPUT;
 pub struct ProxyRing {
     pub bufmem: *mut u8,
-    pub fillsz: bindings::atomic_t,
+    pub fillsz: Atomic,
     pub nesting: i32,
     pub bufsz: u32,
     pub rdoff: u32,
@@ -48,7 +52,7 @@ pub struct ProxyRing {
     pub reserved: u32,
     pub granularity: u32,
     pub oob_wait: RrosFlag,
-    pub inband_wait: bindings::wait_queue_head_t,
+    pub inband_wait: waitqueue::WaitQueueHead,
     pub relay_work: RrosWork,
     pub lock: SpinLock<i32>,
     pub wq: Option<BoxedQueue>,
@@ -59,7 +63,7 @@ impl ProxyRing {
     pub fn new() -> Result<Self> {
         Ok(Self {
             bufmem: 0 as *mut u8,
-            fillsz: bindings::atomic_t::default(),
+            fillsz: Atomic::new(),
             nesting: 0,
             bufsz: 0,
             rdoff: 0,
@@ -67,15 +71,7 @@ impl ProxyRing {
             reserved: 0,
             granularity: 0,
             oob_wait: RrosFlag::new(),
-            inband_wait: bindings::wait_queue_head_t {
-                lock: bindings::spinlock_t {
-                    _bindgen_opaque_blob: 0,
-                },
-                head: bindings::list_head {
-                    next: null_mut(),
-                    prev: null_mut(),
-                },
-            },
+            inband_wait: waitqueue::WaitQueueHead::new(),
             relay_work: RrosWork::new(),
             lock: unsafe { SpinLock::new(0) },
             wq: None,
@@ -99,8 +95,8 @@ impl ProxyOut {
 
 pub struct ProxyIn {
     pub ring: ProxyRing,
-    pub reqsz: bindings::atomic_t,
-    pub on_eof: bindings::atomic_t,
+    pub reqsz: Atomic,
+    pub on_eof: Atomic,
     pub on_error: i32,
 }
 
@@ -108,16 +104,15 @@ impl ProxyIn {
     pub fn new() -> Result<Self> {
         Ok(Self {
             ring: ProxyRing::new()?,
-            reqsz: bindings::atomic_t::default(),
-            on_eof: bindings::atomic_t::default(),
+            reqsz: Atomic::new(),
+            on_eof: Atomic::new(),
             on_error: 0,
         })
     }
 }
 
 pub struct RrosProxy {
-    filp: *mut bindings::file,
-    // filp: File,
+    filp: File,
     output: ProxyOut,
     input: ProxyIn,
     element: Rc<RefCell<RrosElement>>,
@@ -126,11 +121,9 @@ pub struct RrosProxy {
 }
 
 impl RrosProxy {
-    // pub fn new(fd: u32) -> Result<Self> {
-    pub fn new(filp: *mut bindings::file) -> Result<Self> {
+    pub fn new(fd: u32) -> Result<Self> {
         Ok(Self {
-            // filp: File::from_fd(fd)?,
-            filp,
+            filp: File::from_fd(fd)?,
             output: ProxyOut::new()?,
             input: ProxyIn::new()?,
             element: Rc::try_new(RefCell::new(RrosElement::new()?))?,
@@ -167,37 +160,6 @@ impl RrosProxyAttrs {
     }
 }
 
-extern "C" {
-    fn rust_helper_atomic_add(i: i32, v: *mut bindings::atomic_t);
-    fn rust_helper_atomic_sub(i: i32, v: *mut bindings::atomic_t);
-    fn rust_helper_atomic_sub_return(i: i32, v: *mut bindings::atomic_t) -> i32;
-    fn rust_helper_atomic_add_return(i: i32, v: *mut bindings::atomic_t) -> i32;
-    fn rust_helper_atomic_cmpxchg(v: *mut bindings::atomic_t, old: i32, new: i32) -> i32;
-}
-
-pub fn atomic_add(i: i32, v: *mut bindings::atomic_t) {
-    unsafe {
-        rust_helper_atomic_add(i, v);
-    }
-}
-
-pub fn atomic_sub(i: i32, v: *mut bindings::atomic_t) {
-    unsafe {
-        rust_helper_atomic_sub(i, v);
-    }
-}
-pub fn atomic_sub_return(i: i32, v: *mut bindings::atomic_t) -> i32 {
-    unsafe { rust_helper_atomic_sub_return(i, v) }
-}
-
-pub fn atomic_add_return(i: i32, v: *mut bindings::atomic_t) -> i32 {
-    unsafe { rust_helper_atomic_add_return(i, v) }
-}
-
-pub fn atomic_cmpxchg(v: *mut bindings::atomic_t, old: i32, new: i32) -> i32 {
-    unsafe { rust_helper_atomic_cmpxchg(v, old, new) }
-}
-
 pub fn proxy_is_readable(proxy: &RrosProxy) -> bool {
     (proxy.element.borrow().deref().clone_flags & RROS_CLONE_INPUT) != 0
 }
@@ -223,20 +185,16 @@ pub fn relay_output(proxy: &mut RrosProxy) -> Result<usize> {
     let mut pos: LoffT = 0;
     let mut ppos: *mut LoffT;
     let mut ret: isize = 0;
-    let filp = proxy.filp;
+    let filp = &proxy.filp;
 
     let wklock = ring.worker_lock.lock();
-    count = atomic_read(&mut ring.fillsz as *mut bindings::atomic_t) as u32;
+    count = ring.fillsz.atomic_read() as u32;
     rdoff = ring.rdoff;
     ppos = 0 as *mut LoffT;
-    if (unsafe { (*filp).f_mode } & FMODE_ATOMIC_POS) != 0 {
-        unsafe {
-            bindings::mutex_lock(
-                &(*filp).f_pos_lock as *const bindings::mutex as *mut bindings::mutex,
-            )
-        };
+    if (unsafe { (*filp.get_ptr()).f_mode } & FMODE_ATOMIC_POS) != 0 {
+        unsafe { mutex_lock(&mut (*filp.get_ptr()).f_pos_lock); }
         ppos = &mut pos as *mut LoffT;
-        pos = unsafe { (*filp).f_pos };
+        pos = unsafe { (*filp.get_ptr()).f_pos };
     }
     while count > 0 && ret >= 0 {
         len = count;
@@ -251,17 +209,15 @@ pub fn relay_output(proxy: &mut RrosProxy) -> Result<usize> {
                 n = min(n, ring.granularity);
             }
 
-            ret = unsafe {
-                bindings::kernel_write(
-                    filp,
-                    ring.bufmem.add(rdoff as usize) as *const c_void,
-                    n.try_into().unwrap(),
-                    ppos,
-                )
-            };
+            ret = fs::kernel_write(
+                filp.get_ptr(),
+                unsafe { ring.bufmem.add(rdoff as usize) as *const c_void },
+                n.try_into().unwrap(),
+                ppos,
+            );
             pr_debug!("pos: {}", pos);
             if ret >= 0 && !ppos.is_null() {
-                unsafe { (*filp).f_pos = *ppos };
+                unsafe { (*filp.get_ptr()).f_pos = *ppos };
             }
             len -= n;
             rdoff = (rdoff + n) % ring.bufsz;
@@ -272,18 +228,13 @@ pub fn relay_output(proxy: &mut RrosProxy) -> Result<usize> {
             }
         }
 
-        count = atomic_sub_return(
-            count.try_into().unwrap(),
-            &mut ring.fillsz as *mut bindings::atomic_t,
-        ) as u32;
+        count = ring.fillsz.atomic_sub_return(count.try_into().unwrap()) as u32;
     }
 
     if !ppos.is_null() {
         unsafe {
-            bindings::mutex_unlock(
-                &(*filp).f_pos_lock as *const bindings::mutex as *mut bindings::mutex,
-            )
-        };
+            mutex_unlock(&mut (*filp.get_ptr()).f_pos_lock);
+        }
     }
     ring.rdoff = rdoff;
     drop(wklock);
@@ -294,14 +245,8 @@ pub fn relay_output(proxy: &mut RrosProxy) -> Result<usize> {
 
     if count < ring.bufsz {
         ring.oob_wait.raise();
-        unsafe {
-            bindings::__wake_up(
-                &mut ring.inband_wait as *mut bindings::wait_queue_head,
-                bindings::TASK_NORMAL,
-                1,
-                0 as *mut c_void,
-            );
-        }
+        ring.inband_wait
+            .wake_up(bindings::TASK_NORMAL, 1, 0 as *mut c_void);
     } else {
         unsafe {
             rros_schedule();
@@ -320,12 +265,11 @@ pub fn relay_output_work(work: &mut RrosWork) -> i32 {
 }
 
 pub fn can_write_buffer(ring: &mut ProxyRing, size: usize) -> bool {
-    atomic_read(&mut ring.fillsz as *mut bindings::atomic_t) as u32 + ring.reserved + size as u32
-        <= ring.bufsz
+    ring.fillsz.atomic_read() as u32 + ring.reserved + size as u32 <= ring.bufsz
 }
 
-pub fn do_proxy_write(filp: *mut bindings::file, mut u_buf: *const c_char, count: usize) -> isize {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn do_proxy_write(filp: &File, mut u_buf: *const c_char, count: usize) -> isize {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let proxy = unsafe { (*((*fbind).element)).pointer as *mut RrosProxy };
     let ring: &mut ProxyRing = unsafe { &mut (*proxy).output.ring };
 
@@ -398,7 +342,7 @@ pub fn do_proxy_write(filp: *mut bindings::file, mut u_buf: *const c_char, count
 
         ring.nesting -= 1;
         if ring.nesting == 0 {
-            n = atomic_add_return(ring.reserved as i32, &mut ring.fillsz) as u32;
+            n = ring.fillsz.atomic_add_return(ring.reserved as i32) as u32;
             rsvd = ring.reserved;
             ring.reserved = 0;
 
@@ -429,20 +373,16 @@ pub fn relay_input(proxy: &mut RrosProxy) -> Result<usize> {
     let mut ppos: *mut LoffT;
     let mut ret: isize;
     let mut exception: bool = false;
-    let filp: *mut bindings::file = proxy.filp;
+    let filp = &proxy.filp;
 
     let wklock = ring.worker_lock.lock();
-    count = atomic_read(&mut proxyin.reqsz as *mut bindings::atomic_t) as u32;
+    count = proxyin.reqsz.atomic_read() as u32;
     wroff = ring.wroff;
     ppos = 0 as *mut LoffT;
-    if (unsafe { (*filp).f_mode } & FMODE_ATOMIC_POS) != 0 {
-        unsafe {
-            bindings::mutex_lock(
-                &(*filp).f_pos_lock as *const bindings::mutex as *mut bindings::mutex,
-            )
-        };
+    if (unsafe { (*filp.get_ptr()).f_mode } & FMODE_ATOMIC_POS) != 0 {
+        unsafe { mutex_lock(&mut (*filp.get_ptr()).f_pos_lock); }
         ppos = &mut pos as *mut LoffT;
-        pos = unsafe { (*filp).f_pos };
+        pos = unsafe { (*filp.get_ptr()).f_pos };
     }
 
     'outer1: while count > 0 {
@@ -458,32 +398,22 @@ pub fn relay_input(proxy: &mut RrosProxy) -> Result<usize> {
                 n = min(n, ring.granularity);
             }
 
-            ret = unsafe {
-                bindings::kernel_read(
-                    filp,
-                    ring.bufmem.add(wroff as usize) as *mut c_void,
-                    n.try_into().unwrap(),
-                    ppos,
-                )
-            };
+            ret = fs::kernel_read(filp.get_ptr(), unsafe { ring.bufmem.add(wroff as usize) as *mut c_void }, n.try_into().unwrap(), ppos);
             let _ = pos;
             if ret <= 0 {
-                atomic_sub(
-                    (count - len) as i32,
-                    &mut proxyin.reqsz as *mut bindings::atomic_t,
-                );
+                proxyin.reqsz.atomic_sub((count - len) as i32);
                 if ret != 0 {
                     proxyin.on_error = ret as i32;
                 } else {
-                    atomic_set(&mut proxyin.on_eof, 1);
+                    proxyin.on_eof.atomic_set(1);
                 }
                 exception = true;
                 break 'outer1;
             }
             if !ppos.is_null() {
-                unsafe { (*filp).f_pos = *ppos };
+                unsafe { (*filp.get_ptr()).f_pos = *ppos };
             }
-            atomic_add(ret as i32, &mut ring.fillsz);
+            ring.fillsz.atomic_add(ret as i32);
             len -= ret as u32;
             wroff = (wroff + n) % ring.bufsz;
             if len > 0 {
@@ -493,34 +423,23 @@ pub fn relay_input(proxy: &mut RrosProxy) -> Result<usize> {
             }
         }
 
-        count = atomic_sub_return(
-            count.try_into().unwrap(),
-            &mut proxyin.reqsz as *mut bindings::atomic_t,
-        ) as u32;
+        count = proxyin.reqsz.atomic_sub_return(count.try_into().unwrap()) as u32;
     }
 
     if !ppos.is_null() {
         unsafe {
-            bindings::mutex_unlock(
-                &(*filp).f_pos_lock as *const bindings::mutex as *mut bindings::mutex,
-            )
-        };
+            mutex_unlock(&mut (*filp.get_ptr()).f_pos_lock);
+        }
     }
 
     ring.wroff = wroff;
 
     drop(wklock);
-    if atomic_read(&mut ring.fillsz as *mut bindings::atomic_t) > 0 || exception {
+    if ring.fillsz.atomic_read() > 0 || exception {
         //     rros_singal_poll_events(proxy.poll_head, POLLIN|POLLRDNORM);
         ring.oob_wait.raise();
-        unsafe {
-            bindings::__wake_up(
-                &mut ring.inband_wait as *mut bindings::wait_queue_head,
-                bindings::TASK_NORMAL,
-                1,
-                0 as *mut c_void,
-            );
-        }
+        ring.inband_wait
+            .wake_up(bindings::TASK_NORMAL, 1, 0 as *mut c_void);
     }
     Ok(0)
 }
@@ -533,8 +452,8 @@ pub fn relay_input_work(work: &mut RrosWork) -> i32 {
     0
 }
 
-pub fn do_proxy_read(filp: *mut bindings::file, mut u_buf: *const c_char, count: usize) -> isize {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn do_proxy_read(filp: &File, mut u_buf: *const c_char, count: usize) -> isize {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let proxy = unsafe { (*((*fbind).element)).pointer as *mut RrosProxy };
     let proxyin: &mut ProxyIn = unsafe { &mut (*proxy).input };
     let ring: &mut ProxyRing = &mut proxyin.ring;
@@ -560,11 +479,10 @@ pub fn do_proxy_read(filp: *mut bindings::file, mut u_buf: *const c_char, count:
         _u_ptr = u_buf;
         loop {
             flags = raw_spin_lock_irqsave();
-
-            avail = atomic_read(&mut ring.fillsz as *mut bindings::atomic_t) as u32 - ring.reserved;
+            avail = ring.fillsz.atomic_read() as u32 - ring.reserved;
             if avail < len as u32 {
                 raw_spin_unlock_irqrestore(flags);
-                if avail > 0 && (unsafe { (*filp).f_flags } & bindings::O_NONBLOCK) != 0 {
+                if avail > 0 && (unsafe { (*filp.get_ptr()).f_flags } & bindings::O_NONBLOCK) != 0 {
                     if ring.granularity != 0 {
                         len = rounddown(avail as usize, ring.granularity as usize) as isize;
                     } else {
@@ -626,10 +544,7 @@ pub fn do_proxy_read(filp: *mut bindings::file, mut u_buf: *const c_char, count:
 
             ring.nesting -= 1;
             if ring.nesting == 0 {
-                atomic_sub(
-                    ring.reserved as i32,
-                    &mut ring.fillsz as *mut bindings::atomic_t,
-                );
+                ring.fillsz.atomic_sub(ring.reserved as i32);
                 ring.reserved = 0;
             }
 
@@ -646,8 +561,8 @@ pub fn do_proxy_read(filp: *mut bindings::file, mut u_buf: *const c_char, count:
     ret
 }
 
-pub fn proxy_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -> isize {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn proxy_oob_write<T: IoBufferReader>(filp: &File, data: &mut T) -> isize {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let proxy = unsafe { (*((*fbind).element)).pointer as *mut RrosProxy };
     let ring: &mut ProxyRing = unsafe { &mut (*proxy).output.ring };
 
@@ -660,7 +575,7 @@ pub fn proxy_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut 
     loop {
         ret = do_proxy_write(filp, data as *const _ as *const c_char, data.len());
         if ret != -(bindings::EAGAIN as isize)
-            || unsafe { (*filp).f_flags } & bindings::O_NONBLOCK != 0
+            || unsafe { (*filp.get_ptr()).f_flags } & bindings::O_NONBLOCK != 0
         {
             break;
         }
@@ -680,8 +595,8 @@ pub fn proxy_oob_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut 
     }
 }
 
-pub fn proxy_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> isize {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn proxy_oob_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> isize {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let proxy = unsafe { (*((*fbind).element)).pointer as *mut RrosProxy };
     let proxyin: &mut ProxyIn = unsafe { &mut (*proxy).input };
     let ring: &mut ProxyRing = &mut proxyin.ring;
@@ -700,12 +615,12 @@ pub fn proxy_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T
 
     loop {
         ret = do_proxy_read(filp, data as *const _ as *const c_char, data.len());
-        if ret != 0 || unsafe { (*filp).f_flags } & bindings::O_NONBLOCK != 0 {
+        if ret != 0 || unsafe { (*filp.get_ptr()).f_flags } & bindings::O_NONBLOCK != 0 {
             break;
         }
 
         if !request_done {
-            atomic_add(count as i32, &mut proxyin.reqsz as *mut bindings::atomic_t);
+            proxyin.reqsz.atomic_add(count as i32);
             request_done = true;
         }
 
@@ -715,7 +630,7 @@ pub fn proxy_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T
         if ret != 0 {
             break;
         }
-        if atomic_cmpxchg(&mut proxyin.on_eof as *mut bindings::atomic_t, 1, 0) == 1 {
+        if proxyin.on_eof.atomic_cmpxchg(1, 0) == 1 {
             ret = 0;
             break;
         }
@@ -763,8 +678,8 @@ pub fn proxy_oob_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T
 // return ret;
 // }
 
-pub fn proxy_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -> isize {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn proxy_write<T: IoBufferReader>(filp: &File, data: &mut T) -> isize {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let proxy = unsafe { (*((*fbind).element)).pointer as *mut RrosProxy };
     let ring: &mut ProxyRing = unsafe { &mut (*proxy).output.ring };
     let mut ret: isize;
@@ -775,14 +690,12 @@ pub fn proxy_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -
 
     loop {
         ret = do_proxy_write(filp, data as *const _ as *const c_char, data.len());
-        if ret != 0 || unsafe { (*filp).f_flags } & bindings::O_NONBLOCK != 0 {
+        if ret != 0 || unsafe { (*filp.get_ptr()).f_flags } & bindings::O_NONBLOCK != 0 {
             break;
         }
 
-        wait_event_interruptible(
-            &ring.inband_wait as *const _ as *mut bindings::wait_queue_head,
-            can_write_buffer(ring, data.len()),
-        );
+        let condition = can_write_buffer(ring, data.len());
+        ring.inband_wait.wait_event_interruptible(condition);
 
         if ret == 0 {
             continue;
@@ -794,8 +707,8 @@ pub fn proxy_write<T: IoBufferReader>(filp: *mut bindings::file, data: &mut T) -
     ret
 }
 
-pub fn proxy_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) -> isize {
-    let fbind: *const RrosFileBinding = unsafe { (*filp).private_data as *const RrosFileBinding };
+pub fn proxy_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> isize {
+    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let proxy = unsafe { (*((*fbind).element)).pointer as *mut RrosProxy };
     let proxyin: &mut ProxyIn = unsafe { &mut (*proxy).input };
 
@@ -813,17 +726,17 @@ pub fn proxy_read<T: IoBufferWriter>(filp: *mut bindings::file, data: &mut T) ->
 
     loop {
         ret = do_proxy_read(filp, data as *mut _ as *const c_char, data.len());
-        if ret != 0 || unsafe { (*filp).f_flags } & bindings::O_NONBLOCK != 0 {
+        if ret != 0 || unsafe { (*filp.get_ptr()).f_flags } & bindings::O_NONBLOCK != 0 {
             break;
         }
 
         if !request_done {
-            atomic_add(count as i32, &mut proxyin.reqsz as *mut bindings::atomic_t);
+            proxyin.reqsz.atomic_add(count as i32);
             request_done = true;
         }
 
         let _ret = relay_input(unsafe { &mut (*proxy) });
-        if atomic_cmpxchg(&mut proxyin.on_eof as *mut bindings::atomic_t, 1, 0) == 1 {
+        if proxyin.on_eof.atomic_cmpxchg(1, 0) == 1 {
             ret = 0;
             break;
         }
@@ -897,25 +810,19 @@ pub fn init_output_ring(proxy: &mut RrosProxy, bufsz: u32, granularity: u32) -> 
     }))?;
 
     ring.wq = Some(wq);
-    ring.bufmem = bufmem.unwrap() as *mut u8;
-    ring.bufsz = bufsz;
-    ring.granularity = granularity;
+	ring.bufmem = bufmem.unwrap() as *mut u8;
+	ring.bufsz = bufsz;
+	ring.granularity = granularity;
     raw_spin_lock_init(&mut ring.lock);
     ring.relay_work
         .init_safe(relay_output_work, proxy.element.clone());
-    ring.oob_wait.init();
-    let key = bindings::lock_class_key::default();
+	ring.oob_wait.init();
+    let mut key = waitqueue::LockClassKey::default();
     let name = unsafe {
         CStr::from_bytes_with_nul_unchecked("PROXY RING INBAND WAITQUEUE HEAD\0".as_bytes())
     };
-    unsafe {
-        bindings::__init_waitqueue_head(
-            &ring.inband_wait as *const _ as *mut bindings::wait_queue_head,
-            name.as_ptr() as *const i8,
-            &key as *const _ as *mut bindings::lock_class_key,
-        )
-    };
-    unsafe { raw_spin_lock_init(Arc::get_mut_unchecked(&mut ring.worker_lock.clone())) };
+    ring.inband_wait.init_waitqueue_head(name.as_ptr() as *const i8, &mut key);
+	unsafe { raw_spin_lock_init(Arc::get_mut_unchecked(&mut ring.worker_lock.clone())) };
 
     Ok(0)
 }
@@ -928,25 +835,19 @@ pub fn init_input_ring(proxy: &mut RrosProxy, bufsz: u32, granularity: u32) -> R
     }))?;
 
     ring.wq = Some(wq);
-    ring.bufmem = bufmem.unwrap() as *mut u8;
-    ring.bufsz = bufsz;
-    ring.granularity = granularity;
+	ring.bufmem = bufmem.unwrap() as *mut u8;
+	ring.bufsz = bufsz;
+	ring.granularity = granularity;
     raw_spin_lock_init(&mut ring.lock);
     ring.relay_work
         .init_safe(relay_input_work, proxy.element.clone());
-    ring.oob_wait.init();
-    let key = bindings::lock_class_key::default();
+	ring.oob_wait.init();
+    let mut key = waitqueue::LockClassKey::default();
     let name = unsafe {
         CStr::from_bytes_with_nul_unchecked("PROXY RING INBAND WAITQUEUE HEAD\0".as_bytes())
     };
-    unsafe {
-        bindings::__init_waitqueue_head(
-            &ring.inband_wait as *const _ as *mut bindings::wait_queue_head,
-            name.as_ptr() as *const i8,
-            &key as *const _ as *mut bindings::lock_class_key,
-        )
-    };
-    unsafe { raw_spin_lock_init(Arc::get_mut_unchecked(&mut ring.worker_lock.clone())) };
+    ring.inband_wait.init_waitqueue_head(name.as_ptr() as *const i8, &mut key);
+	unsafe { raw_spin_lock_init(Arc::get_mut_unchecked(&mut ring.worker_lock.clone())) };
 
     Ok(0)
 }
@@ -983,8 +884,7 @@ fn proxy_factory_build(
     }
     pr_debug!("clone_flags = {}", clone_flags);
 
-    let boxed_proxy =
-        Box::try_new(RrosProxy::new(unsafe { bindings::fget(attrs.fd) }).unwrap()).unwrap();
+    let boxed_proxy = Box::try_new(RrosProxy::new(attrs.fd).unwrap()).unwrap();
     let proxy = Box::into_raw(boxed_proxy);
     unsafe {
         let ret = rros_init_user_element((*proxy).element.clone(), fac, uname, clone_flags);
@@ -1064,7 +964,7 @@ impl FileOperations for ProxyOps {
         _offset: u64,
     ) -> Result<usize> {
         pr_debug!("I'm the read ops of the proxy factory.");
-        let ret = proxy_read(file.get_ptr(), data);
+        let ret = proxy_read(file, data);
         pr_debug!("the result of proxy read is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret.try_into().unwrap()))
@@ -1075,7 +975,7 @@ impl FileOperations for ProxyOps {
 
     fn oob_read<T: IoBufferWriter>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
         pr_debug!("I'm the oob_read ops of the proxy factory.");
-        let ret = proxy_oob_read(file.get_ptr(), data);
+        let ret = proxy_oob_read(file, data);
         pr_debug!("the result of proxy oob_read is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret.try_into().unwrap()))
@@ -1091,7 +991,7 @@ impl FileOperations for ProxyOps {
         _offset: u64,
     ) -> Result<usize> {
         pr_debug!("I'm the write ops of the proxy factory.");
-        let ret = proxy_write(file.get_ptr(), data);
+        let ret = proxy_write(file, data);
         pr_debug!("the result of proxy write is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret.try_into().unwrap()))
@@ -1102,7 +1002,7 @@ impl FileOperations for ProxyOps {
 
     fn oob_write<T: IoBufferReader>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
         pr_debug!("I'm the oob_write ops of the proxy factory.");
-        let ret = proxy_oob_write(file.get_ptr(), data);
+        let ret = proxy_oob_write(file, data);
         pr_debug!("the result of proxy oob_write is {}", ret);
         if ret < 0 {
             Err(Error::from_kernel_errno(ret.try_into().unwrap()))

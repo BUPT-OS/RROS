@@ -2,7 +2,7 @@
 
 use proc_macro::{token_stream, Delimiter, Group, Literal, TokenStream, TokenTree};
 
-fn try_ident(it: &mut token_stream::IntoIter) -> Option<String> {
+pub(crate) fn try_ident(it: &mut token_stream::IntoIter) -> Option<String> {
     if let Some(TokenTree::Ident(ident)) = it.next() {
         Some(ident.to_string())
     } else {
@@ -10,7 +10,7 @@ fn try_ident(it: &mut token_stream::IntoIter) -> Option<String> {
     }
 }
 
-fn try_literal(it: &mut token_stream::IntoIter) -> Option<String> {
+pub(crate) fn try_literal(it: &mut token_stream::IntoIter) -> Option<String> {
     if let Some(TokenTree::Literal(literal)) = it.next() {
         Some(literal.to_string())
     } else {
@@ -18,7 +18,7 @@ fn try_literal(it: &mut token_stream::IntoIter) -> Option<String> {
     }
 }
 
-fn try_byte_string(it: &mut token_stream::IntoIter) -> Option<String> {
+pub(crate) fn try_byte_string(it: &mut token_stream::IntoIter) -> Option<String> {
     try_literal(it).and_then(|byte_string| {
         if byte_string.starts_with("b\"") && byte_string.ends_with('\"') {
             Some(byte_string[2..byte_string.len() - 1].to_string())
@@ -28,11 +28,11 @@ fn try_byte_string(it: &mut token_stream::IntoIter) -> Option<String> {
     })
 }
 
-fn expect_ident(it: &mut token_stream::IntoIter) -> String {
+pub(crate) fn expect_ident(it: &mut token_stream::IntoIter) -> String {
     try_ident(it).expect("Expected Ident")
 }
 
-fn expect_punct(it: &mut token_stream::IntoIter) -> char {
+pub(crate) fn expect_punct(it: &mut token_stream::IntoIter) -> char {
     if let TokenTree::Punct(punct) = it.next().expect("Reached end of token stream for Punct") {
         punct.as_char()
     } else {
@@ -40,11 +40,11 @@ fn expect_punct(it: &mut token_stream::IntoIter) -> char {
     }
 }
 
-fn expect_literal(it: &mut token_stream::IntoIter) -> String {
+pub(crate) fn expect_literal(it: &mut token_stream::IntoIter) -> String {
     try_literal(it).expect("Expected Literal")
 }
 
-fn expect_group(it: &mut token_stream::IntoIter) -> Group {
+pub(crate) fn expect_group(it: &mut token_stream::IntoIter) -> Group {
     if let TokenTree::Group(group) = it.next().expect("Reached end of token stream for Group") {
         group
     } else {
@@ -52,7 +52,7 @@ fn expect_group(it: &mut token_stream::IntoIter) -> Group {
     }
 }
 
-fn expect_byte_string(it: &mut token_stream::IntoIter) -> String {
+pub(crate) fn expect_byte_string(it: &mut token_stream::IntoIter) -> String {
     try_byte_string(it).expect("Expected byte string")
 }
 
@@ -88,13 +88,13 @@ fn expect_type(it: &mut token_stream::IntoIter) -> ParamType {
     }
 }
 
-fn expect_end(it: &mut token_stream::IntoIter) {
+pub(crate) fn expect_end(it: &mut token_stream::IntoIter) {
     if it.next().is_some() {
         panic!("Expected end");
     }
 }
 
-fn get_literal(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
+pub(crate) fn get_literal(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
     assert_eq!(expect_ident(it), expected_name);
     assert_eq!(expect_punct(it), ':');
     let literal = expect_literal(it);
@@ -102,7 +102,7 @@ fn get_literal(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
     literal
 }
 
-fn get_byte_string(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
+pub(crate) fn get_byte_string(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
     assert_eq!(expect_ident(it), expected_name);
     assert_eq!(expect_punct(it), ':');
     let byte_string = expect_byte_string(it);

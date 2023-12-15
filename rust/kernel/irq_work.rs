@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! irq_work
 //!
 //! C header: [`include/linux/irq_work.h`](../../../../include/linux/irq_work.h)
 
@@ -12,10 +12,12 @@ use crate::{
 extern "C" {
     fn rust_helper_init_irq_work(
         work: *mut bindings::irq_work,
-        func: unsafe extern "C" fn(work: *mut bindings::irq_work),
+        func: unsafe extern "C" fn(work: *mut IrqWork),
     );
 }
+
 /// The `IrqWork` struct wraps a `bindings::irq_work` from the kernel bindings.
+#[repr(transparent)]
 pub struct IrqWork(pub bindings::irq_work);
 
 impl IrqWork {
@@ -25,14 +27,14 @@ impl IrqWork {
         Self(irq_work)
     }
 
-    // pub fn from_ptr<'a>(work: *mut bindings::irq_work) -> &'a IrqWork{
-    //     unsafe { &IrqWork((*work).cast()) }
-    // }
+    pub fn from_ptr<'a>(work: *mut bindings::irq_work) -> &'a mut IrqWork {
+        unsafe { &mut *(work as *mut IrqWork) }
+    }
 
     /// `init_irq_work`: A method that initializes the `IrqWork`. It takes a function pointer to a C function and passes it to the `rust_helper_init_irq_work` function along with a pointer to the `bindings::irq_work`. It returns `Ok(0)` if the initialization is successful.
     pub fn init_irq_work(
         &mut self,
-        func: unsafe extern "C" fn(work: *mut bindings::irq_work),
+        func: unsafe extern "C" fn(work: *mut IrqWork),
     ) -> Result<usize> {
         unsafe {
             rust_helper_init_irq_work(&mut self.0 as *mut bindings::irq_work, func);

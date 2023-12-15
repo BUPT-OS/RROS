@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! cpumask
+//! completion
 //!
 //! C header: [`include/linux/completion.h`](../../../../include/linux/completion.h)
 

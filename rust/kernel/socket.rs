@@ -7,5 +7,6 @@
 use crate::bindings;
 use core::cell::UnsafeCell;
 
+/// The `Sockaddr` struct wraps a `bindings::sockaddr` struct from the kernel bindings.
 #[repr(transparent)]
 pub struct Sockaddr(pub(crate) UnsafeCell<bindings::sockaddr>);

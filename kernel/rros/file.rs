@@ -16,10 +16,7 @@ use crate::{
 
 use kernel::{
     bindings,
-    c_str,
-    c_types,
-    double_linked_list::*,
-    file::{File, FilesStruct},
+    file::FilesStruct,
     init_static_sync,
     prelude::*,
     rbtree,

@@ -23,14 +23,17 @@ extern "C" {
 pub struct Credential(pub UnsafeCell<bindings::cred>);
 
 impl Credential {
+    /// Prepare a new set of credentials for modification.
     pub fn prepare_creds() -> *mut Self {
         unsafe { bindings::prepare_creds() as *mut Credential }
     }
 
+    /// Install new credentials upon the current task.
     pub fn commit_creds(new_cap: *mut Credential) -> c_int {
         unsafe { bindings::commit_creds(new_cap as *mut bindings::cred) }
     }
 
+    /// Check the permissions of current task.
     pub fn cap_raise(&mut self, flag: i32) {
         unsafe {
             rust_helper_cap_raise(

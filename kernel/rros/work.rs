@@ -3,12 +3,10 @@ use core::cell::RefCell;
 
 use kernel::{
     bindings,
-    c_types::c_void,
     irq_work::IrqWork,
     container_of,
-    Result,
     pr_debug,
-    workqueue::{Queue, Work, queue_work_on, init_work},
+    workqueue::{Work, queue_work_on, init_work},
 };
 use crate::factory::RrosElement;
 

@@ -7,17 +7,15 @@ use crate::{
     factory::{RrosElement, RrosFactory},
     fifo::RROS_FIFO_MAX_PRIO,
     list, sched,
-    Box,
     wait::RrosWaitQueue,
 };
 
 use kernel::{
     c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error, device::DeviceType,
+    file::File,
+    file_operations::FileOperations,
+    io_buffer::IoBufferWriter,
 };
-
-use kernel::file::File;
-use kernel::file_operations::FileOperations;
-use kernel::io_buffer::IoBufferWriter;
 
 #[allow(dead_code)]
 pub struct RrosMonitorItem1 {

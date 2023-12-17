@@ -1,5 +1,4 @@
 use core::ffi::c_void;
-
 use crate::{
     list_entry_is_head, list_next_entry,
     net::{skb::RrosSkbQueueInner, socket::uncharge_socke_wmem},
@@ -11,13 +10,10 @@ use kernel::{
     sync::{Lock, SpinLock},
     Error,
     Result,
-    percpu::alloc_per_cpu,
-    pr_info,
+    interrupt,
+    netdevice,
 };
-use super::{device::OOBNetdevState, skb::RrosSkBuff};
-use kernel::interrupt;
-use kernel::netdevice;
-use kernel::percpu;
+use super::skb::RrosSkBuff;
 
 // NOTE:initialize in rros_net_init_tx
 // TODO: 这里的实现没用DEFINE_PER_CPU，因为Rust还没有支持静态定义的percpu变量
@@ -173,7 +169,7 @@ pub fn rros_net_transmit(mut skb: &mut RrosSkBuff) -> Result<()> {
     unsafe { (*OOB_TX_RELAY.locked_data().get()).add(skb) };
     OOB_TX_RELAY.irq_unlock_noguard(flags);
     unsafe {
-        OOB_XMIT_WORK.irq_work_queue();
+        OOB_XMIT_WORK.irq_work_queue()?;
     }
     Ok(())
 }

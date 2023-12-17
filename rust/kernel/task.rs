@@ -141,6 +141,7 @@ impl Task {
         unsafe { rust_helper_signal_pending(self.ptr) != 0 }
     }
 
+    /// Call `Linux` wake_up_process.
     pub fn wake_up_process(ptr: *mut bindings::task_struct) -> i32 {
         unsafe { bindings::wake_up_process(ptr) }
     }

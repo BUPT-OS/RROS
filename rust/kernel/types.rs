@@ -344,21 +344,25 @@ pub fn hash_init(ht: *mut bindings::hlist_head, size: u32) {
     unsafe { rust_helper_hash_init(ht, size) };
 }
 
-pub struct Hashtable<const N:usize>{
-    pub table : [bindings::hlist_head; N]
+/// A list to store structs needed to hash.
+pub struct Hashtable<const N:usize> {
+    table: [bindings::hlist_head; N]
 }
 
 unsafe impl<const N:usize> Sync for Hashtable<N> {}
 
 unsafe impl<const N:usize> Send for Hashtable<N> {}
 
-impl<const N:usize> Hashtable<N>{
-    pub const fn new() -> Self{
-        let table = [bindings::hlist_head{first:core::ptr::null_mut()}; N];
-        Self{
+impl<const N:usize> Hashtable<N> {
+    /// Constructs a new struct.
+    pub const fn new() -> Self {
+        let table = [bindings::hlist_head { first:core::ptr::null_mut() }; N];
+        Self {
             table:table
         }
     }
+
+    /// Add a new struct to Hashtable.
     pub fn add(&mut self, node: &mut bindings::hlist_node, key: u32) {
         extern "C" {
             fn rust_helper_hash_add(
@@ -378,6 +382,7 @@ impl<const N:usize> Hashtable<N>{
         }
     }
 
+    /// Delete a struct from Hashtable.
     pub fn del(&self, node: &mut bindings::hlist_node) {
         extern "C" {
             fn rust_helper_hash_del(node: *mut bindings::hlist_node);
@@ -386,6 +391,8 @@ impl<const N:usize> Hashtable<N>{
             rust_helper_hash_del(node as *mut bindings::hlist_node);
         }
     }
+
+    /// Get the bucket's head which is indexed by key.
     pub fn head(&mut self, key: u32) -> *const bindings::hlist_head {
         extern "C" {
             fn rust_helper_get_hlist_head(
@@ -398,6 +405,7 @@ impl<const N:usize> Hashtable<N>{
     }
 }
 
+/// Initialize a `Hashtable` struct.
 #[macro_export]
 macro_rules! initialize_lock_hashtable {
     ($name:ident,$bits_to_shift:expr) => {
@@ -407,31 +415,35 @@ macro_rules! initialize_lock_hashtable {
     }
 }
 
+/// Get the struct for this entry from a ptr.
 #[macro_export]
-macro_rules! hlist_entry{
-    ($ptr:expr,$type:ty,$($f:tt)*) =>{
-        kernel::container_of!($ptr,$type,$($f)*)
+macro_rules! hlist_entry {
+    ($ptr:expr, $type:ty, $($f:tt)*) => {
+        kernel::container_of!($ptr, $type, $($f)*)
     }
 }
+
+/// Get the struct for this entry from a non-null ptr.
 #[macro_export]
-macro_rules! hlist_entry_safe{
-    ($ptr:expr,$type:ty,$($f:tt)*) =>{
-        if ($ptr).is_null(){
+macro_rules! hlist_entry_safe {
+    ($ptr:expr, $type:ty, $($f:tt)*) => {
+        if ($ptr).is_null() {
             core::ptr::null()
-        }else{
-            kernel::container_of!($ptr,$type,$($f)*)
+        } else {
+            kernel::container_of!($ptr, $type, $($f)*)
         }
     }
 }
 
+/// Iterate all non-null struct begin with a entry.
 #[macro_export]
 macro_rules! hash_for_each_possible {
-    ($pos:ident,$head:expr,$type:ty,$member:ident,{ $($block:tt)* } ) => {
-        let mut $pos = $crate::hlist_entry_safe!(unsafe{(*$head).first},$type,$member);
-        while(!$pos.is_null()){
+    ($pos:ident, $head:expr, $type:ty, $member:ident, { $($block:tt)* } ) => {
+        let mut $pos = $crate::hlist_entry_safe!(unsafe { (*$head).first }, $type, $member);
+        while (!$pos.is_null()) {
             // $code
             $($block)*
-            $pos = $crate::hlist_entry_safe!(unsafe{(*$pos).$member.0.next},$type,$member);
+            $pos = $crate::hlist_entry_safe!(unsafe { (*$pos).$member.0.next }, $type, $member);
         }
     };
 }
@@ -540,13 +552,16 @@ impl<T: AlwaysRefCounted> Drop for ARef<T> {
     }
 }
 
+/// A wrapper for [`sched_param`].
 #[derive(Default)]
 #[repr(transparent)]
 pub struct SchedParam {
-    pub sched_param: bindings::sched_param,
+    #[allow(dead_code)]
+    sched_param: bindings::sched_param,
 }
 
 impl SchedParam {
+    /// Constructs a new struct with a `c_int` parameter represent `sched_priority`.
     pub fn new(n: c_types::c_int) -> Self {
         Self {
             sched_param: bindings::sched_param { sched_priority: n },
@@ -554,58 +569,70 @@ impl SchedParam {
     }
 }
 
+/// A wrapper for [`atomic_t`].
 #[repr(transparent)]
 pub struct Atomic(bindings::atomic_t);
 
 impl Atomic {
+    /// Constructs a new struct.
     pub fn new() -> Self {
         Atomic(bindings::atomic_t::default())
     }
 
+    /// Add a num to self.
     pub fn atomic_add(&mut self, i: i32) {
         unsafe {
             rust_helper_atomic_add(i, &mut self.0 as *mut bindings::atomic_t);
         }
     }
 
+    /// Subtract a num to self.
     pub fn atomic_sub(&mut self, i: i32) {
         unsafe {
             rust_helper_atomic_sub(i, &mut self.0 as *mut bindings::atomic_t);
         }
     }
 
+    /// Subtract and return the old value.
     pub fn atomic_sub_return(&mut self, i: i32) -> i32 {
         unsafe { rust_helper_atomic_sub_return(i, &mut self.0 as *mut bindings::atomic_t) }
     }
 
+    /// Add to self and return the old value.
     pub fn atomic_add_return(&mut self, i: i32) -> i32 {
         unsafe { rust_helper_atomic_add_return(i, &mut self.0 as *mut bindings::atomic_t) }
     }
 
+    /// Compare, if same exchange to new, else nothing to do.
     pub fn atomic_cmpxchg(&mut self, old: i32, new: i32) -> i32 {
         unsafe { rust_helper_atomic_cmpxchg(&mut self.0 as *mut bindings::atomic_t, old, new) }
     }
 
+    /// Set to a num.
     pub fn atomic_set(&mut self, i: i32) {
         unsafe {
             rust_helper_atomic_set(&mut self.0 as *mut bindings::atomic_t, i);
         }
     }
 
+    /// Plus one.
     pub fn atomic_inc(&mut self) {
         unsafe {
             rust_helper_atomic_inc(&mut self.0 as *mut bindings::atomic_t);
         }
     }
 
+    /// Sub one and test whether is zero.
     pub fn atomic_dec_and_test(&mut self) -> bool {
         unsafe { rust_helper_atomic_dec_and_test(&mut self.0 as *mut bindings::atomic_t) }
     }
 
+    /// Sub one and return the old value.
     pub fn atomic_dec_return(&mut self) -> i32 {
         unsafe { rust_helper_atomic_dec_return(&mut self.0 as *mut bindings::atomic_t) }
     }
 
+    /// Read self's value.
     pub fn atomic_read(&mut self) -> i32 {
         unsafe { rust_helper_atomic_read(&mut self.0 as *mut bindings::atomic_t) }
     }

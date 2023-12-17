@@ -4,10 +4,7 @@ use crate::{
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
-use alloc::boxed::Box;
-use kernel::prelude::*;
 use core::{cell::Cell, ptr::NonNull};
-use kernel::bindings;
 
 pub struct RrosFlag {
     pub wait: RrosWaitQueue,

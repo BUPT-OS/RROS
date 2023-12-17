@@ -19,6 +19,7 @@ pub struct File {
 }
 
 impl File {
+    /// Constructs a new [`struct file`] wrapper from a file pointer.
     pub fn from_ptr(ptr: *mut bindings::file) -> Self {
         Self { ptr }
     }
@@ -38,6 +39,8 @@ impl File {
         Ok(Self { ptr })
     }
 
+    /// Creates a new file instance by hooking it up to an anonymous inode,
+    /// and a dentry that describe the "class" of the file.
     pub fn anon_inode_getfile(
         name: *const c_types::c_char,
         fops: *const bindings::file_operations,
@@ -158,7 +161,7 @@ impl Drop for FileDescriptorReservation {
 
 /// call linux fd_install
 pub fn fd_install(fd: u32, filp: *mut bindings::file) {
-    /// SAFETY: The caller must ensure that `filp` is a valid pointer.
+    // SAFETY: The caller must ensure that `filp` is a valid pointer.
     unsafe { bindings::fd_install(fd, filp); }
 }
 

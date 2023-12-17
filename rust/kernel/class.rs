@@ -52,7 +52,7 @@ impl Class {
 
     /// Add the devnode call back function to the class.
     pub fn set_devnode<T: device::ClassDevnode>(&mut self) {
-        /// SAFETY: The `self.ptr` is a valid and created by `class_create` function.
+        // SAFETY: The `self.ptr` is a valid and created by `class_create` function.
         unsafe { (*(self.0)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback(); }
     }
 

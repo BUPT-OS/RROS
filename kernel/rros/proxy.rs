@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 
-use core::{cell::RefCell, cmp::min, convert::TryInto, ops::Deref, ptr::null_mut};
+use core::{cell::RefCell, cmp::min, convert::TryInto, ops::Deref};
 
 use crate::{
     c_types::*,
@@ -24,12 +24,10 @@ use kernel::{
     io_buffer::{IoBufferReader, IoBufferWriter},
     prelude::*,
     premmpt::running_inband,
-    spinlock_init,
     str::CStr,
-    sync::{mutex_lock, mutex_unlock, Lock, Mutex, SpinLock},
+    sync::{mutex_lock, mutex_unlock, SpinLock},
     types::Atomic,
-    uidgid::{KgidT, KuidT},
-    user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
+    user_ptr::{UserSlicePtrReader, UserSlicePtrWriter},
     vmalloc::c_kzalloc,
     waitqueue,
     workqueue::*,
@@ -918,7 +916,7 @@ fn proxy_factory_build(
 
 pub static mut RROS_PROXY_FACTORY: SpinLock<RrosFactory> = unsafe {
     SpinLock::new(RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("proxy\0".as_bytes()) },
+        name: CStr::from_bytes_with_nul_unchecked("proxy\0".as_bytes()),
         // fops: Some(&RustFileProxy),
         nrdev: CONFIG_RROS_NR_PROXIES,
         build: Some(proxy_factory_build),

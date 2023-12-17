@@ -1,37 +1,25 @@
-use crate::clock::rros_read_clock;
-use crate::fifo;
-use crate::lock::{raw_spin_lock_irqsave, raw_spin_unlock_irqrestore};
-use crate::timer::{program_timer, rros_dequeue_timer, rros_stop_timer, rros_update_timer_date};
-use crate::wait::RrosWaitChannel;
 use crate::{
-    clock, factory, fifo::RROS_SCHED_FIFO, file::RrosFileBinding, idle, lock, sched::*, timeout,
-    timer, RROS_OOB_CPUS,
+    clock::{self, rros_read_clock}, factory, fifo::{self, RROS_SCHED_FIFO}, file::RrosFileBinding, idle,
+    lock::{self, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore}, sched::*, timeout,
+    timer::{self, program_timer, rros_dequeue_timer, rros_stop_timer, rros_update_timer_date}, RROS_OOB_CPUS,
+    wait::RrosWaitChannel,
 };
+
 use alloc::rc::Rc;
-use kernel::device::DeviceType;
-use kernel::ktime::ktime_sub;
-use core::mem::size_of;
-use core::ops::{Deref, DerefMut};
-use core::result::Result::{Ok, Err};
-use core::{cell::RefCell, clone::Clone};
-use kernel::completion::Completion;
-use kernel::cpumask::CpumaskT;
-use kernel::error::from_kernel_err_ptr;
-use kernel::file::File;
-use kernel::file_operations::FileOperations;
-use kernel::io_buffer::IoBufferWriter;
-use kernel::irq_work::IrqWork;
-use kernel::str::CStr;
-use kernel::task::Task;
+
+use core::{
+    ops::DerefMut,
+    result::Result::{Ok, Err},
+    cell::RefCell,
+    clone::Clone,
+};
+
 #[warn(unused_mut)]
 use kernel::{
     bindings, c_types,
     prelude::*,
-    memory_rros::*,
-    container_of,
-    rbtree::RBTree,
+    spinlock_init, c_str,
     sched::sched_setscheduler,
-    spinlock_init,
     sync::{Lock, SpinLock},
     types,
     kernelh,
@@ -39,12 +27,20 @@ use kernel::{
     premmpt,
     cred,
     fs,
-    task,
+    task::{self, Task},
     capability,
+    ktime,
+    str::CStr,
+    irq_work::IrqWork,
+    io_buffer::IoBufferWriter,
+    file::File,
+    file_operations::FileOperations,
+    error::from_kernel_err_ptr,
+    device::DeviceType,
+    ktime::ktime_sub,
+    completion::Completion,
+    cpumask::CpumaskT,
 };
-use core::ptr::null_mut;
-use core::cmp::Ordering;
-use kernel::{c_str, ktime};
 
 extern "C" {
     fn rust_helper_kthread_run_on_cpu(
@@ -351,7 +347,7 @@ pub fn rros_init_thread(
     // memset(&thread->PollContext, 0, sizeof(thread->PollContext));
     // memset(&thread->stat, 0, sizeof(thread->stat));
     // memset(&thread->altsched, 0, sizeof(thread->altsched));
-    thread.clone().unwrap().lock().deref_mut().inband_work.init_irq_work(inband_task_wakeup);
+    thread.clone().unwrap().lock().deref_mut().inband_work.init_irq_work(inband_task_wakeup)?;
     // pr_debug!("yinyongcishu is {}", Arc::strong_count(&thread.clone().unwrap()));
 
     //tp设置gps
@@ -393,7 +389,7 @@ pub fn rros_init_thread(
         )
     };
     ptimer.lock().thread = Some(thread_unwrap.clone());
-    pr_debug!("rros_init_thread success!");
+    pr_info!("rros_init_thread success!");
     Ok(0)
 }
 
@@ -820,7 +816,7 @@ extern "C" {
 }
 
 pub fn rros_current() -> *mut SpinLock<RrosThread> {
-    unsafe { dovetail::dovetail_current_state().thread() as *mut SpinLock<RrosThread> }
+    dovetail::dovetail_current_state().thread() as *mut SpinLock<RrosThread>
 }
 
 pub fn rros_switch_oob() -> Result<usize> {
@@ -1972,7 +1968,7 @@ fn rros_signal_thread(thread: *mut RrosThread, sig: i32, arg: u32) -> Result<usi
         return Ok(0);
     }
 
-    sigd.work.init_irq_work(sig_irqwork);
+    sigd.work.init_irq_work(sig_irqwork)?;
     sigd.thread = thread;
     sigd.signo = sig;
     if sig == SIGDEBUG {
@@ -1985,7 +1981,7 @@ fn rros_signal_thread(thread: *mut RrosThread, sig: i32, arg: u32) -> Result<usi
     Ok(0)
 }
 
-unsafe extern "C" fn sig_irqwork(work:*mut IrqWork) {
+unsafe extern "C" fn sig_irqwork(_work:*mut IrqWork) {
 	let _sigd = SigIrqworkData::new();
 	// unsafe{do_inband_signal(sigd.thread, sigd.signo, sigd.sigval)};
 	// rros_put_element(&sigd->thread->element);

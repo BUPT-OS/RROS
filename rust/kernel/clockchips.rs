@@ -188,10 +188,13 @@ impl ClockEventDevice {
     }
 }
 
+/// A trait to implement functions for ClockProxyDevice.
 pub trait ProxySetOneshotStopped {
+    /// A function need to implement in trait.
     fn proxy_set_oneshot_stopped(dev: ClockProxyDevice) -> c_types::c_int;
 }
 
+/// Callback function for trait `ProxySetOneshotStopped`.
 pub unsafe extern "C" fn proxy_set_oneshot_stopped<T: ProxySetOneshotStopped>(
     proxy_dev: *mut bindings::clock_event_device,
 ) -> c_types::c_int {
@@ -199,10 +202,13 @@ pub unsafe extern "C" fn proxy_set_oneshot_stopped<T: ProxySetOneshotStopped>(
     T::proxy_set_oneshot_stopped(dev)
 }
 
+/// A trait to implement functions for `ClockEventDevice`.
 pub trait ProxySetNextKtime {
+    /// A function need to implement in trait.
     fn proxy_set_next_ktime(expires: KtimeT, arg1: ClockEventDevice) -> i32;
 }
 
+/// Callback function for trait `ProxySetNextKtime`.
 pub unsafe extern "C" fn proxy_set_next_ktime<T: ProxySetNextKtime>(
     expires: KtimeT,
     arg1: *mut bindings::clock_event_device,
@@ -211,10 +217,13 @@ pub unsafe extern "C" fn proxy_set_next_ktime<T: ProxySetNextKtime>(
     T::proxy_set_next_ktime(expires, arg1)
 }
 
+/// A trait to implement functions for `ClockProxyDevice`.
 pub trait SetupProxy {
+    /// A function need to implement in trait.
     fn setup_proxy(dev: ClockProxyDevice);
 }
 
+/// Callback function for trait `SetupProxy`.
 pub unsafe extern "C" fn setup_proxy<T: SetupProxy>(_dev: *mut bindings::clock_proxy_device) {
     match ClockProxyDevice::new(_dev) {
         Ok(dev) => T::setup_proxy(dev),
@@ -222,19 +231,25 @@ pub unsafe extern "C" fn setup_proxy<T: SetupProxy>(_dev: *mut bindings::clock_p
     }
 }
 
+/// A trait to implement functions for `CoreTick`.
 pub trait CoreTick {
+    /// A function need to implement in trait.
     fn core_tick(dummy: ClockEventDevice);
 }
 
+/// Callback function for trait `CoreTick`.
 pub unsafe extern "C" fn core_tick<T: CoreTick>(dummy: *mut bindings::clock_event_device) {
     T::core_tick(ClockEventDevice::from_proxy_device(dummy).unwrap());
 }
 
+/// A trait to implement functions for `ClockIpiHandle`.
 #[cfg(CONFIG_SMP)]
 pub trait ClockIpiHandler {
+    /// A function need to implement in trait.
     fn clock_ipi_handler(irq: c_types::c_int, dev_id: *mut c_types::c_void) -> c_types::c_uint;
 }
 
+/// Callback function for trait `ClockIpiHandler`.
 #[cfg(CONFIG_SMP)]
 pub unsafe extern "C" fn clock_ipi_handler<T: ClockIpiHandler>(
     irq: c_types::c_int,

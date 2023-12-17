@@ -1,6 +1,8 @@
-use kernel::bindings;
-use kernel::prelude::*;
-use kernel::ptrace::{IrqStage, PtRegs};
+use kernel::{
+    bindings,
+    prelude::*,
+    ptrace::PtRegs,
+};
 
 /// Returns the first register value from the given out-of-bounds pointer.
 #[macro_export]

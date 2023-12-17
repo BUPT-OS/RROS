@@ -24,17 +24,20 @@ extern "C" {
     fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
 }
 
+/// The `LockClassKey` struct wraps a `bindings::lock_class_key` struct from the kernel bindings.
 #[derive(Default)]
 pub struct LockClassKey {
     lock_class_key: bindings::lock_class_key,
 }
 
+/// The `WaitQueueEntry` struct wraps a `bindings::wait_queue_entry_t` struct from the kernel bindings.
 #[derive(Default)]
 pub struct WaitQueueEntry {
-    pub wait_queue_entry: bindings::wait_queue_entry_t,
+    wait_queue_entry: bindings::wait_queue_entry_t,
 }
 
 impl WaitQueueEntry {
+    /// A wrapper around the `bindings::init_wait_entry` function from the kernel bindings.
     pub fn init_wait_entry(&mut self, flags: c_int) {
         unsafe {
             bindings::init_wait_entry(
@@ -45,12 +48,14 @@ impl WaitQueueEntry {
     }
 }
 
+/// The `WaitQueueHead` struct wraps a `bindings::wait_queue_head_t` function from the kernel bindings.
 #[derive(Default)]
 pub struct WaitQueueHead {
-    pub wait_queue_head: bindings::wait_queue_head_t,
+    wait_queue_head: bindings::wait_queue_head_t,
 }
 
 impl WaitQueueHead {
+    /// Construct a new default struct.
     pub fn new() -> Self {
         WaitQueueHead {
             wait_queue_head: bindings::wait_queue_head_t {
@@ -65,6 +70,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// Call `raw_spin_lock_irqsave` from the rust_helper.
     pub fn raw_spin_lock_irqsave(&mut self) -> u64 {
         unsafe {
             rust_helper_raw_spin_lock_irqsave(
@@ -73,6 +79,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// Call `raw_spin_unlock_irqstore` from the rust_helper.
     pub fn raw_spin_unlock_irqrestore(&mut self, flags: u64) {
         unsafe {
             rust_helper_raw_spin_unlock_irqrestore(
@@ -82,6 +89,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// Call `add_wait_queue` from the rust_helper.
     pub fn add_wait_queue(&mut self, wq_entry: &mut WaitQueueEntry) {
         let ptr_wq_entry = &mut wq_entry.wait_queue_entry as *mut bindings::wait_queue_entry_t;
         unsafe {
@@ -92,6 +100,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// Call `wait_event_interruptible` from the rust_helper.
     pub fn wait_event_interruptible(&mut self, condition: bool) -> i32 {
         unsafe {
             rust_helper_wait_event_interruptible(
@@ -101,6 +110,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// Call `__init_waitqueue_head` function from the kernel.
     pub fn init_waitqueue_head(&mut self, name: *const c_char, arg1: &mut LockClassKey) {
         let ptr_arg1 = &mut arg1.lock_class_key as *mut bindings::lock_class_key;
         unsafe {
@@ -112,6 +122,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// A wrapper around the `bindings::__wake_up` from the kernel bindings.
     pub fn wake_up(&mut self, mode: c_uint, nr: c_int, key: *mut c_void) {
         unsafe {
             bindings::__wake_up(
@@ -123,6 +134,7 @@ impl WaitQueueHead {
         }
     }
 
+    /// Call `wq_has_sleeper` from the rust_helper.
     pub fn wq_has_sleeper(&mut self) -> bool {
         unsafe {
             rust_helper_wq_has_sleeper(&mut self.wait_queue_head as *mut bindings::wait_queue_head)

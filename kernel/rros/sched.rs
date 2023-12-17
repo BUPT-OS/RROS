@@ -1,38 +1,36 @@
-use crate::flags::RrosFlag;
-use crate::wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO};
-use crate::{idle, sched, tp};
 use alloc::rc::Rc;
-use kernel::dovetail::OobMmState;
-use core::cell::RefCell;
-use core::default::Default;
-use core::ops::DerefMut;
-use core::ptr::NonNull;
-use core::ptr::{null, null_mut};
-use kernel::linked_list::{GetLinks, Links};
+
+use core::{
+    cell::RefCell,
+    ops::DerefMut,
+    ptr::{NonNull, null, null_mut},
+    mem::{align_of, size_of, transmute},
+};
 
 #[warn(unused_mut)]
 use kernel::{
-    bindings, c_str, c_types, cpumask,
+    bindings, c_str, c_types,
+    cpumask::{self, online_cpus, possible_cpus},
     double_linked_list::*,
-    dovetail,
+    dovetail::{self, OobMmState},
     irq_work::IrqWork,
     percpu::alloc_per_cpu,
     percpu_defs,
     prelude::*,
     premmpt, spinlock_init,
     str::{kstrdup, CStr},
-    sync::{Guard, HardSpinlock, Lock, SpinLock},
+    sync::{HardSpinlock, Lock, SpinLock},
     types::Atomic,
     irq_pipeline,
     ktime::Timespec64,
     completion,
     capability,
     waitqueue,
+    linked_list::{GetLinks, Links},
 };
 
-use core::mem::{align_of, size_of, transmute};
-// use crate::weak;
 use crate::{
+    idle, sched, tp,
     clock::{self, RrosClock},
     factory::RrosElement,
     fifo,
@@ -42,13 +40,14 @@ use crate::{
     tick,
     timeout::RROS_INFINITE,
     timer::*,
+    wait::{RROS_WAIT_PRIO, RrosWaitChannel, RrosWaitQueue},
+    flags::RrosFlag,
 };
 
 extern "C" {
     fn rust_helper_cpumask_of(cpu: i32) -> *const cpumask::CpumaskT;
     #[allow(dead_code)]
     fn rust_helper_list_add_tail(new: *mut ListHead, head: *mut ListHead);
-    fn rust_helper_dovetail_current_state() -> *mut bindings::oob_thread_state;
     fn rust_helper_test_bit(nr: i32, addr: *const usize) -> bool;
 }
 
@@ -1363,9 +1362,6 @@ impl RrosSchedAttrs {
     }
 }
 
-use kernel::cpumask::{online_cpus, possible_cpus};
-use kernel::prelude::*;
-
 pub fn rros_init_sched() -> Result<usize> {
     unsafe {
         RROS_RUNQUEUES = alloc_per_cpu(
@@ -1463,7 +1459,7 @@ pub fn rros_init_sched() -> Result<usize> {
         }
     }
     // ret = bindings::__request_percpu_irq();
-    pr_debug!("sched init success!");
+    pr_info!("sched init success!");
     Ok(0)
 }
 
@@ -1495,7 +1491,7 @@ fn register_classes() -> Result<usize> {
         )
     };
     match res {
-        Ok(_) => pr_debug!("register_one_class(idle) success!"),
+        Ok(_) => pr_info!("register_one_class(idle) success!"),
         Err(e) => {
             pr_warn!("register_one_class(idle) error!");
             return Err(e);
@@ -2119,12 +2115,11 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
 fn finish_rq_switch() {}
 
 pub fn pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThread>>> {
-    let mut oob_mm = OobMmState::new();
-    let mut next: Option<Arc<SpinLock<RrosThread>>> = None;
+    let mut next: Option<Arc<SpinLock<RrosThread>>>;
     loop {
         next = __pick_next_thread(rq);
         let next_clone = next.clone().unwrap();
-        oob_mm = unsafe { (*next_clone.locked_data().get()).oob_mm };
+        let oob_mm = unsafe { (*next_clone.locked_data().get()).oob_mm };
         if oob_mm.is_null() {
             break;
         }
@@ -2418,7 +2413,7 @@ fn rros_set_schedparam(
     // let thread_lock = thread_unwrap.lock();
     let base_class_clone = thread_unwrap.lock().base_class.clone();
     if base_class_clone.is_none() {
-        pr_debug!("rros_set_schedparam: finded");
+        pr_info!("rros_set_schedparam: finded");
     }
     let base_class_unwrap = base_class_clone.unwrap();
     let func = base_class_unwrap.sched_setparam.unwrap();
@@ -2454,7 +2449,7 @@ fn rros_declare_thread(
         }
     }
 
-    pr_debug!("rros_declare_thread success!");
+    pr_info!("rros_declare_thread success!");
     Ok(0)
 }
 

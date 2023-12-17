@@ -1,14 +1,17 @@
-use kernel::clockchips::ClockEventDevice;
 use kernel::{
-    bindings, c_types, clockchips, container_of, cpumask, double_linked_list::*, interrupt,
+    bindings, c_types, clockchips, cpumask, interrupt,
     irq_pipeline::*, ktime::*, percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr,
-    sync::Lock, sync::SpinLock, tick,
+    sync::Lock, tick, clockchips::ClockEventDevice,
 };
 
 use crate::{
     clock::*, sched::*, thread::*, timeout::*, timer::*, RROS_MACHINE_CPUDATA, RROS_OOB_CPUS,
 };
-use core::cmp;
+use core::{
+    cmp,
+    mem::{align_of, size_of},
+    ptr::null_mut,
+};
 
 extern "C" {
     fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
@@ -18,9 +21,6 @@ extern "C" {
 }
 
 static mut PROXY_DEVICE: *mut clockchips::ClockProxyDevice = 0 as *mut clockchips::ClockProxyDevice;
-
-use core::mem::{align_of, size_of};
-use core::ptr::{null, null_mut};
 
 pub const CLOCK_EVT_FEAT_KTIME: u32 = 0x000004;
 type KtimeT = i64;
@@ -154,7 +154,7 @@ impl clockchips::SetupProxy for RrosSetupProxy {
         let _real_dev: ClockEventDevice;
         match clockchips::ClockEventDevice::from_proxy_device(dev.get_real_device()) {
             Ok(v) => _real_dev = v,
-            Err(e) => {
+            Err(_e) => {
                 pr_warn!("1setup real ced new error!");
                 return;
             }

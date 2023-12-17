@@ -11,6 +11,7 @@ use crate::{
 
 use core::option::Option;
 
+/// The `tick_install_proxy` function is a wrapper around the `bindings::tick_install_proxy` function from the kernel bindings.
 pub fn tick_install_proxy(
     setup_proxy: Option<unsafe extern "C" fn(dev: *mut bindings::clock_proxy_device)>,
     cpumask: *mut bindings::cpumask,

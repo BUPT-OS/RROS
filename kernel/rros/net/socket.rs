@@ -5,45 +5,39 @@
  * in-band network stack. RROS-specific protocols belong to the generic
  * PF_OOB family, which we use as a protocol mutiplexor.
  */
-use crate::bindings::{iovec, sockaddr};
-use crate::clock::RROS_MONO_CLOCK;
-use crate::timeout::RrosTmode;
-use crate::THIS_MODULE;
-use crate::{bindings, c_types};
 use crate::{
-    crossing::RrosCrossing, file::RrosFile, list::ListHead, sched::SsizeT,
+    clock::RROS_MONO_CLOCK,
+    timeout::RrosTmode,
+    THIS_MODULE,
+    bindings,
+    c_types,
+    crossing::RrosCrossing, file::RrosFile, list::ListHead,
     wait::RrosWaitQueue,
 };
-use crate::lock::raw_spin_lock_init;
-use kernel::initialize_lock_hashtable;
-use alloc::rc::Rc;
-use kernel::ktime::{KtimeT, Timespec64};
-use kernel::socket::Sockaddr;
-use kernel::types::HlistNode;
-use kernel::{ThisModule, mutex_init, spinlock_init, container_of};
-use kernel::vmalloc::{c_kzfree, c_kzalloc};
-use kernel::net::{NetProtoFamily, Namespace, CreateSocket, create_socket_callback};
-use core::cell::{RefCell, Ref,UnsafeCell};
-use core::clone::Clone;
-use core::default::Default;
-use core::mem::transmute;
-use core::pin::Pin;
-use core::ptr;
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicI32, Ordering};
+
 use kernel::{
     sync::{Mutex, RawSpinLock, SpinLock},
-    double_linked_list::List,
     endian::be16,
-    file::File,
-    init_static_sync,
     iov_iter::Iovec,
-    net::Device,
-    net::{Namespace as Net, Socket},
+    net::{Socket, NetProtoFamily, Namespace, CreateSocket, create_socket_callback},
     prelude::*,
     static_init_net_proto_family,
     sock::Sock,
     Error,
+    ktime::{KtimeT, Timespec64},
+    socket::Sockaddr,
+    types::HlistNode,
+    mutex_init, spinlock_init, container_of,
+    vmalloc::{c_kzalloc, c_kzfree},
+};
+
+use core::{
+    ptr::NonNull,
+    ptr,
+    pin::Pin,
+    mem::transmute,
+    sync::atomic::{AtomicI32, Ordering},
+    default::Default,
 };
 
 use super::device::NetDevice;

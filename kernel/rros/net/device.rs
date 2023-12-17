@@ -1,27 +1,42 @@
-use core::clone::Clone;
-use core::ffi::c_void;
-use core::mem::size_of;
-use core::ptr::NonNull;
+use core::{
+    clone::Clone,
+    ffi::c_void,
+    mem::size_of,
+    ptr::NonNull,
+};
 
-use kernel::linked_list::{GetLinks, Links, List};
-use kernel::prelude::*;
-use kernel::sync::Lock;
-use kernel::{bindings, init_static_sync, sync::SpinLock};
-use kernel::{c_str, spinlock_init, vmalloc, Result};
-use kernel::notifier::NotifierBlock;
-use kernel::net::Namespace;
-use alloc::sync::Arc;
+use kernel::{
+    bindings,
+    net::Namespace,
+    init_static_sync, c_str, spinlock_init, Result,
+    sync::{
+        SpinLock,
+        Lock,
+    },
+    vmalloc,
+    prelude::*,
+    linked_list::{
+        GetLinks,
+        Links,
+        List,
+    },
+    notifier::NotifierBlock,
+};
 
-use crate::crossing::RrosCrossing;
-use crate::flags::RrosFlag;
-use crate::net::input::rros_net_do_rx;
-use crate::net::skb::rros_net_dev_build_pool;
-use crate::thread::KthreadRunner;
-// use crate::uapi::rros::socket::RrosNetdevActivation;
-use crate::wait::RrosWaitQueue;
-
-use super::skb::RrosSkbQueue;
-use super::socket::RrosNetdevActivation;
+use crate::{
+    flags::RrosFlag,
+    net::{
+        input::rros_net_do_rx,
+        skb::rros_net_dev_build_pool,
+    },
+    thread::KthreadRunner,
+    wait::RrosWaitQueue,
+    crossing::RrosCrossing,
+};
+use super::{
+    skb::RrosSkbQueue,
+    socket::RrosNetdevActivation,
+};
 
 const IFF_OOB_PORT: usize = 1 << 1;
 const IFF_OOB_CAPABLE: usize = 1 << 0;
@@ -207,6 +222,7 @@ impl NetDevice {
 
     pub fn get_net(&self) -> *const Namespace {
         extern "C" {
+            #[allow(improper_ctypes)]
             fn rust_helper_dev_net(dev: *const bindings::net_device) -> *const Namespace;
         }
         unsafe { rust_helper_dev_net(self.0.as_ptr() as *const bindings::net_device) }

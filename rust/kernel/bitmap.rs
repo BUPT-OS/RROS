@@ -19,6 +19,7 @@ pub fn bitmap_zalloc(nbits: c_types::c_uint, flags: bindings::gfp_t) -> *mut c_t
     unsafe { bindings::bitmap_zalloc(nbits, flags) }
 }
 
+/// Convert list format ASCII string to bitmap.
 pub fn bitmap_parselist(
     buf: *const c_types::c_char,
     maskp: *mut c_types::c_ulong,
@@ -27,6 +28,7 @@ pub fn bitmap_parselist(
     unsafe { bindings::bitmap_parselist(buf, maskp, nmaskbits) }
 }
 
+/// Free bitmap.
 pub fn bitmap_free(bitmap: *const c_types::c_ulong) {
     unsafe {
         bindings::bitmap_free(bitmap);

@@ -23,6 +23,8 @@ pub fn irq_get_timer_oob_ipi() -> usize {
     unsafe { rust_helper_irq_get_TIMER_OOB_IPI() }
 }
 
+/// The `run_oob_call` function is a wrapper around the `bindings::run_oob_cal` function from the kernel bindings.
+/// It calls the `bindings::run_oob_call` function.
 pub fn run_oob_call(
     fn_: Option<unsafe extern "C" fn(arg: *mut c_void) -> c_int>,
     arg: *mut c_void,

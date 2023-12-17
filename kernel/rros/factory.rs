@@ -1,31 +1,31 @@
-use core::{cell::RefCell, clone::Clone, convert::TryInto, default::Default, result::Result::Ok, ptr};
+use core::{cell::RefCell, clone::Clone, convert::TryInto, default::Default, result::Result::Ok, ptr, mem::size_of};
+
 use crate::{clock, control, file::RrosFileBinding, proxy, thread, xbuf};
+
 use alloc::rc::Rc;
-use kernel::file::fd_install;
-use kernel::uidgid::{KgidT, KuidT};
+
 use kernel::{
     bindings,
     bitmap::{self, bitmap_zalloc},
     c_str, c_types, chrdev, class, device,
-    file::{self, File},
+    file::{self, File, fd_install},
     file_operations::FileOperations,
     fs::{self, Filename},
     irq_work, rbtree, spinlock_init, kernelh,
     prelude::*,
     str::CStr,
-    sync::{Guard, Lock, SpinLock},
+    sync::{Lock, SpinLock},
     sysfs,
-    task::Task,
-    types::{self, hash_init},
+    types,
     uidgid, workqueue, ThisModule,
     file_operations::{FileOpener, IoctlCommand},
+    uidgid::{KgidT, KuidT},
+    device::DeviceType,
+    io_buffer::IoBufferWriter,
 };
-use kernel::{device::DeviceType, io_buffer::IoBufferWriter};
-
 
 extern "C" {
     #[allow(improper_ctypes)]
-    fn rust_helper_dev_name(dev: *mut bindings::device) -> *const c_types::c_char;
     fn rust_helper_put_user(val: u32, ptr: *mut u32) -> c_types::c_int;
 }
 
@@ -294,17 +294,13 @@ impl device::Devnode for FactoryTypeDevnode {
         if let Some(e) = element {
             let inside = unsafe { (*(e.factory.locked_data().get())).inside.as_ref().unwrap() };
             if let Some(uid) = uid {
-                unsafe {
-                    if let Some(e_uid) = inside.kuid.as_ref() {
-                        *uid = *e_uid;
-                    }
+                if let Some(e_uid) = inside.kuid.as_ref() {
+                    *uid = *e_uid;
                 }
             }
             if let Some(gid) = gid {
-                unsafe {
-                    if let Some(e_gid) = inside.kgid.as_ref() {
-                        *gid = *e_gid;
-                    }
+                if let Some(e_gid) = inside.kgid.as_ref() {
+                    *gid = *e_gid;
                 }
             }
         }
@@ -1171,11 +1167,9 @@ pub fn rros_early_init_factories(
         CStr::from_bytes_with_nul("rros\0".as_bytes())?.as_char_ptr(),
     )?)?;
     // TODO: 创建一个结构体，实现rros_devnode
-    unsafe {
-        Arc::get_mut(&mut rros_class)
-            .unwrap()
-            .set_devnode::<RrosDevnode>();
-    }
+    Arc::get_mut(&mut rros_class)
+        .unwrap()
+        .set_devnode::<RrosDevnode>();
     // unsafe {
     //     (*rros_class.ptr).devnode = Option::Some(rros_devnode);
     // }
@@ -1343,9 +1337,6 @@ fn rros_index_factory_element() {}
 // {
 // 	rros_index_element(&e->factory->index, e);
 // }
-
-use core::mem::size_of;
-use kernel::user_ptr::UserSlicePtr;
 
 extern "C" {
     pub fn rust_helper_copy_from_user(

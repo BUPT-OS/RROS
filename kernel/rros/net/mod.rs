@@ -1,6 +1,6 @@
 use core::result::Result::Ok;
 
-use kernel::{bindings::sock_register, Result, net};
+use kernel::{bindings::sock_register, Result};
 mod constant;
 mod ethernet;
 mod input;

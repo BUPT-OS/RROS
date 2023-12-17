@@ -19,14 +19,17 @@ extern "C" {
     fn rust_helper_ktime_to_timespec64(kt: bindings::ktime_t) -> bindings::timespec64;
 }
 
+/// A wrapper for [`bindings::timespec64`].
 #[derive(Default, Copy, Clone)]
 #[repr(transparent)]
 pub struct Timespec64(pub bindings::timespec64);
 
+/// The function `timespec64_to_ktime` will call kernel's `ktime_set` to get a `KtimeT` from `Timespec64`.
 pub fn timespec64_to_ktime(u_ts: Timespec64) -> KtimeT {
     unsafe { rust_helper_timespec64_to_ktime(u_ts.0) }
 }
 
+/// The function `KtimeT` will call kernel's `ktime_to_timespec64` macro definition to get a `Timespec64` from `KtimeT`.
 pub fn ktime_to_timespec64(kt: KtimeT) -> Timespec64 {
     unsafe { Timespec64(rust_helper_ktime_to_timespec64(kt)) }
 }

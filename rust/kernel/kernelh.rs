@@ -25,7 +25,9 @@ pub fn _kasprintf_2(gfp: bindings::gfp_t, fmt: *const c_char, arg1: *const c_cha
 
 /// A wrapper to store thread's exit code.
 pub enum ThreadExitCode {
+    /// Represent a thread exit successfully.
     Successfully,
+    /// Represent a thread exit with a error.
     WithError(Error),
 }
 

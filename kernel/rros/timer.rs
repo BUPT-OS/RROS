@@ -432,8 +432,6 @@ pub fn rros_percpu_timers(clock: &RrosClock, cpu: i32) -> *mut RrosTimerbase {
     }
 }
 
-extern "C" {}
-
 //测试通过
 #[cfg(CONFIG_SMP)]
 fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {

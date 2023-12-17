@@ -3,7 +3,6 @@
 //! fs
 //!
 //! C header: [`include/linux/fs.h`](../../../../include/linux/fs.h)
-//!
 
 use crate::{
     bindings, c_types,
@@ -15,7 +14,9 @@ use crate::{
 pub struct Filename(*mut bindings::filename);
 
 impl Filename {
-    /// `getname_kernel`: A method that takes a reference to a `CStr` and returns a `Result` containing a new `Filename`. It calls the `bindings::getname_kernel` function with the `CStr` as argument. If the function returns a null pointer, it returns `Err(Error::EINVAL)`. Otherwise, it returns `Ok(Filename(res))`.
+    /// `getname_kernel`: A method that takes a reference to a `CStr` and returns a `Result` containing a new `Filename`.
+    /// It calls the `bindings::getname_kernel` function with the `CStr` as argument.
+    /// If the function returns a null pointer, it returns `Err(Error::EINVAL)`. Otherwise, it returns `Ok(Filename(res))`.
     pub fn getname_kernel(arg1: &'static CStr) -> Result<Self> {
         let res;
         unsafe {
@@ -27,6 +28,9 @@ impl Filename {
         Ok(Self(res))
     }
 
+    /// `get_name`: A method that takes a reference to a `CStr` and returns a `Result` containing a new `Filename`.
+    /// It calls the `bindings::getname` function with the `CStr` as argument.
+    /// If the function returns a null pointer, it returns `Err(Error::EINVAL)`. Otherwise, It returns `Ok(Filename(res))`.
     pub fn getname(arg1: &'static CStr) -> Result<Self> {
         let res;
         unsafe {
@@ -63,6 +67,9 @@ pub fn hashlen_string(salt: *const c_types::c_char, filename: *mut Filename) -> 
     }
 }
 
+/// The `kernel_write` function is a wrapper around the `bindings::kernel_write` function from the kernel bindings.
+/// It takes `arg1` and `arg2` as a destination and a source pointer respectively while `arg3` is the data length.
+/// It takes `arg4` as the offset length of the destination pointer.
 pub fn kernel_write(
     arg1: *mut bindings::file,
     arg2: *const c_types::c_void,
@@ -72,6 +79,9 @@ pub fn kernel_write(
     unsafe { bindings::kernel_write(arg1, arg2, arg3, arg4) }
 }
 
+/// The `kernel_read` function is a wrapper around the `bindings::kernel_read` function from the kernel bindings.
+/// It takes `arg1` as a source file and takes `arg2` as a buffer to save the read result.
+/// It takes `arg3` as a length to read. It takes `arg4` as a offset of the source pointer.
 pub fn kernel_read(
     arg1: *mut bindings::file,
     arg2: *mut c_types::c_void,
@@ -81,6 +91,9 @@ pub fn kernel_read(
     unsafe { bindings::kernel_read(arg1, arg2, arg3, arg4) }
 }
 
+/// The `memcpy` function is a wrapper around the `bindings::memcpy` function from the kernel bindings.
+/// It takes `arg1` as a destination pointer while `arg2` is the source pointer.
+/// The `arg3` is the length of memory.
 pub fn memcpy(
     arg1: *mut c_types::c_void,
     arg2: *const c_types::c_void,

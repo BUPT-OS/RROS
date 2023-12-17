@@ -1,7 +1,7 @@
 use core::mem::size_of;
 
 use kernel::{
-    bindings, c_types,
+    bindings,
     c_types::c_void,
     capability,
     io_buffer::IoBufferWriter,
@@ -13,7 +13,6 @@ use kernel::{
     uapi::time_types::{KernelOldTimespec, KernelTimespec},
     user_ptr::UserSlicePtr,
     ptrace::{IrqStage, PtRegs},
-    irqstage,
 };
 
 use crate::{
@@ -315,20 +314,18 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
     }
 
     let curr = rros_current();
-    unsafe {
-        let res1 = 
-            !(capability::KernelCapStruct::cap_raised(capability::KernelCapStruct::current_cap(), bindings::CAP_SYS_NICE as i32) != 0);
-        pr_debug!("curr is {:p} res is {}", curr, res1);
-        if curr == 0 as *mut SpinLock<RrosThread> || res1 {
-            // [TODO: lack RROS_DEBUG]
-            pr_err!("ERROR: syscall denied");
-            // if (RROS_DEBUG(CORE))
-            // 	printk(RROS_WARNING
-            // 		"syscall <oob_%s> denied to %s[%d]\n",
-            // 		rros_sysnames[nr], current->comm, task_pid_nr(current));
-            set_oob_error(regs, -(bindings::EPERM as i32));
-            return SYSCALL_STOP;
-        }
+    let res1 = 
+        !(capability::KernelCapStruct::cap_raised(capability::KernelCapStruct::current_cap(), bindings::CAP_SYS_NICE as i32) != 0);
+    pr_debug!("curr is {:p} res is {}", curr, res1);
+    if curr == 0 as *mut SpinLock<RrosThread> || res1 {
+        // [TODO: lack RROS_DEBUG]
+        pr_err!("ERROR: syscall denied");
+        // if (RROS_DEBUG(CORE))
+        // 	printk(RROS_WARNING
+        // 		"syscall <oob_%s> denied to %s[%d]\n",
+        // 		rros_sysnames[nr], current->comm, task_pid_nr(current));
+        set_oob_error(regs, -(bindings::EPERM as i32));
+        return SYSCALL_STOP;
     }
 
     /*
@@ -336,10 +333,8 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
      * over to handle_inband_syscall() where the caller would be
      * switched to OOB context prior to handling the request.
      */
-    unsafe {
-        if stage.ptr != IrqStage::get_oob_state().ptr {
-            return SYSCALL_PROPAGATE;
-        }
+    if stage.ptr != IrqStage::get_oob_state().ptr {
+        return SYSCALL_PROPAGATE;
     }
 
     // [TODO: lack the trace system]
@@ -376,7 +371,7 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
     return SYSCALL_STOP;
 }
 
-fn do_inband_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
+fn do_inband_syscall(_stage: IrqStage, regs: PtRegs) -> i32 {
     let curr = rros_current();
     // struct RrosThread *curr = rros_current(); /* Always valid. */
     let p;

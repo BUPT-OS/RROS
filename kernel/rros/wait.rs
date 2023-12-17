@@ -7,20 +7,24 @@ use crate::{
     },
     timeout::{self, timeout_nonblock, RROS_INFINITE},
     uapi::rros::thread::RROS_HMDIAG_SYSDEMOTE,
-    types::list_empty,
 };
-use alloc::{rc::Rc, sync::Arc, boxed::Box};
-use core::ops::FnMut;
-use core::{clone::Clone, ptr::NonNull, sync::atomic::AtomicBool, cell::RefCell, ops::FnOnce};
+
+use alloc::sync::Arc;
+
+use core::{
+    ops::FnMut,
+    clone::Clone,
+    ptr::NonNull,
+    sync::atomic::AtomicBool,
+};
 
 use kernel::{
     bindings,
     ktime::KtimeT,
     prelude::*,
     Result,
-    str::CStr,
     sync::{SpinLock, Lock, HardSpinlock},
-    linked_list::{List, GetLinks},
+    linked_list::List,
     delay,
 };
 
@@ -89,7 +93,7 @@ impl RrosWaitQueue {
             // locked_thread
             // rewrap
             let waiter = unsafe { RrosThreadWithLock::transmute_to_original(waiter) };
-            unsafe { rros_wakeup_thread(waiter, T_PEND, reason); }
+            rros_wakeup_thread(waiter, T_PEND, reason);
         }
     }
 

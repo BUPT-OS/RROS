@@ -1,9 +1,18 @@
-use crate::{clock::*, fifo::*, sched::*, thread::*, timeout::*, timer::*};
-use core::mem::size_of;
-use core::ptr::NonNull;
+use core::{
+    mem::size_of,
+    ptr::NonNull,
+};
 use kernel::{
     ktime,
-    bindings, c_types, prelude::*, ktime::{Timespec64, ktime_to_timespec64, timespec64_to_ktime},str::CStr, c_str,double_linked_list::*,sync::{SpinLock, Lock, Guard},memory_rros::*, spinlock_init, types::Atomic,};
+    c_types,
+    prelude::*,
+    ktime::{Timespec64, ktime_to_timespec64, timespec64_to_ktime},
+    c_str, spinlock_init,
+    double_linked_list::*,
+    sync::{SpinLock, Lock},
+    memory_rros::*,
+    types::Atomic,
+};
 use crate::{
     sched::*,
     clock::*,
@@ -207,7 +216,7 @@ pub fn tp_init(rq: *mut rros_rq) -> Result<usize> {
             RROS_TIMER_IGRAVITY,
         );
         // rros_set_timer_name(&tp->tf_timer, "[tp-tick]");
-        pr_debug!("tp_init ok");
+        pr_info!("tp_init ok");
         Ok(0)
     }
 }
@@ -304,7 +313,7 @@ pub fn tp_chkparam(
         //     return Err(kernel::Error::EINVAL);
         // }
     }
-    pr_debug!("tp_chkparam success");
+    pr_info!("tp_chkparam success");
     Ok(0)
 }
 
@@ -331,7 +340,7 @@ pub fn tp_declare(
             .unwrap()
             .add_tail(tp_link.clone().as_mut().unwrap().value.clone());
     }
-    pr_debug!("tp_declare success!");
+    pr_info!("tp_declare success!");
     Ok(0)
 }
 

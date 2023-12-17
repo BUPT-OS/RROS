@@ -82,19 +82,23 @@ impl IoBufferReader for IovIter {
     }
 }
 
+/// A wrapper for [`iovec`].
 #[derive(Default)]
 #[repr(transparent)]
 pub struct Iovec(pub(crate) UnsafeCell<bindings::iovec>);
 
 impl Iovec {
+    /// Get a mutable reference of self.
     pub fn get_mut(&mut self) -> &mut bindings::iovec {
         self.0.get_mut()
     }
 
+    /// Returns iovec's iov_len.
     pub fn get_iov_len(&self) -> u64 {
         unsafe { (*(self.0.get())).iov_len }
     }
 
+    /// Returns iovec's iov_base.
     pub fn get_iov_base(&self) -> *mut c_types::c_void {
         unsafe { (*(self.0.get())).iov_base }
     }

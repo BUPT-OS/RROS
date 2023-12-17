@@ -1,9 +1,12 @@
-use kernel::bindings;
-use kernel::endian::be16;
-
-use crate::net::device::NetDevice;
-use crate::net::output::rros_net_transmit;
-use crate::net::skb::RrosSkBuff;
+use kernel::{
+    bindings,
+    endian::be16,
+};
+use crate::net::{
+    device::NetDevice,
+    output::rros_net_transmit,
+    skb::RrosSkBuff,
+};
 
 pub fn rros_net_ether_transmit(dev: &mut NetDevice, skb: &mut RrosSkBuff) -> i32 {
     extern "C" {

@@ -4,34 +4,35 @@
 
 #![allow(warnings, unused)]
 #![feature(stmt_expr_attributes)]
-use crate::factory;
-use crate::list::*;
-use crate::sched::{rros_cpu_rq, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY};
-use crate::thread::T_ROOT;
-use crate::tick;
-use crate::timeout::RROS_INFINITE;
 use crate::{
-    factory::CloneData, factory::RrosElement, factory::RrosFactory, factory::RustFile, lock::*,
+    factory::{CloneData, RrosElement, RrosFactory, RustFile, RROS_CLONE_PUBLIC},
+    factory,
+    lock::*,
     tick::*, timer::*, RROS_OOB_CPUS,
+    list::*,
+    sched::{rros_cpu_rq, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
+    thread::T_ROOT,
+    tick,
+    timeout::RROS_INFINITE,
 };
 use alloc::rc::Rc;
-use core::borrow::{Borrow, BorrowMut};
-use core::cell::RefCell;
-use core::cell::UnsafeCell;
-use core::clone::Clone;
-use core::ops::Deref;
-use core::ops::DerefMut;
-use core::{mem::align_of, mem::size_of, todo};
-use factory::RROS_CLONE_PUBLIC;
-use kernel::device::DeviceType;
-use kernel::file::File;
-use kernel::io_buffer::IoBufferWriter;
+use core::{
+    borrow::{Borrow, BorrowMut},
+    cell::{RefCell, UnsafeCell},
+    clone::Clone,
+    ops::{DerefMut, Deref},
+    mem::{align_of, size_of},
+    todo,
+};
 use kernel::{
     bindings, c_types, cpumask, double_linked_list::*, file_operations::{FileOperations, FileOpener}, ktime::*,
     percpu, prelude::*, premmpt, spinlock_init, str::CStr, sync::Lock, sync::SpinLock, sysfs,
     timekeeping,
     clockchips,
     uidgid::{KgidT, KuidT},
+    file::File,
+    io_buffer::IoBufferWriter,
+    device::DeviceType,
 };
 
 static mut CLOCKLIST_LOCK: SpinLock<i32> = unsafe { SpinLock::new(1) };
@@ -662,7 +663,7 @@ impl clockchips::CoreTick for RrosCoreTick {
         // pr_debug!("in rros_core_tick");
         let this_rq = this_rros_rq();
         //	if (RROS_WARN_ON_ONCE(CORE, !is_rros_cpu(rros_rq_cpu(this_rq))))
-        // pr_debug!("in rros_core_tick");
+        // pr_info!("in rros_core_tick");
         unsafe {
             do_clock_tick(&mut RROS_MONO_CLOCK, rros_this_cpu_timers(&RROS_MONO_CLOCK));
 

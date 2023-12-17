@@ -1,7 +1,20 @@
 use core::ops::Deref;
-
-use crate::{DECLARE_BITMAP, uapi::rros, net::{packet::rros_net_packet_deliver, skb::RrosSkBuff, input::rros_net_receive}};
-use kernel::{bindings, endian::be16, c_types::c_void, prelude::*, bitmap, if_vlan::VlanEthhdr};
+use crate::{
+    DECLARE_BITMAP,
+    net::{
+        packet::rros_net_packet_deliver,
+        skb::RrosSkBuff,
+        input::rros_net_receive
+    },
+};
+use kernel::{
+    bindings,
+    endian::be16,
+    c_types::c_void,
+    prelude::*,
+    bitmap,
+    if_vlan::VlanEthhdr
+};
 
 fn pick(skb: RrosSkBuff) -> bool {
     rros_net_receive(skb, net_ether_ingress);
@@ -17,12 +30,12 @@ fn untag(mut skb: RrosSkBuff, ehdr: &mut VlanEthhdr, mac_hdr: *mut u8) -> bool {
             vlan_tci: u16,
         );
     }
-    skb.protocol = ehdr.get_mut().h_vlan_encapsulated_proto;
+    skb.protocol = ehdr.get().unwrap().h_vlan_encapsulated_proto;
     unsafe {
         rust_helper__vlan_hwaccel_put_tag(
             skb.0.as_ptr(),
-            be16::new(ehdr.get_mut().h_vlan_proto),
-            u16::from(be16::new(ehdr.get_mut().h_vlan_TCI)),
+            be16::new(ehdr.get().unwrap().h_vlan_proto),
+            u16::from(be16::new(ehdr.get().unwrap().h_vlan_TCI)),
         )
     };
     kernel::skbuff::skb_pull(skb.0.as_ptr(), bindings::VLAN_HLEN as u32);
@@ -73,11 +86,11 @@ pub fn rros_net_ether_accept(skb: RrosSkBuff) -> bool {
         pr_debug!("(*ehdr).h_vlan_encapsulated_proto {} ", unsafe {
             (*ehdr).get_mut().h_vlan_encapsulated_proto
         });
-        if be16::new(unsafe { (*ehdr).get_mut().h_vlan_encapsulated_proto })
+        if be16::new(unsafe { (*ehdr).get().unwrap().h_vlan_encapsulated_proto })
             == be16::from(bindings::ETH_P_IP as u16)
         {
             pr_debug!("handle the real packege\n");
-            let vlan_tci = unsafe { u16::from(be16::new((*ehdr).get_mut().h_vlan_TCI)) };
+            let vlan_tci = unsafe { u16::from(be16::new((*ehdr).get().unwrap().h_vlan_TCI)) };
             pr_debug!("h_vlan_TCI {}\n", vlan_tci);
             if unsafe {
                 rust_helper_test_bit(
@@ -166,6 +179,3 @@ pub fn rros_show_vlans() {
         pr_info!("oob net port: {:?}", buffer);
     }
 }
-// fn rros_net_show_vlans() //
-
-// fn rros_net_show_vlans() // 

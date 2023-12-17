@@ -1,7 +1,4 @@
 use kernel::bindings;
-use kernel::c_types::c_ulong;
-use kernel::sync::Mutex;
-use kernel::{container_of, init_static_sync, Opaque};
 
 /// Unofficial Wrap for some binding struct.
 /// Now are mostly used in net module.

@@ -12,7 +12,7 @@ use kernel::{
     mm::{remap_pfn_range, PAGE_SHARED},
     prelude::*,
     str::CStr,
-    sync::{Mutex, SpinLock},
+    sync::SpinLock,
 };
 
 pub const CONFIG_RROS_NR_CONTROL: usize = 0;

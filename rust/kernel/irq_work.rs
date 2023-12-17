@@ -27,6 +27,7 @@ impl IrqWork {
         Self(irq_work)
     }
 
+    /// Constructs a new struct from a pointer to `bindings::irq_work`.
     pub fn from_ptr<'a>(work: *mut bindings::irq_work) -> &'a mut IrqWork {
         unsafe { &mut *(work as *mut IrqWork) }
     }

@@ -116,7 +116,8 @@ struct MemTestxy {
     z: i32,
 }
 
-//测试申请到的内存直接转换为结构体指针：结论是可以直接使用
+// The memory requested by the test is directly converted into a structure pointer:
+// the conclusion is that it can be used directly.
 #[allow(dead_code)]
 pub fn mem_test2() -> Result<usize> {
     let vmalloc_res = vmalloc::c_vmalloc(1024 as u64);
@@ -144,7 +145,6 @@ struct Pageinfo {
     size: u32,
 }
 
-//测试完成：
 #[allow(dead_code)]
 fn test_rbtree() -> Result<usize> {
     pr_debug!("~~~test_rbtree begin~~~");
@@ -170,7 +170,7 @@ fn test_rbtree() -> Result<usize> {
     root.insert(node1);
     root.insert(node2);
     root.insert(node3);
-    //遍历红黑树方式：
+    // Traverse a red-black tree:
     for item in root.iter() {
         pr_debug!("item.0 is {}", item.0);
         pr_debug!("item.1.size is {}", item.1.size);
@@ -179,13 +179,11 @@ fn test_rbtree() -> Result<usize> {
     Ok(0)
 }
 
-//测试初始化系统堆
 #[allow(dead_code)]
 fn test_init_system_heap() {
     let _ret = init_system_heap();
 }
 
-//测试系统堆插入节点——测试通过
 #[allow(dead_code)]
 fn test_insert_system_heap() -> Result<usize> {
     pr_debug!("~~~test_insert_system_heap begin~~~");
@@ -215,11 +213,9 @@ fn test_insert_system_heap() -> Result<usize> {
     Ok(0)
 }
 
-//测试小内存的分配与回收
 #[allow(dead_code)]
 fn test_small_chunk() {}
 
-//多次分配回收
 #[allow(dead_code)]
 fn test_chunk() {
     pr_debug!("~~~test_chunk: begin~~~");
@@ -229,12 +225,11 @@ fn test_chunk() {
     pr_debug!("~~~test_chunk: end~~~");
 }
 
-//测试分配chunk
 #[allow(dead_code)]
 fn test_alloc_chunk() {
     pr_debug!("~~~test_alloc_chunk begin~~~");
     unsafe {
-        //查看当前RROS_SYSTEM_HEAP size树的根
+        // View the root of the current RROS_SYSTEM_HEAP size tree.
         let rb_node = RROS_SYSTEM_HEAP.size_tree.clone().unwrap().rb_node;
         let mut p = container_of!(rb_node, RrosHeapRange, size_node);
         let raw_size = (*p).size;
@@ -265,7 +260,7 @@ fn test_alloc_chunk() {
             "test_alloc_chunk: raw_size - new_size = {}",
             raw_size - new_size
         );
-        //测试回收
+        // Test recycle.
         pr_debug!("~~~test_alloc_chunk: test free begin~~~");
         RROS_SYSTEM_HEAP.rros_free_chunk(addr);
         p = container_of!(rb_node, RrosHeapRange, size_node);
@@ -276,7 +271,6 @@ fn test_alloc_chunk() {
     pr_debug!("~~~test_alloc_chunk end~~~");
 }
 
-//测试box的自定义分配器
 #[allow(dead_code)]
 fn test_box_allocator() {
     pr_debug!("test_box_allocator: begin");

@@ -190,7 +190,6 @@ impl XbufRing {
     }
 }
 
-// oob_write -> read
 pub struct XbufInbound {
     pub i_event: waitqueue::WaitQueueHead,
     pub o_event: RrosFlag,
@@ -211,7 +210,6 @@ impl XbufInbound {
     }
 }
 
-// write -> oob_read
 pub struct XbufOutbound {
     pub i_event: RrosWaitQueue,
     pub o_event: waitqueue::WaitQueueHead,
@@ -699,34 +697,6 @@ pub fn xbuf_ioctl(_filp: &File, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
 }
 
-// static __poll_t xbuf_poll(struct file *filp, poll_table *wait)
-// {
-// 	struct rros_xbuf *xbuf = element_of(filp, struct rros_xbuf);
-// 	struct xbuf_outbound *obnd = &xbuf->obnd;
-// 	struct xbuf_inbound *ibnd = &xbuf->ibnd;
-// 	unsigned long flags;
-// 	__poll_t ready = 0;
-
-// 	poll_wait(filp, &ibnd->i_event, wait);
-// 	poll_wait(filp, &obnd->o_event, wait);
-
-// 	flags = ibnd->ring.lock(&ibnd->ring);
-
-// 	if (ibnd->ring.fillsz > 0)
-// 		ready |= POLLIN|POLLRDNORM;
-
-// 	ibnd->ring.unlock(&ibnd->ring, flags);
-
-// 	flags = obnd->ring.lock(&obnd->ring);
-
-// 	if (obnd->ring.fillsz < obnd->ring.bufsz)
-// 		ready |= POLLOUT|POLLWRNORM;
-
-// 	obnd->ring.unlock(&obnd->ring, flags);
-
-// 	return ready;
-// }
-
 #[allow(dead_code)]
 pub fn xbuf_oob_ioctl(_filp: &File, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
@@ -769,7 +739,6 @@ pub fn resume_inband_writer(work: *mut IrqWork) {
     }
 }
 
-// obnd.i_event locked, hard irqs off
 pub fn outbound_signal_input(ring: &XbufRing, sigpoll: bool) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
 
@@ -838,43 +807,6 @@ pub fn xbuf_oob_write<T: IoBufferReader>(filp: &File, data: &mut T) -> i32 {
         )
     }
 }
-
-// static __poll_t xbuf_oob_poll(struct file *filp, struct oob_poll_wait *wait)
-// {
-// 	struct rros_xbuf *xbuf = element_of(filp, struct rros_xbuf);
-// 	struct xbuf_outbound *obnd = &xbuf->obnd;
-// 	struct xbuf_inbound *ibnd = &xbuf->ibnd;
-// 	unsigned long flags;
-// 	__poll_t ready = 0;
-
-// 	rros_poll_watch(&xbuf->poll_head, wait, NULL);
-
-// 	flags = obnd->ring.lock(&obnd->ring);
-
-// 	if (obnd->ring.fillsz > 0)
-// 		ready |= POLLIN|POLLRDNORM;
-
-// 	obnd->ring.unlock(&obnd->ring, flags);
-
-// 	flags = ibnd->ring.lock(&ibnd->ring);
-
-// 	if (ibnd->ring.fillsz < ibnd->ring.bufsz)
-// 		ready |= POLLOUT|POLLWRNORM;
-
-// 	ibnd->ring.unlock(&ibnd->ring, flags);
-
-// 	return ready;
-// }
-
-// static int xbuf_release(struct inode *inode, struct file *filp)
-// {
-// 	struct rros_xbuf *xbuf = element_of(filp, struct rros_xbuf);
-
-// 	rros_flush_wait(&xbuf->obnd.i_event, T_RMID);
-// 	rros_flush_flag(&xbuf->ibnd.o_event, T_RMID);
-
-// 	return rros_release_element(inode, filp);
-// }
 
 #[allow(dead_code)]
 pub fn rros_get_xbuf(rfd: u32, rfilpp: &mut *mut RrosFile) -> Option<NonNull<RrosXbuf>> {

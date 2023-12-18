@@ -41,7 +41,7 @@ unsafe extern "C" fn do_irq_work(irq_work: *mut IrqWork) {
     } {
         pr_debug!("uncompleted rros_put_element()");
     }
-    // TODO: 没有实现rros_put_element
+    // TODO: rros_put_element is not implemented
     // if unsafe{rust_helper_queue_work((*work).wq,&mut (*work).wq_work)} && unsafe{(*)}
     // if (!queue_work(work->wq, &work->wq_work) && work->element)
     // rros_put_element(work->element);
@@ -89,7 +89,7 @@ impl RrosWork {
     }
     pub fn call_inband_from(&mut self, wq: *mut bindings::workqueue_struct) {
         self.wq = wq;
-        // TODO: 没有实现rros_put_element
+        // TODO: rros_put_element is not implemented
         // if (work->element)
         if self.element.is_some() {
             pr_debug!("uncompleted rros_get_element()");

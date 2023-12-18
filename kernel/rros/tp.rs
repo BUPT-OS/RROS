@@ -48,7 +48,7 @@ pub static mut RROS_SCHED_TP: RrosSchedClass = RrosSchedClass {
     flag: 4,
 };
 
-pub const CONFIG_RROS_SCHED_TP_NR_PART: i32 = 5; // 先默认设置为5
+pub const CONFIG_RROS_SCHED_TP_NR_PART: i32 = 5; // Set to 5 by default temporarily.
 pub const RROS_TP_MAX_PRIO: i32 = RROS_FIFO_MAX_PRIO;
 pub const RROS_TP_MIN_PRIO: i32 = RROS_FIFO_MIN_PRIO;
 #[allow(dead_code)]
@@ -145,7 +145,7 @@ pub fn tp_schedule_next(tp: &mut RrosSchedTp) -> Result<usize> {
 
 pub fn tp_tick_handler(timer: *mut RrosTimer) {
     unsafe {
-        // 这里的container_of有问题
+        // There is a problem with `container_of` here.
         let rq = kernel::container_of!(timer, rros_rq, tp.tf_timer) as *mut rros_rq;
         let mut tp = &mut (*rq).tp;
 
@@ -372,7 +372,7 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
             let rq_next = (*thread.locked_data().get()).rq_next.clone();
             head.add_head(rq_next.clone().as_mut().unwrap().as_mut().value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in head.len()..=1 {
                 let thread_cprio = (*thread.locked_data().get()).cprio;
                 let cprio_in_list = (*head
@@ -382,7 +382,7 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
                     .clone()
                     .locked_data()
                     .get())
-                .cprio;
+                    .cprio;
                 if thread_cprio <= cprio_in_list {
                     flag = 0;
                     let rq_next = (*thread.locked_data().get()).rq_next.clone();
@@ -424,7 +424,7 @@ pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
             let rq_next = (*thread.locked_data().get()).rq_next.clone();
             head.add_head(rq_next.clone().as_mut().unwrap().as_mut().value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in head.len()..=1 {
                 let thread_cprio = (*thread.locked_data().get()).cprio;
                 let cprio_in_list = (*head
@@ -434,7 +434,7 @@ pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
                     .clone()
                     .locked_data()
                     .get())
-                .cprio;
+                    .cprio;
                 if thread_cprio < cprio_in_list {
                     flag = 0;
                     let rq_next = (*thread.locked_data().get()).rq_next.clone();

@@ -11,8 +11,6 @@
 //! This file is the entry point of the rros kernel module.
 //! Importing necessary features and modules
 
-// use alloc::vec;
-// use alloc::vec;
 use kernel::{
     bindings, c_types, chrdev, cpumask, dovetail, irqstage, percpu, prelude::*, str::CStr, task,
 };
@@ -343,7 +341,7 @@ impl KernelModule for Rros {
         }
 
         let cpu_online_mask = unsafe { cpumask::read_cpu_online_mask() };
-        //size_of 为0，align_of为4，alloc报错
+        // When size_of is 0, align_of is 4, alloc reports an error.
         // unsafe {RROS_MACHINE_CPUDATA =
         //     percpu::alloc_per_cpu(size_of::<RrosMachineCpuData>() as usize,
         //                   align_of::<RrosMachineCpuData>() as usize) as *mut RrosMachineCpuData};

@@ -100,7 +100,6 @@ impl RrosMonitor {
     }
 }
 
-// #[derive(Copy, Clone)]
 pub struct RrosMonitorStateItemGate {
     #[allow(dead_code)]
     owner: AtomicUsize,
@@ -112,7 +111,6 @@ pub struct RrosMonitorStateItemGate {
     nesting: u32,
 }
 
-// #[derive(Copy, Clone)]
 pub struct RrosMonitorStateItemEvent {
     #[allow(dead_code)]
     value: AtomicUsize,
@@ -126,6 +124,7 @@ pub struct RrosMonitorStateItemEvent {
 //     gate: RrosMonitorState_item_gate,
 //     event: RrosMonitorState_item_event,
 // }
+
 #[allow(dead_code)]
 pub enum RrosMonitorStateItem {
     Gate(RrosMonitorStateItemGate),
@@ -187,7 +186,7 @@ pub const CLOCK_MONOTONIC: u32 = 1;
 pub const CLOCK_REALTIME: u32 = 0;
 
 #[allow(dead_code)]
-const CONFIG_RROS_MONITOR: usize = 0; //未知
+const CONFIG_RROS_MONITOR: usize = 0; // Unknown.
 
 #[allow(dead_code)]
 pub fn monitor_factory_build(

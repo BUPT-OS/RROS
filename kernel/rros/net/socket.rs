@@ -185,7 +185,7 @@ impl RrosSocket {
             return 0;
         }
         let arg = unsafe { NonNull::new_unchecked(skb) };
-        // TODO: 绕开mutable borrow检查
+        // TODO: Bypass mutable borrow check
         let wmem_wait = unsafe { &mut *(&self.wmem_wait as *const _ as *mut RrosWaitQueue) };
         return wmem_wait.wait_timeout(timeout, tmode, || self.charge_socket_wmem(arg));
     }
@@ -307,7 +307,7 @@ impl CreateSocket for CreateRrosSocket {
 // 	 * attached to the out-of-band core in sock_oob_attach().
 // 	 */
 //     unsafe{(*sock).sk_protocol = protocol};
-//     // sk_refcnt_debug_inc(sk); TODO: 用于Debug的东西
+//     // sk_refcnt_debug_inc(sk); TODO: Stuff for Debug
 //     unsafe{(*sock).sk_destruct = &destroy_rros_socket as ::core::option::Option<unsafe extern "C" fn(sk: *mut sock)>};
 
 //     // unsafe{local_bh_disable();}
@@ -600,10 +600,10 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 // 	// bindings::local_bh_disable();
 // 	// unsafe{bindings::sock_prot_inuse_add(rust_helper_sock_net(sk),sk_prot!(sk), -1 as c_types::c_int)};
 // 	// bindings::local_bh_enable();
-//     // sk_refcnt_debug_dec(sk); // TODO: 没有实现，rros中用于debug
+//     // sk_refcnt_debug_dec(sk); // TODO: Not implemented, used for debugging in rros.
 // }
 
-// // todo: 字符串用什么格式？
+// // TODO: What format is used for strings?
 // #[no_mangle]
 // fn sock_oob_read(flip:File, buf:*mut u8, count:usize, pos:off_t) -> SsizeT
 // {
@@ -621,7 +621,7 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 //     }
 //     let rsk = rsk.unwrap();
 //     let proto = rsk.proto.as_mut().unwrap();
-//     // TODO: 接口
+//     // TODO: Interface
 //     proto.oob_receive(rsk,proto,core::ptr::null(),&iov as *const bindings::iovec,1 as c_types::c_int)
 // }
 
@@ -641,7 +641,7 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 //         iov.iov_len = count as u64;
 //     }
 //     let proto = rsk.proto.as_mut();
-//     // TODO: oob_send接口
+//     // TODO: Interface `oob_send`.
 //     proto.oob_send()
 // }
 
@@ -677,7 +677,7 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 
 // #[inline]
 // fn get_domain_hash(af_domain : i32) -> u32{
-//     /// 计算协议哈希
+//     /// Calculate protocol hash.
 //     let hsrc : u32 = af_domain as u32;
 //     extern "C"{
 //         fn rust_helper_jhash2(k :*const u32, length:u32, initval:u32) -> u32;
@@ -696,7 +696,7 @@ fn find_oob_proto(
     _type_: i32,
     _protocol: be16,
 ) -> Option<&'static impl RrosNetProto> {
-    // TODO: 支持更多协议
+    // TODO: Support more protocols.
     // let hkey = get_domain_hash(domain);
     // let gurad = domain_hash.lock();
     // drop(gurad);

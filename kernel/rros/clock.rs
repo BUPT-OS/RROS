@@ -1,7 +1,3 @@
-// #![feature(allocator_api)]
-// #![allow(warnings, unused)]
-// #![feature(stmt_expr_attributes)]
-
 #![allow(warnings, unused)]
 #![feature(stmt_expr_attributes)]
 use crate::{
@@ -15,7 +11,9 @@ use crate::{
     tick,
     timeout::RROS_INFINITE,
 };
+
 use alloc::rc::Rc;
+
 use core::{
     borrow::{Borrow, BorrowMut},
     cell::{RefCell, UnsafeCell},
@@ -24,6 +22,7 @@ use core::{
     mem::{align_of, size_of},
     todo,
 };
+
 use kernel::{
     bindings, c_types, cpumask, double_linked_list::*, file_operations::{FileOperations, FileOpener}, ktime::*,
     percpu, prelude::*, premmpt, spinlock_init, str::CStr, sync::Lock, sync::SpinLock, sysfs,
@@ -37,11 +36,12 @@ use kernel::{
 
 static mut CLOCKLIST_LOCK: SpinLock<i32> = unsafe { SpinLock::new(1) };
 
-const CONFIG_RROS_LATENCY_USER: KtimeT = 0; //这里先定义为常量，后面应该从/dev/rros中读取
+// Define it as a constant here first, and then read it from /dev/rros.
+const CONFIG_RROS_LATENCY_USER: KtimeT = 0;
 const CONFIG_RROS_LATENCY_KERNEL: KtimeT = 0;
 const CONFIG_RROS_LATENCY_IRQ: KtimeT = 0;
 
-// there should be 8
+// There should be 8.
 pub const CONFIG_RROS_NR_CLOCKS: usize = 16;
 
 #[derive(Default)]
@@ -86,11 +86,10 @@ impl RrosClockGravity {
     }
 }
 
-//定义时钟操作
 pub struct RrosClockOps {
     read: Option<fn(&RrosClock) -> KtimeT>,
     readcycles: Option<fn(&RrosClock) -> u64>,
-    set: Option<fn(&mut RrosClock, KtimeT) -> i32>, //int
+    set: Option<fn(&mut RrosClock, KtimeT) -> i32>,
     programlocalshot: Option<fn(&RrosClock)>,
     programremoteshot: Option<fn(&RrosClock, *mut RrosRq)>,
     setgravity: Option<fn(&mut RrosClock, RrosClockGravity)>,
@@ -102,7 +101,7 @@ impl RrosClockOps {
     pub fn new(
         read: Option<fn(&RrosClock) -> KtimeT>,
         readcycles: Option<fn(&RrosClock) -> u64>,
-        set: Option<fn(&mut RrosClock, KtimeT) -> i32>, //int
+        set: Option<fn(&mut RrosClock, KtimeT) -> i32>,
         programlocalshot: Option<fn(&RrosClock)>,
         programremoteshot: Option<fn(&RrosClock, *mut RrosRq)>,
         setgravity: Option<fn(&mut RrosClock, RrosClockGravity)>,
@@ -136,9 +135,8 @@ pub struct RrosClock {
     dispose: Option<fn(&mut RrosClock)>,
     #[cfg(CONFIG_SMP)]
     pub affinity: Option<cpumask::CpumaskT>,
-} //____cacheline_aligned
+}
 
-//RrosClock主方法
 impl RrosClock {
     pub fn new(
         resolution: KtimeT,
@@ -171,14 +169,14 @@ impl RrosClock {
         }
     }
     pub fn read(&self) -> KtimeT {
-        //错误处理
+        // Error handling.
         if self.ops.read.is_some() {
             return self.ops.read.unwrap()(&self);
         }
         return 0;
     }
     pub fn read_cycles(&self) -> u64 {
-        //错误处理
+        // Error handling.
         if self.ops.readcycles.is_some() {
             return self.ops.readcycles.unwrap()(&self);
         }
@@ -188,7 +186,8 @@ impl RrosClock {
         if self.ops.set.is_some() {
             self.ops.set.unwrap()(self, time);
         } else {
-            return Err(kernel::Error::EFAULT); //阻止函数为null情况的执行
+            // Prevent the execution of the function if it is null.
+            return Err(kernel::Error::EFAULT);
         }
         Ok(0)
     }
@@ -218,7 +217,7 @@ impl RrosClock {
         }
     }
     pub fn get_timerdata_addr(&self) -> *mut RrosTimerbase {
-        //错误处理
+        // Error handling.
         return self.timerdata as *mut RrosTimerbase;
     }
 
@@ -243,7 +242,6 @@ impl RrosClock {
     }
 }
 
-//测试通过
 pub fn adjust_timer(
     clock: &RrosClock,
     timer: Arc<SpinLock<RrosTimer>>,
@@ -295,12 +293,11 @@ pub fn adjust_timer(
     rros_enqueue_timer(timer.clone(), tq);
 }
 
-//简单测过
-//调整当前clock各个CPU tmb中List中的所有timer
 pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) {
-    //raw_spin_lock_irqsave(&tmb->lock, flags);
+    // Adjust all timers in the List in each CPU tmb of the current clock.
+    // raw_spin_lock_irqsave(&tmb->lock, flags);
     let cpu = 0;
-    //for_each_online_cpu(cpu) {
+    // for_each_online_cpu(cpu) {
     let rq = rros_cpu_rq(cpu);
     let tmb = rros_percpu_timers(clock, cpu);
     let tq = unsafe { &mut (*tmb).q };
@@ -322,7 +319,6 @@ pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) {
     //}
 }
 
-//测试通过
 pub fn rros_stop_timers(clock: &RrosClock) {
     let cpu = 0;
     let mut tmb = rros_percpu_timers(&clock, cpu);
@@ -336,29 +332,8 @@ pub fn rros_stop_timers(clock: &RrosClock) {
     }
 }
 
-/*
- void inband_clock_was_set(void)
-{
-    struct rros_clock *clock;
-
-    if (!rros_is_enabled())
-        return;
-
-    mutex_lock(&clocklist_lock);
-
-    list_for_each_entry(clock, &clock_list, next) {
-        if (clock->ops.adjust)
-            clock->ops.adjust(clock);
-    }
-
-    mutex_unlock(&clocklist_lock);
-}
- */
-
-//打印clock的初始化log
+// Print the initialization log of the clock.
 fn rros_clock_log() {}
-
-/*mono时钟操作 */
 
 fn read_mono_clock(clock: &RrosClock) -> KtimeT {
     timekeeping::ktime_get_mono_fast_ns()
@@ -369,13 +344,15 @@ fn read_mono_clock_cycles(clock: &RrosClock) -> u64 {
 }
 
 fn set_mono_clock(clock: &mut RrosClock, time: KtimeT) -> i32 {
-    //mono无法设置,后面应该为错误类型
+    // mono cannot be set, the following should be an error type.
     0
 }
 
 fn adjust_mono_clock(clock: &mut RrosClock) {}
 
-/*realtime时钟操作 */
+/**
+ * The following functions are the realtime clock operations.
+ */
 
 fn read_realtime_clock(clock: &RrosClock) -> KtimeT {
     timekeeping::ktime_get_real_fast_ns()
@@ -397,7 +374,9 @@ fn adjust_realtime_clock(clock: &mut RrosClock) {
     // rros_adjust_timers(clock, clock.offset - old_offset)
 }
 
-/*通用clock操作 */
+/**
+ * The following functions are universal clock operations.
+ */
 
 fn get_default_gravity() -> RrosClockGravity {
     RrosClockGravity {
@@ -417,9 +396,9 @@ fn reset_coreclk_gravity(clock: &mut RrosClock) {
     set_coreclk_gravity(clock, get_default_gravity());
 }
 
-//两个全局变量MONO和REALTIME
 static RROS_MONO_CLOCK_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked("RROS_CLOCK_MONOTONIC_DEV\0".as_bytes()) };
+
 pub static mut RROS_MONO_CLOCK: RrosClock = RrosClock {
     name: RROS_MONO_CLOCK_NAME,
     resolution: 1,
@@ -454,6 +433,7 @@ pub static mut RROS_MONO_CLOCK: RrosClock = RrosClock {
 
 static RROS_REALTIME_CLOCK_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked("RROS_CLOCK_REALTIME_DEV\0".as_bytes()) };
+
 pub static mut RROS_REALTIME_CLOCK: RrosClock = RrosClock {
     name: RROS_REALTIME_CLOCK_NAME,
     resolution: 1,
@@ -545,30 +525,6 @@ impl FileOperations for ClockOps {
 
 pub fn clock_factory_dispose(ele: factory::RrosElement) {}
 
-/*
-void rros_core_tick(struct clock_event_device *dummy) /* hard irqs off */
-{
-    struct rros_rq *this_rq = this_rros_rq();
-    struct rros_timerbase *tmb;
-
-    if (RROS_WARN_ON_ONCE(CORE, !is_rros_cpu(rros_rq_cpu(this_rq))))
-        return;
-
-    tmb = rros_this_cpu_timers(&rros_mono_clock);
-    do_clock_tick(&rros_mono_clock, tmb);
-
-    /*
-     * If an RROS thread was preempted by this clock event, any
-     * transition to the in-band context will cause a pending
-     * in-band tick to be propagated by rros_schedule() called from
-     * rros_exit_irq(), so we may have to propagate the in-band
-     * tick immediately only if the in-band context was preempted.
-     */
-    if ((this_rq->local_flags & RQ_TPROXY) && (this_rq->curr->state & T_ROOT))
-        rros_notify_proxy_tick(this_rq);
-}
-*/
-
 fn timer_needs_enqueuing(timer: *mut RrosTimer) -> bool {
     unsafe {
         return ((*timer).get_status()
@@ -580,7 +536,7 @@ fn timer_needs_enqueuing(timer: *mut RrosTimer) -> bool {
     }
 }
 
-//rq相关未测试，其余测试通过
+// `rq` related tests haven't been tested, other tests passed.
 pub fn do_clock_tick(clock: &mut RrosClock, tmb: *mut RrosTimerbase) {
     let rq = this_rros_rq();
     // #[cfg(CONFIG_RROS_DEBUG_CORE)]
@@ -670,7 +626,7 @@ impl clockchips::CoreTick for RrosCoreTick {
             let rq_has_tproxy = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
             let assd = (*(*this_rq).get_curr().locked_data().get()).state;
             let curr_state_is_t_root = (assd & (T_ROOT as u32) != 0x0);
-            //这个if进不去有问题！！
+            // This `if` won't enter, so there is a problem.
             // let a = ((*this_rq).local_flags & RQ_TPROXY != 0x0);
             // if rq_has_tproxy  {
             //     pr_debug!("in rros_core_tick");
@@ -701,7 +657,6 @@ impl clockchips::CoreTick for RrosCoreTick {
     }
 }
 
-//初始化时钟
 fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
     // unsafe{
     //     if (*clock).element.is_none(){
@@ -726,11 +681,10 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
     Ok(0)
 }
 
-//初始化时钟slave
 fn rros_init_slave_clock(clock: &mut RrosClock, master: &mut RrosClock) -> Result<usize> {
     premmpt::running_inband()?;
 
-    //这里为什么会报错，timer就可以跑？为什么卧槽
+    // TODO: Check if there is a problem here, even if the timer can run.
     // #[cfg(CONFIG_SMP)]
     // clock.affinity = master.affinity;
 
@@ -740,13 +694,13 @@ fn rros_init_slave_clock(clock: &mut RrosClock, master: &mut RrosClock) -> Resul
     Ok(0)
 }
 
-//rros初始化时钟
 fn rros_init_clock(clock: &mut RrosClock, affinity: &cpumask::CpumaskT) -> Result<usize> {
     premmpt::running_inband()?;
+    // 8 byte alignment
     let tmb = percpu::alloc_per_cpu(
         size_of::<RrosTimerbase>() as usize,
         align_of::<RrosTimerbase>() as usize,
-    ) as *mut RrosTimerbase; //8字节对齐
+    ) as *mut RrosTimerbase;
     if tmb == 0 as *mut RrosTimerbase {
         return Err(kernel::Error::ENOMEM);
     }
@@ -767,7 +721,6 @@ fn rros_init_clock(clock: &mut RrosClock, affinity: &cpumask::CpumaskT) -> Resul
     Ok(0)
 }
 
-//时钟系统初始化
 pub fn rros_clock_init() -> Result<usize> {
     let pinned = unsafe { Pin::new_unchecked(&mut CLOCKLIST_LOCK) };
     spinlock_init!(pinned, "CLOCKLIST_LOCK");
@@ -798,17 +751,3 @@ pub fn rros_read_clock(clock: &RrosClock) -> KtimeT {
 fn rros_ktime_monotonic() -> KtimeT {
     timekeeping::ktime_get_mono_fast_ns()
 }
-
-// static inline ktime_t rros_read_clock(struct rros_clock *clock)
-// {
-// 	/*
-// 	 * In many occasions on the fast path, rros_read_clock() is
-// 	 * explicitly called with &rros_mono_clock which resolves as
-// 	 * a constant. Skip the clock trampoline handler, branching
-// 	 * immediately to the final code for such clock.
-// 	 */
-// 	if (clock == &rros_mono_clock)
-// 		return rros_ktime_monotonic();
-
-// 	return clock->ops.read(clock);
-// }

@@ -15,7 +15,7 @@ impl Default for ListHead {
 }
 
 impl ListHead {
-    //添加节点到self和next之间
+    // Add node between self and next.
     #[allow(dead_code)]
     pub fn add(&mut self, new: *mut ListHead) {
         if self.is_empty() {
@@ -34,19 +34,19 @@ impl ListHead {
         self.next = new;
     }
 
-    //空双向链表next和prev都指向自己
+    // The empty doubly linked list next and prev both point to themselves.
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.next == null_mut() && self.prev == null_mut()
     }
 
-    //list是不是head的最后一个节点
+    // Just whether list the last node of head.
     #[allow(dead_code)]
     pub fn last_is(&self, list: *mut ListHead) -> bool {
         self.prev == list
     }
 
-    //释放本身节点
+    // Release own node.
     pub fn list_drop(&mut self) {
         if !self.is_empty() {
             if self.next == self.prev {

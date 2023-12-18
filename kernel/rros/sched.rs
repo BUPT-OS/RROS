@@ -200,7 +200,6 @@ pub fn rros_set_self_resched(rq: Option<*mut rros_rq>) -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[cfg(CONFIG_SMP)]
 pub fn rros_rq_cpu(rq: *mut rros_rq) -> i32 {
     unsafe { (*rq).get_cpu() }
@@ -236,7 +235,6 @@ pub fn rros_protect_thread_priority(thread: Arc<SpinLock<RrosThread>>, prio: i32
     }
 }
 
-//测试通过
 #[cfg(CONFIG_SMP)]
 pub fn rros_set_resched(rq_op: Option<*mut rros_rq>) {
     let rq;
@@ -266,14 +264,12 @@ pub fn rros_set_resched(rq: Option<*mut rros_rq>) {
     rros_set_self_resched(rq_clone)
 }
 
-//暂时不用
 #[cfg(CONFIG_SMP)]
 pub fn is_threading_cpu(_cpu: i32) -> bool {
     //return !!cpumask_test_cpu(cpu, &rros_cpu_affinity);
     return false;
 }
 
-//测试通过
 #[cfg(not(CONFIG_SMP))]
 pub fn is_threading_cpu(cpu: i32) -> bool {
     return true;
@@ -284,25 +280,21 @@ pub fn is_rros_cpu(cpu: i32) -> bool {
     return true;
 }
 
-//void rros_migrate_thread(struct RrosThread *thread,
-//    struct rros_rq *dst_rq);
 #[cfg(CONFIG_SMP)]
 #[allow(dead_code)]
 pub fn rros_migrate_thread(_thread: Arc<SpinLock<RrosThread>>, _dst_rq: *mut rros_rq) {
-    //todo
+    // TODO:
 }
 
 #[cfg(not(CONFIG_SMP))]
 pub fn rros_migrate_thread(thread: Arc<SpinLock<RrosThread>>, dst_rq: *mut rros_rq) {}
 
-//简单函数未测试
 #[allow(dead_code)]
 pub fn rros_in_irq() -> bool {
     let rq = this_rros_rq();
     unsafe { (*rq).get_local_flags() & RQ_IRQ != 0 }
 }
 
-//简单函数未测试
 pub fn rros_is_inband() -> bool {
     let thread_op = this_rros_rq_thread();
     let state;
@@ -313,7 +305,6 @@ pub fn rros_is_inband() -> bool {
     state & T_ROOT != 0x0
 }
 
-//简单函数未测试
 #[allow(dead_code)]
 pub fn rros_cannot_block() -> bool {
     rros_in_irq() || rros_is_inband()
@@ -366,7 +357,6 @@ unsafe extern "C" fn this_rros_rq_exit_irq_local_flags() -> c_types::c_int {
     0 as c_types::c_int
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosSchedFifo {
     pub runnable: RrosSchedQueue,
 }
@@ -378,7 +368,6 @@ impl RrosSchedFifo {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosSchedWeak {
     pub runnable: Option<Rc<RefCell<RrosSchedQueue>>>,
 }
@@ -388,7 +377,6 @@ impl RrosSchedWeak {
     }
 }
 
-// #[derive(Copy,Clone)]
 pub struct RrosSchedQueue {
     pub head: Option<List<Arc<SpinLock<RrosThread>>>>,
 }
@@ -403,7 +391,6 @@ impl RrosSchedQueue {
 
 pub type SsizeT = bindings::__kernel_ssize_t;
 
-// #[derive(Copy,Clone)]
 pub struct RrosSchedClass {
     pub sched_init: Option<fn(rq: *mut rros_rq) -> Result<usize>>,
     pub sched_enqueue: Option<fn(thread: Arc<SpinLock<RrosThread>>) -> Result<i32>>,
@@ -452,7 +439,7 @@ pub struct RrosSchedClass {
     pub weight: i32,
     pub policy: i32,
     pub name: &'static str,
-    pub flag: i32, // 标识调度类 1:RROS_SCHED_IDLE 3:RrosSchedFifo 4:RROS_SCHED_TP
+    pub flag: i32, // Identify the scheduling class: 1:RROS_SCHED_IDLE 3:RrosSchedFifo 4:RROS_SCHED_TP
 }
 impl RrosSchedClass {
     #[allow(dead_code)]
@@ -544,7 +531,6 @@ impl RrosWeakParam {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosSchedCtlparam {
     pub quota: RrosQuotaCtlparam,
     pub tp: RrosTpCtlparam,
@@ -559,7 +545,6 @@ impl RrosSchedCtlparam {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosSchedCtlinfo {
     pub quota: RrosQuotaCtlinfo,
     pub tp: RrosTpCtlinfo,
@@ -574,7 +559,6 @@ impl RrosSchedCtlinfo {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosQuotaCtlparam {
     pub op: RrosQuotaCtlop,
     pub u: U,
@@ -586,7 +570,6 @@ impl RrosQuotaCtlparam {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosTpCtlparam {
     pub op: RrosTpCtlop,
     pub nr_windows: i32,
@@ -603,7 +586,6 @@ impl RrosTpCtlparam {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosQuotaCtlinfo {
     pub tgid: i32,
     pub quota: i32,
@@ -622,7 +604,6 @@ impl RrosQuotaCtlinfo {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosTpCtlinfo {
     pub nr_windows: i32,
     pub windows: *mut RrosSchedTpWindow,
@@ -650,7 +631,6 @@ pub type RrosQuotaCtlop = c_types::c_uint;
 // pub const RROS_TP_CTLOP_RROS_TP_GET: RrosTpCtlop = 4;
 pub type RrosTpCtlop = c_types::c_uint;
 
-//#[derive(Copy,Clone)]
 pub struct U {
     pub remove: Remove,
     pub set: Set,
@@ -666,7 +646,6 @@ impl U {
         }
     }
 }
-//#[derive(Copy,Clone)]
 pub struct Remove {
     #[allow(dead_code)]
     tgid: i32,
@@ -676,7 +655,6 @@ impl Remove {
         Remove { tgid: 0 }
     }
 }
-//#[derive(Copy,Clone)]
 pub struct Set {
     #[allow(dead_code)]
     tgid: i32,
@@ -694,7 +672,6 @@ impl Set {
         }
     }
 }
-//#[derive(Copy,Clone)]
 pub struct Get {
     #[allow(dead_code)]
     tgid: i32,
@@ -705,7 +682,6 @@ impl Get {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosSchedTpWindow {
     pub offset: *mut Timespec64,
     pub duration: *mut Timespec64,
@@ -725,7 +701,6 @@ use crate::timer::RrosTimer as rros_timer;
 type KtimeT = i64;
 use crate::clock::{RrosClock as rros_clock, RROS_MONO_CLOCK};
 
-//#[derive(Copy,Clone)]
 #[allow(dead_code)]
 pub struct RrosTqueue {
     pub q: ListHead,
@@ -742,7 +717,6 @@ impl RrosTqueue {
     }
 }
 
-//#[derive(Copy,Clone)]
 #[allow(dead_code)]
 pub struct Ops {
     pub read: Option<fn(clock: Rc<RefCell<rros_clock>>) -> KtimeT>,
@@ -770,7 +744,6 @@ impl Ops {
     }
 }
 
-//#[derive(Copy,Clone)]
 #[allow(dead_code)]
 pub struct RrosClockGravity {
     pub irq: KtimeT,
@@ -840,7 +813,6 @@ impl GetLinks for RrosThreadWithLock {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosThread {
     pub lock: HardSpinlock,
 
@@ -1010,7 +982,6 @@ impl RrosThread {
 //     }
 // }
 
-//#[derive(Copy,Clone)]
 pub struct PollContext {
     pub table: Option<Rc<RefCell<RrosPollWatchpoint>>>,
     pub generation: u32,
@@ -1028,7 +999,6 @@ impl PollContext {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosPollWatchpoint {
     pub fd: u32,
     pub events_polled: i32,
@@ -1051,7 +1021,6 @@ impl RrosPollWatchpoint {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosValue {
     pub val: i32,
     pub lval: i64,
@@ -1097,7 +1066,6 @@ impl RrosUserWindow {
     }
 }
 
-// #[derive(Copy,Clone)]
 pub struct RrosObservable {
     // pub element:rros_element,
     pub observers: ListHead,
@@ -1140,7 +1108,6 @@ impl RrosObservable {
     }
 }
 
-//#[derive(Copy,Clone)]
 pub struct RrosPollHead {
     pub watchpoints: ListHead,
     // FIXME: use ptr here not directly object
@@ -1530,7 +1497,7 @@ fn register_classes() -> Result<usize> {
     Ok(0)
 }
 
-// todo等全局变量实现后，去掉index和topmost
+// TODO: After the global variables are implemented, remove `index` and `topmost`.
 fn register_one_class(sched_class: &mut RrosSchedClass, index: i32) -> Result<usize> {
     // let mut sched_class_lock = sched_class.lock();
     // let index = sched_class_lock.flag;
@@ -1541,7 +1508,7 @@ fn register_one_class(sched_class: &mut RrosSchedClass, index: i32) -> Result<us
         unsafe { RROS_SCHED_TOPMOS = &mut idle::RROS_SCHED_IDLE as *mut RrosSchedClass };
     } else if index == 2 {
         unsafe { RROS_SCHED_TOPMOS = &mut tp::RROS_SCHED_TP as *mut RrosSchedClass };
-    // FIXME: tp取消注释
+    // FIXME: Uncomment after implement tp.
     // unsafe{RROS_SCHED_TOPMOS  = 0 as *mut RrosSchedClass};
     } else if index == 3 {
         unsafe { RROS_SCHED_TOPMOS = &mut fifo::RROS_SCHED_FIFO as *mut RrosSchedClass };
@@ -1558,13 +1525,13 @@ fn register_one_class(sched_class: &mut RrosSchedClass, index: i32) -> Result<us
         }
         if index == 2 {
             unsafe { RROS_SCHED_LOWER = &mut tp::RROS_SCHED_TP as *mut RrosSchedClass };
-            // FIXME: tp实现后取消注释
+            // FIXME: Uncomment after implement tp.
         }
     }
     Ok(0)
 }
 
-// todo等全局变量实现后，去掉topmost
+// TODO: After the global variables are implemented, remove `topmost`.
 fn init_rq(rq: *mut rros_rq, cpu: i32) -> Result<usize> {
     let mut iattr = RrosInitThreadAttr::new();
     let name_fmt: &'static CStr = c_str!("ROOT");
@@ -1641,11 +1608,11 @@ fn init_rq(rq: *mut rros_rq, cpu: i32) -> Result<usize> {
     // rros_set_current_account(rq, &rq->root_thread.stat.account);
     iattr.flags = T_ROOT as i32;
     iattr.affinity = cpumask_of(cpu);
-    // todo等全局变量
+    // TODO: Wait for global variables.
     unsafe {
         iattr.sched_class = Some(&idle::RROS_SCHED_IDLE);
     }
-    // 下面多数注释的都是由于rros_init_thread未完成导致的
+    // Most of the comments below are caused by rros_init_thread not being completed.
     // let sched_param_clone;
     // let mut sched_param_ptr;
     // match iattr.sched_param {
@@ -1834,7 +1801,6 @@ pub fn rros_putback_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     Ok(0)
 }
 
-//未测试，应该可行
 pub fn rros_dequeue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     let sched_class;
     match thread.lock().sched_class.clone() {
@@ -1854,7 +1820,6 @@ pub fn rros_dequeue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     Ok(0)
 }
 
-//未测试，应该可行
 pub fn rros_enqueue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     let sched_class;
     match thread.lock().sched_class.clone() {
@@ -1874,7 +1839,6 @@ pub fn rros_enqueue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     Ok(0)
 }
 
-//未测试，应该可行
 pub fn rros_requeue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     let sched_class;
     unsafe {
@@ -1899,10 +1863,6 @@ pub fn rros_requeue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
 // fn rros_need_resched(rq: *mut rros_rq) -> bool {
 //     unsafe{(*rq).flags & RQ_SCHED != 0x0}
 // }
-// static inline int rros_need_resched(struct rros_rq *rq)
-// {
-// 	return rq->flags & RQ_SCHED;
-// }
 
 /* hard irqs off. */
 fn test_resched(rq: *mut rros_rq) -> bool {
@@ -1922,25 +1882,7 @@ fn test_resched(rq: *mut rros_rq) -> bool {
 
     need_resched
 }
-// static __always_inline bool test_resched(struct rros_rq *this_rq)
-// {
-// 	bool need_resched = rros_need_resched(this_rq);
 
-// #ifdef CONFIG_SMP
-// 	/* Send resched IPI to remote CPU(s). */
-// 	if (unlikely(!cpumask_empty(&this_rq->resched_cpus))) {
-// 		irq_send_oob_ipi(RESCHEDULE_OOB_IPI, &this_rq->resched_cpus);
-// 		cpumask_clear(&this_rq->resched_cpus);
-// 		this_rq->local_flags &= ~RQ_SCHED;
-// 	}
-// #endif
-// 	if (need_resched)
-// 		this_rq->flags &= ~RQ_SCHED;
-
-// 	return need_resched;
-// }
-
-//逻辑完整，未测试
 #[no_mangle]
 pub unsafe extern "C" fn rros_schedule() {
     unsafe {
@@ -2014,7 +1956,7 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
             //rros_commit_monitor_ceiling();
         }
 
-        //这里可以不用自旋锁，因为只有一个cpu，理论上来说没有问题
+        // There is no need for a spin lock here because there is only one CPU, so in theory there is no problem.
         // raw_spin_lock(&curr->lock);
         // raw_spin_lock(&this_rq->lock);
 
@@ -2140,7 +2082,6 @@ pub fn pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThr
     return next;
 }
 
-//逻辑不完整，但应该没问题，未测试
 pub fn __pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThread>>> {
     let curr = unsafe { (*rq.clone().unwrap()).curr.clone().unwrap() };
 
@@ -2165,8 +2106,8 @@ pub fn __pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosT
         return next;
     }
 
-    //这里虽然没有循环，但应该没有问题
-    //TODO: 这里的for循环
+    // Although there is no loop here, there should be no problem.
+    //TODO: Here is a for loop.
     let mut next;
     let mut p = unsafe { RROS_SCHED_LOWER };
     while p != 0 as *mut RrosSchedClass {
@@ -2202,7 +2143,6 @@ pub fn __pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosT
     return None;
 }
 
-//逻辑完整，未测试
 pub fn lookup_fifo_class(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThread>>> {
     let q = &mut unsafe { (*rq.clone().unwrap()).fifo.runnable.head.as_mut().unwrap() };
     if q.is_empty() {
@@ -2222,7 +2162,6 @@ pub fn lookup_fifo_class(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosTh
     return Some(thread.clone());
 }
 
-//逻辑完整，未测试
 pub fn set_next_running(rq: Option<*mut rros_rq>, next: Option<Arc<SpinLock<RrosThread>>>) {
     let next = next.unwrap();
     unsafe { (*next.locked_data().get()).state &= !T_READY };
@@ -2289,7 +2228,7 @@ pub fn rros_put_thread_rq(
         rust_helper_hard_local_irq_restore(flags);
         // rust_helper_preempt_enable();
     }
-    // TODO raw_spin_unlock and raw_spin_unlock_irqrestore
+    // TODO: raw_spin_unlock and raw_spin_unlock_irqrestore
     Ok(0)
 }
 
@@ -2365,7 +2304,6 @@ pub fn rros_set_thread_policy_locked(
     Ok(0)
 }
 
-//逻辑完整，未测试
 fn rros_check_schedparams(
     thread: Option<Arc<SpinLock<RrosThread>>>,
     sched_class: Option<&'static RrosSchedClass>,
@@ -2424,7 +2362,7 @@ fn rros_set_schedparam(
     // return ;
 }
 
-//逻辑完整，未测试，待重构
+// TODO: Remain to be refactored.
 fn rros_declare_thread(
     thread: Option<Arc<SpinLock<RrosThread>>>,
     sched_class: Option<&'static RrosSchedClass>,
@@ -2549,7 +2487,6 @@ extern "C" {
     fn rust_helper_hard_local_irq_enable();
 }
 
-//基本完整
 pub fn rros_switch_inband(cause: i32) {
     pr_debug!("rros_switch_inband: in");
     let curr = unsafe { &mut *rros_current() };

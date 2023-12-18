@@ -71,7 +71,7 @@ const RROS_HANDLE_INDEX_MASK: FundleT = RROS_MUTEX_FLCEIL | RROS_MUTEX_FLCLAIM;
 
 pub struct RrosIndex {
     #[allow(dead_code)]
-    rbroot: rbtree::RBTree<u32, u32>, // Todo: modify the u32.
+    rbroot: rbtree::RBTree<u32, u32>, // TODO: modify the u32.
     lock: SpinLock<i32>,
     #[allow(dead_code)]
     generator: FundleT,
@@ -159,7 +159,7 @@ pub struct RrosFactory {
         ) -> Rc<RefCell<RrosElement>>,
     >,
     pub dispose: Option<fn(RrosElement)>,
-    pub attrs: Option<sysfs::AttributeGroup>, //此处暂时option了
+    pub attrs: Option<sysfs::AttributeGroup>, // Use an `Option` for the time being.
     pub flags: RrosFactoryType,
     pub inside: Option<RrosFactoryInside>,
     // pub fops: PhantomData<T>,
@@ -211,7 +211,7 @@ pub struct RrosElement {
     pub rcu_head: types::RcuHead,
     pub factory: &'static mut SpinLock<RrosFactory>,
     pub cdev: Option<chrdev::Cdev>,
-    pub dev: Option<device::Device>, // dev
+    pub dev: Option<device::Device>,
     pub devname: Option<fs::Filename>,
     pub minor: u64,
     pub refs: i32,
@@ -219,7 +219,7 @@ pub struct RrosElement {
     pub ref_lock: SpinLock<i32>,
     pub fundle: FundleT,
     pub clone_flags: i32,
-    // pub struct rb_node index_node;// Todo: in rfl rb_node is not embedded in the struct.
+    // pub struct rb_node index_node;// TODO: in rfl rb_node is not embedded in the struct.
     pub irq_work: irq_work::IrqWork,
     pub work: workqueue::Work,
     pub hash: types::HlistNode,
@@ -367,38 +367,6 @@ fn create_element_device(
 
     Ok(0)
 }
-
-// static struct device *create_sys_device(dev_t rdev, struct rros_factory *fac,
-//     void *drvdata, const char *name)
-// {
-//     struct device *dev;
-//     int ret;
-
-//     dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-//     if (dev == NULL)
-//     return ERR_PTR(-ENOMEM);
-
-//     dev->devt = rdev;
-//     dev->class = fac->class;
-//     dev->type = &fac->type;
-//     dev->groups = fac->attrs;
-//     dev->release = release_sys_device;
-//     dev_set_drvdata(dev, drvdata);
-
-//     ret = dev_set_name(dev, "%s", name);
-//     if (ret)
-//     goto fail;
-
-//     ret = device_register(dev);
-//     if (ret)
-//     goto fail;
-
-//     return dev;
-
-//     fail:
-//     put_device(dev); /* ->release_sys_device() */
-//     return ERR_PTR(ret);
-// }
 
 #[allow(dead_code)]
 fn rros_element_is_public(e: Rc<RefCell<RrosElement>>) -> bool {
@@ -651,86 +619,6 @@ fn bind_file_to_element(filp: *mut bindings::file, e: Rc<RefCell<RrosElement>>) 
     // }
 }
 
-// static int create_element_device(struct rros_element *e,
-//     struct rros_factory *fac)
-// {
-// struct rros_element *n;
-// struct device *dev;
-// dev_t rdev;
-// u64 hlen;
-// int ret;
-
-// /*
-// * Do a quick hash check on the new element name, to make sure
-// * device_register() won't trigger a kernel log splash because
-// * of a naming conflict.
-// */
-// hlen = hashlen_string("RROS", e->devname->name);
-
-// mutex_lock(&fac->hash_lock);
-
-// hash_for_each_possible(fac->name_hash, n, hash, hlen)
-// if (!strcmp(n->devname->name, e->devname->name)) {
-// mutex_unlock(&fac->hash_lock);
-// goto fail_hash;
-// }
-
-// hash_add(fac->name_hash, &e->hash, hlen);
-
-// mutex_unlock(&fac->hash_lock);
-
-// ret = do_element_visibility(e, fac, &rdev);
-// if (ret)
-// goto fail_visibility;
-
-// dev = create_sys_device(rdev, fac, e, rros_element_name(e));
-// if (IS_ERR(dev)) {
-// ret = PTR_ERR(dev);
-// goto fail_device;
-// }
-
-// /*
-// * Install fd on a private user element file only when we
-// * cannot fail creating the device anymore. First take a
-// * reference then install fd (which is a membar).
-// */
-// if (!rros_element_is_public(e) && !rros_element_has_coredev(e)) {
-// e->refs++;
-// fd_install(e->fpriv.efd, e->fpriv.filp);
-// }
-
-// e->dev = dev;
-
-// return 0;
-
-// /*
-// * On error, public and/or core-owned elements should be
-// * discarded by the caller.  Private user elements must be
-// * disposed of in this routine if we cannot give them a
-// * device.
-// */
-// fail_hash:
-// if (!rros_element_is_public(e) && !rros_element_has_coredev(e))
-// fac->dispose(e);
-
-// return -EEXIST;
-
-// fail_device:
-// if (rros_element_is_public(e)) {
-// cdev_del(&e->cdev);
-// } else if (!rros_element_has_coredev(e)) {
-// put_unused_fd(e->fpriv.efd);
-// filp_close(e->fpriv.filp, current->files);
-// }
-
-// fail_visibility:
-// mutex_lock(&fac->hash_lock);
-// hash_del(&e->hash);
-// mutex_unlock(&fac->hash_lock);
-
-// return ret;
-// }
-
 #[allow(dead_code)]
 fn rros_create_core_element_device(
     e: Rc<RefCell<RrosElement>>,
@@ -780,7 +668,7 @@ fn rros_create_core_element_device(
 //     }
 // }
 
-// todo: The global variable should not use *mut to pass the value.
+// TODO: The global variable should not use *mut to pass the value.
 pub fn rros_init_element(
     e: Rc<RefCell<RrosElement>>,
     fac: &'static mut SpinLock<RrosFactory>,
@@ -877,7 +765,7 @@ fn rros_create_factory(
             let mut idevname = CStr::from_bytes_with_nul("clone\0".as_bytes())?;
             match flag {
                 RrosFactoryType::SINGLE => {
-                    //RROS_FACTORY_SINGLE
+                    // RROS_FACTORY_SINGLE
                     idevname = name;
                     inside.class = Some(rros_class.clone());
                     inside.minor_map = Some(0);
@@ -899,7 +787,6 @@ fn rros_create_factory(
                 }
                 // We use cdev_alloc to replace cdev_init. alloc_chrdev + cdev_alloc + cdev_add
                 // chrdev_reg.as_mut().register::<clock::RustFileClock>()?;
-                // }
                 RrosFactoryType::CLONE => {
                     // RROS_FACTORY_CLONE
                     // create_element_class
@@ -1166,7 +1053,7 @@ pub fn rros_early_init_factories(
         this_module,
         CStr::from_bytes_with_nul("rros\0".as_bytes())?.as_char_ptr(),
     )?)?;
-    // TODO: 创建一个结构体，实现rros_devnode
+    // TODO: create a structure to implement rros_devnode.
     Arc::get_mut(&mut rros_class)
         .unwrap()
         .set_devnode::<RrosDevnode>();
@@ -1316,27 +1203,9 @@ impl RrosCloneReq {
         }
     }
 }
-// struct rros_element_ids {
-// 	__u32 minor;
-// 	__u32 fundle;
-// 	__u32 state_offset;
-// };
-
-// struct rros_clone_req {
-// 	__u64 name_ptr;		/* (const char __user *name) */
-// 	__u64 attrs_ptr;	/* (void __user *attrs) */
-// 	__u32 clone_flags;
-// 	/* Output on success: */
-// 	struct rros_element_ids eids;
-// 	__u32 efd;
-// };
 
 #[allow(dead_code)]
 fn rros_index_factory_element() {}
-// static inline void rros_index_factory_element(struct rros_element *e)
-// {
-// 	rros_index_element(&e->factory->index, e);
-// }
 
 extern "C" {
     pub fn rust_helper_copy_from_user(
@@ -1549,11 +1418,3 @@ pub fn rros_element_name(e: &RrosElement) -> *const c_types::c_char {
     }
     0 as *const c_types::c_char
 }
-// static inline const char *
-// rros_element_name(struct rros_element *e)
-// {
-// 	if (e->devname)
-// 		return e->devname->name;
-
-// 	return NULL;
-// }

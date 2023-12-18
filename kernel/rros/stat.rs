@@ -1,6 +1,6 @@
 use crate::sched::rros_rq;
 use kernel::ktime::*;
-// #[cfg(not(CONFIG_RROS_RUNSTATS))] struct不能加cfg
+
 pub struct RrosAccount {
     #[cfg(CONFIG_RROS_RUNSTATS)]
     start: KtimeT,
@@ -56,7 +56,7 @@ fn rros_get_timestamp() -> KtimeT {
 }
 
 #[cfg(CONFIG_RROS_RUNSTATS)]
-//todo
+// TODO:
 pub fn rros_update_account(rq: Option<*mut rros_rq>) {
     match rq {
         None => return,
@@ -67,7 +67,7 @@ pub fn rros_update_account(rq: Option<*mut rros_rq>) {
                 (*x).current_account
                     .set_account_total(total + now - (*x).last_account_switch);
                 (*x).last_account_switch = now;
-                // smp_wmb();未实现
+                // smp_wmb();Not implemented
             }
         }
     }

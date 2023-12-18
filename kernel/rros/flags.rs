@@ -45,6 +45,7 @@ impl RrosFlag {
     //     }
     //     self.raised
     // }
+
     #[inline]
     pub fn read(&self) -> bool {
         if self.raised.get() {
@@ -55,7 +56,7 @@ impl RrosFlag {
     }
     #[inline]
     pub fn wait(&mut self) -> i32 {
-        // TODO:尝试绕开不可变借用的限制
+        // TODO: Try to get around the limitations of immutable borrowing.
         let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
         unsafe {
             x.as_mut()

@@ -102,9 +102,6 @@ pub fn raw_spin_unlock(lock: *mut bindings::hard_spinlock_t) {
     unsafe { rust_helper_raw_spin_unlock };
 }
 
-// #define for_each_rros_mutex_waiter(__pos, __mutex) \
-// 	list_for_each_entry(__pos, &(__mutex)->wchan.wait_list, wait_next)
-
 pub fn get_ceiling_value(mutex: *mut RrosMutex) -> u32 {
     let ceiling_ref = unsafe { (*mutex).ceiling_ref };
     if ceiling_ref < 1 {
@@ -279,14 +276,14 @@ pub fn ceil_owner_priority(
         if (*boosters).is_empty() {
             (*boosters).add_head((*(*mutex).next_booster).value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in (*boosters).len()..=1 {
                 let wprio_in_list = (*(*(*boosters).get_by_index(i).unwrap())
                     .value
                     .clone()
                     .locked_data()
                     .get())
-                .wprio;
+                    .wprio;
                 if (*mutex).wprio <= wprio_in_list {
                     flag = 0;
                     (*boosters).enqueue_by_index(i, (*(*mutex).next_booster).value.clone());
@@ -671,7 +668,7 @@ pub fn finish_mutex_wait(mutex: *mut RrosMutex) {
         if (*boosters).is_empty() {
             (*boosters).add_head((*(*mutex).next_booster).value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in (*boosters).len()..=1 {
                 let wprio_in_list = (*(*boosters)
                     .get_by_index(i)
@@ -851,7 +848,7 @@ pub fn rros_lock_mutex_timeout(
                     let wait_next = (*curr.locked_data().get()).wait_next;
                     (*(*mutex).wchan.wait_list).add_head((*wait_next).value.clone());
                 } else {
-                    let mut flag = 1; // flag指示是否到头
+                    let mut flag = 1;
                     for i in (*(*mutex).wchan.wait_list).len()..=1 {
                         let curr_wprio = (*(*curr).locked_data().get()).wprio;
                         let wprio_in_list = (*(*(*mutex).wchan.wait_list)
@@ -861,7 +858,7 @@ pub fn rros_lock_mutex_timeout(
                             .clone()
                             .locked_data()
                             .get())
-                        .wprio;
+                            .wprio;
                         if curr_wprio <= wprio_in_list {
                             flag = 0;
                             let wait_next = (*curr.locked_data().get()).wait_next;
@@ -889,7 +886,7 @@ pub fn rros_lock_mutex_timeout(
                     if (*boosters).is_empty() {
                         (*boosters).add_head((*((*mutex).next_booster)).value.clone());
                     } else {
-                        let mut flag = 1; // flag指示是否到头
+                        let mut flag = 1;
                         for i in (*boosters).len()..=1 {
                             let wprio_in_list = (*(*boosters)
                                 .get_by_index(i)
@@ -898,7 +895,7 @@ pub fn rros_lock_mutex_timeout(
                                 .clone()
                                 .locked_data()
                                 .get())
-                            .wprio;
+                                .wprio;
                             if (*mutex).wprio <= wprio_in_list {
                                 flag = 0;
                                 (*boosters)
@@ -921,7 +918,7 @@ pub fn rros_lock_mutex_timeout(
                     let wait_next = (*curr.locked_data().get()).wait_next;
                     (*(*mutex).wchan.wait_list).add_head((*wait_next).value.clone());
                 } else {
-                    let mut flag = 1; // flag指示是否到头
+                    let mut flag = 1;
                     for i in (*(*mutex).wchan.wait_list).len()..=1 {
                         let curr_wprio = (*curr.locked_data().get()).wprio;
                         let wprio_in_list = (*(*(*mutex).wchan.wait_list)
@@ -931,7 +928,7 @@ pub fn rros_lock_mutex_timeout(
                             .clone()
                             .locked_data()
                             .get())
-                        .wprio;
+                            .wprio;
                         if curr_wprio <= wprio_in_list {
                             flag = 0;
                             let wait_next = (*curr.locked_data().get()).wait_next;
@@ -1168,7 +1165,7 @@ pub fn rros_reorder_mutex_wait(
         if (*(*mutex).wchan.wait_list).is_empty() {
             (*(*mutex).wchan.wait_list).add_head((*((*waiter_ptr).wait_next)).value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in (*(*mutex).wchan.wait_list).len()..=1 {
                 let wprio_in_list = (*(*(*mutex).wchan.wait_list)
                     .get_by_index(i)
@@ -1177,7 +1174,7 @@ pub fn rros_reorder_mutex_wait(
                     .clone()
                     .locked_data()
                     .get())
-                .wprio;
+                    .wprio;
                 if (*waiter_ptr).wprio <= wprio_in_list {
                     flag = 0;
                     (*(*mutex).wchan.wait_list)
@@ -1210,7 +1207,7 @@ pub fn rros_reorder_mutex_wait(
         if (*boosters).is_empty() {
             (*boosters).add_head((*((*mutex).next_booster)).value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in (*boosters).len()..=1 {
                 let wprio_in_list = (*(*boosters)
                     .get_by_index(i)
@@ -1219,7 +1216,7 @@ pub fn rros_reorder_mutex_wait(
                     .clone()
                     .locked_data()
                     .get())
-                .wprio;
+                    .wprio;
                 if (*mutex).wprio <= wprio_in_list {
                     flag = 0;
                     (*boosters).enqueue_by_index(i, (*((*mutex).next_booster)).value.clone());

@@ -285,7 +285,7 @@ impl NetDevice {
             .unwrap();
             est.rx_handler = start_handler_thread(func, c_str!("rros oob net rx handler")).unwrap();
 
-            // 只有有带外能力的才需要
+            // Only those with out-of-band capabilities are required.
             if real_dev.is_oob_capable() {
 
                 // rros_init_flag(&est->tx_flag);
@@ -312,7 +312,7 @@ impl NetDevice {
         pr_crit!("enable oob port success");
 
         return 0;
-        // TODO: 优雅地处理一下异常
+        // TODO: Handle exceptions gracefully.
         //     rros_stop_kthread(est->rx_handler);
         //     rros_destroy_flag(&est->tx_flag);
         // fail_start_rx:

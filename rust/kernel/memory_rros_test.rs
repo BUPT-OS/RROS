@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! Rros Memory Allocator Tests.
-
-/*
-测试内存分配的正确性
-*/
+//! Rros Memory Allocator Tests. Test the correctness of memory allocation.
 
 use crate::memory_rros::*;
 use crate::random;
@@ -22,7 +18,6 @@ pub fn main_memory_rros_test() {
 /// Function `test_addr_valid` checks if an address is valid.
 /// It takes an address and a size as parameters and returns a boolean.
 /// It currently always returns false.
-//判断某个地址是否有效
 #[allow(dead_code)]
 fn test_addr_valid(_addr: *mut u8, _size: SizeT) -> bool {
     return false;
@@ -33,7 +28,6 @@ fn test_addr_valid(_addr: *mut u8, _size: SizeT) -> bool {
 /// It first generates a random number using the `getrandom` function.
 /// If the generation is successful, it calculates the final number as the start plus the random number modulo the difference between the end and the start.
 /// If the generation fails, it prints an error message and returns 0.
-//得到随机数，左闭右开
 //[1,16)
 fn get_random(start: u32, end: u32) -> u32 {
     let mut t: [u8; 4] = [1, 2, 3, 4];
@@ -74,7 +68,7 @@ impl Pair {
 }
 
 #[allow(dead_code)]
-//计算当前buckets中的pg链表的数量
+// Calculate the number of pg linked lists in the current buckets.
 fn calcuate_buckets() {
     unsafe {
         for i in 0..5 {
@@ -103,7 +97,7 @@ fn calcuate_buckets() {
     }
 }
 
-//输入分配范围，进行连续分配测试
+// Enter the allocation range for continuous allocation testing.
 fn mem_alloc_range(start: u32, end: u32, repeat: u32) {
     pr_debug!("mem_alloc_range: begin");
     let base = Pair::new(1 as *mut u8, 0);
@@ -116,7 +110,7 @@ fn mem_alloc_range(start: u32, end: u32, repeat: u32) {
             RROS_SYSTEM_HEAP.used_size
         );
     }
-    //进行分配
+    // alloc
     for i in 0..repeat {
         let num = get_random(start, end);
         sum += num;
@@ -142,7 +136,7 @@ fn mem_alloc_range(start: u32, end: u32, repeat: u32) {
         );
     }
     // calcuate_buckets();
-    //进行回收
+    // recycle
     let length = link_head.len() + 1;
     for i in 1..length {
         let x = link_head.get_by_index(i).unwrap().value.addr;
@@ -172,7 +166,7 @@ fn mem_alloc_range(start: u32, end: u32, repeat: u32) {
     pr_debug!("mem_alloc_range: end");
 }
 
-//随机分配与回收
+// Random allocation and recycling.
 fn random_mem_alloc_range(start: u32, end: u32, repeat: u32) {
     pr_debug!("random_mem_alloc_range: begin");
     let base = Pair::new(1 as *mut u8, 0);
@@ -184,11 +178,11 @@ fn random_mem_alloc_range(start: u32, end: u32, repeat: u32) {
             RROS_SYSTEM_HEAP.used_size
         );
     }
-    //进行分配
+    // allocate
     for i in 1..repeat {
         let r = get_random(0, 2);
         if r == 0 {
-            //0表示分配
+            // 0 means allocation
             let num = get_random(start, end);
             let x = unsafe { RROS_SYSTEM_HEAP.rros_alloc_chunk(num as usize) };
             match x {
@@ -207,7 +201,7 @@ fn random_mem_alloc_range(start: u32, end: u32, repeat: u32) {
                 num
             );
         } else {
-            //1表示回收
+            // 1 means recycling
             let length = link_head.len();
             if length > 0 {
                 let x = link_head.get_by_index(1).unwrap().value.addr;
@@ -227,7 +221,7 @@ fn random_mem_alloc_range(start: u32, end: u32, repeat: u32) {
         );
     }
 
-    //进行回收
+    // recycle
     let length = link_head.len() + 1;
     for i in 1..length {
         let x = link_head.get_by_index(i).unwrap().value.addr;
@@ -258,7 +252,7 @@ fn random_mem_alloc_range(start: u32, end: u32, repeat: u32) {
 }
 
 fn small_chunk_alloc_test() {
-    mem_alloc_range(1, 257, 100); //连续分配小内存
-    mem_alloc_range(257, 2048, 100); //连续分配大内存
-    random_mem_alloc_range(1, 2049, 100); //随机分配内存
+    mem_alloc_range(1, 257, 100); // allocate small memory continuously
+    mem_alloc_range(257, 2048, 100); // allocate large memory continuously
+    random_mem_alloc_range(1, 2049, 100); // randomly allocate memory
 }

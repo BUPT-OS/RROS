@@ -1,4 +1,3 @@
-//list.rs测试文件！
 use crate::list::*;
 use crate::{list_entry, list_first_entry, list_last_entry};
 use kernel::prelude::*;
@@ -41,7 +40,7 @@ fn test_list_method() {
     let mut t1 = ListHead::default();
     let mut t2 = ListHead::default();
 
-    //测试add
+    // Test add.
     head.add(&mut t1 as *mut ListHead);
     head.add(&mut t2 as *mut ListHead);
     if traverse_list(&head) == 3 {
@@ -50,7 +49,7 @@ fn test_list_method() {
         pr_debug!("test_list_add failed");
     }
 
-    //测试list_drop
+    // Test list_drop.
     unsafe {
         (*head.next).list_drop();
     }
@@ -61,7 +60,7 @@ fn test_list_method() {
         pr_debug!("test_list_drop failed");
     }
 
-    //测试last_is
+    // Test last_is.
     if head.last_is(&mut t1 as *mut ListHead) {
         pr_debug!("test_list_last_is success");
     } else {
@@ -72,7 +71,7 @@ fn test_list_method() {
         (*head.next).list_drop();
     }
 
-    //测试empty
+    // Test empty.
     if head.is_empty() {
         pr_debug!("test_list_is_empty success");
     } else {

@@ -156,7 +156,7 @@ pub fn index_rfd(rfd: RrosFd, _filp: *mut bindings::file) -> Result<usize> {
 /// Returns a reference to the rfd corresponding to the fd.
 pub fn lookup_rfd(fd: u32, _files: &mut FilesStruct) -> Option<*mut RrosFd> {
     let flags = FD_TREE.irq_lock_noguard();
-    // get_mut和锁的get_mut重名了，所以用unsafe了
+    // `get_mut` has the same name as the lock's `get_mut`, so unsafe is used.
     if let Some(rfd) = unsafe { (*FD_TREE.locked_data().get()).get_mut(&fd) } {
         FD_TREE.irq_unlock_noguard(flags);
         return Some(rfd as *mut RrosFd);
@@ -212,13 +212,6 @@ no_mangle_function_declaration! {
         }
     }
 }
-
-// fdt_lock held, irqs off. CAUTION: resched required on exit.
-// static void drop_watchpoints(struct rros_fd *efd)
-// {
-// 	if (!list_empty(&efd->poll_nodes))
-// 		rros_drop_watchpoints(&efd->poll_nodes);
-// }
 
 // in-band, caller holds files->file_lock
 no_mangle_function_declaration! {
@@ -281,7 +274,7 @@ pub fn rros_get_fileref(rfilp: &mut RrosFile) -> Result<usize> {
 }
 
 pub fn rros_get_file(fd: u32) -> Option<NonNull<RrosFile>> {
-    // TODO: 暂时改成NonNull
+    // TODO: Temporarily changed to NonNull.
     let rfd = lookup_rfd(fd, &mut FilesStruct::from_ptr(unsafe { (*Task::current_ptr()).files }));
 
     match rfd {

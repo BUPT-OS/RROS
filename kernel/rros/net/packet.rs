@@ -354,7 +354,7 @@ impl RrosNetProto for EthernetRrosNetProto {
         msg: *mut UserOobMsghdr,
         iov_vec: &mut [Iovec],
     ) -> isize {
-        // 用户态
+        // User mode.
         extern "C" {
             fn rust_helper_raw_get_user(result: *mut u32, addr: *const u32) -> isize;
             fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
@@ -521,7 +521,7 @@ fn __packet_deliver(rxq: &mut RrosNetRxqueue, skb: &mut RrosSkBuff, protocol: be
     let dev = skb.dev().unwrap();
     let mut delivered = false;
 
-    // list_for_each_entry，这里有continue和break，因此直接写了
+    // list_for_each_entry, there are `continue` and `break` here, so write it directly.
     let mut rsk = list_first_entry!(&mut rxq.subscribers, RrosSocket, next_sub);
     while !list_entry_is_head!(rsk, &mut rxq.subscribers, next_sub) {
         let ref_rsk = unsafe { &mut *rsk };
@@ -591,7 +591,6 @@ pub fn rros_net_packet_deliver(skb: &mut RrosSkBuff) -> bool {
     // return packet_deliver(skb, be16::new(skb.protocol));
     false
 }
-// deliver
 
 fn find_xmit_device(rsk: &mut RrosSocket, msghdr: &mut UserOobMsghdr) -> Result<NetDevice> {
     extern "C" {

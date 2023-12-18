@@ -66,7 +66,7 @@ impl RrosWaitQueue {
         wait.init(clock, flags);
         wait
     }
-    // 删掉了key:*mut bindings::lock_class_key,和name:&'static CStr
+    // delete `key:*mut bindings::lock_class_key`, and `name:&'static CStr`.
     pub fn init(&mut self, clock: *mut RrosClock, flags: i32) {
         self.flags = flags;
         self.clock = clock;
@@ -75,7 +75,7 @@ impl RrosWaitQueue {
         // self.wchan.wait_list.
         // init_list_head!(&self.wchan.wait_list);
         // lockdep_set_class_and_name(&wq->lock, key, name);
-        // 这个是调试时候用的
+        // This is used during debugging.
     }
     pub fn flush(&mut self, reason: i32) {
         // rros_flush_wait
@@ -153,7 +153,7 @@ impl RrosWaitQueue {
                 let current = unsafe { RrosThreadWithLock::new_from_curr_thread() };
                 self.wchan.wait_list.push_back(current)
             } else {
-                // 按优先级加入，可以看下types_test.rs的add_by_prio
+                // To join according to priority, you can look at `add_by_prio` in types_test.rs.
                 let prio = curr.wprio;
                 let mut last = self.wchan.wait_list.cursor_back_mut();
                 let mut stop_flag = false;
@@ -182,7 +182,7 @@ impl RrosWaitQueue {
             timeout_mode,
             unsafe { &*self.clock },
             &mut self.wchan as *mut RrosWaitChannel,
-        ); // 必须保证wchan不会被释放
+        ); // It must be ensured that wchan will not be released.
     }
 
     pub fn wait_schedule(&mut self) -> i32 {

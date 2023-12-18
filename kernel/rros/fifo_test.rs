@@ -1,5 +1,3 @@
-//fifo_test.rs测试文件
-//用于测试fifo.rs里的函数正确性
 use crate::{fifo::*, sched::*, thread::*, timer::*, RROS_OOB_CPUS};
 use core::clone::Clone;
 use kernel::{c_str, cpumask::CpumaskT, prelude::*, spinlock_init, sync::Lock, sync::SpinLock};
@@ -20,14 +18,13 @@ pub fn test_init_thread(thread: Arc<SpinLock<RrosThread>>, prio: i32) -> Result<
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_enqueue_fifo_thread() -> Result<usize> {
     pr_debug!("~~~test_rros_enqueue_fifo_thread begin~~~");
     unsafe {
         let mut length;
 
-        //创建thread1
+        // create thread1
         let mut t1 = SpinLock::new(RrosThread::new().unwrap());
         let pinned = Pin::new_unchecked(&mut t1);
         spinlock_init!(pinned, "create_thread1");
@@ -44,7 +41,7 @@ pub fn test_rros_enqueue_fifo_thread() -> Result<usize> {
 
         test_init_thread(thread1.clone(), 22)?;
 
-        //创建thread2
+        // create thread2
         let mut t2 = SpinLock::new(RrosThread::new().unwrap());
         let pinned = Pin::new_unchecked(&mut t2);
         spinlock_init!(pinned, "create_thread1");
@@ -61,7 +58,7 @@ pub fn test_rros_enqueue_fifo_thread() -> Result<usize> {
 
         test_init_thread(thread2.clone(), 33)?;
 
-        // //创建thread3
+        // // create thread3
         let mut t3 = SpinLock::new(RrosThread::new().unwrap());
         let pinned = Pin::new_unchecked(&mut t3);
         spinlock_init!(pinned, "create_thread1");
@@ -100,7 +97,7 @@ pub fn test_rros_enqueue_fifo_thread() -> Result<usize> {
         pr_debug!("test_rros_enqueue_fifo_thread: length is  {}", length);
         pr_debug!("~~~test_rros_enqueue_fifo_thread end~~~");
 
-        //__rros_dequeue_fifo_thread测试通过
+        //__rros_dequeue_fifo_thread passed test.
         pr_debug!("~~~test_rros_dequeue_fifo_thread begin~~~");
 
         __rros_dequeue_fifo_thread(thread1.clone())?;
@@ -121,7 +118,6 @@ pub fn test_rros_enqueue_fifo_thread() -> Result<usize> {
 }
 
 // TODO: Add a config for test functions.
-//测试通过，在上面
 #[allow(dead_code)]
 pub fn test_rros_dequeue_fifo_thread() -> Result<usize> {
     Ok(0)

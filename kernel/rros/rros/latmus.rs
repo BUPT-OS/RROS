@@ -4,7 +4,6 @@ use crate::{
 };
 use kernel::prelude::*;
 use kernel::{c_str, c_types, ktime};
-// use rros::thread_test::KthreadRunner;
 
 static mut KTHREAD_RUNNER_1: KthreadRunner = KthreadRunner::new_empty();
 
@@ -170,55 +169,6 @@ fn add_measurement_sample(runner: &mut KthreadRunner, timestamp: ktime::KtimeT) 
 
     0
 }
-
-// static int add_measurement_sample(struct latmus_runner *runner,
-//     ktime_t timestamp)
-// {
-// struct runner_state *state = &runner->state;
-// ktime_t period = runner->period;
-// int delta, cell, offset_delta;
-
-// /* Skip samples in warmup time. */
-// if (runner->warmup_samples < runner->warmup_limit) {
-// runner->warmup_samples++;
-// state->ideal = ktime_add(state->ideal, period);
-// return 0;
-// }
-
-// delta = (int)ktime_to_ns(ktime_sub(timestamp, state->ideal));
-// offset_delta = delta - state->offset;
-// if (offset_delta < state->min_lat)
-// state->min_lat = offset_delta;
-// if (offset_delta > state->max_lat)
-// state->max_lat = offset_delta;
-// if (offset_delta > state->allmax_lat) {
-// state->allmax_lat = offset_delta;
-// trace_rros_latspot(offset_delta);
-// trace_rros_trigger("latmus");
-// }
-
-// if (runner->histogram) {
-// cell = (offset_delta < 0 ? -offset_delta : offset_delta) / 1000; /* us */
-// if (cell >= runner->hcells)
-// cell = runner->hcells - 1;
-// runner->histogram[cell]++;
-// }
-
-// state->sum += offset_delta;
-// state->ideal = ktime_add(state->ideal, period);
-
-// while (delta > 0 &&
-// (unsigned int)delta > ktime_to_ns(period)) { /* period > 0 */
-// state->overruns++;
-// state->ideal = ktime_add(state->ideal, period);
-// delta -= ktime_to_ns(period);
-// }
-
-// if (++state->cur_samples >= state->max_samples)
-// send_measurement(runner);
-
-// return 0;	/* Always keep going. */
-// }
 
 // TODO: move this to a file
 // struct Latmus;

@@ -16,7 +16,7 @@ use kernel::{
 use super::skb::RrosSkBuff;
 
 // NOTE:initialize in rros_net_init_tx
-// TODO: 这里的实现没用DEFINE_PER_CPU，因为Rust还没有支持静态定义的percpu变量
+// TODO: The implementation here does not use DEFINE_PER_CPU because Rust does not yet support statically defined percpu variables.
 init_static_sync! {
     static OOB_TX_RELAY : SpinLock<RrosSkbQueueInner> = RrosSkbQueueInner::default();
 }
@@ -105,7 +105,7 @@ fn skb_inband_xmit_backlog() {
     }
     let mut list = bindings::list_head::default();
     init_list_head!(&mut list);
-    let flags = OOB_TX_RELAY.irq_lock_noguard(); // TODO: 是否需要lock
+    let flags = OOB_TX_RELAY.irq_lock_noguard(); // TODO: Whether lock is required.
 
     if unsafe { (*OOB_TX_RELAY.locked_data().get()).move_queue(&mut list) } {
         list_for_each_entry_safe!(

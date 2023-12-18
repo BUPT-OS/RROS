@@ -54,7 +54,7 @@ fn untag(mut skb: RrosSkBuff, ehdr: &mut VlanEthhdr, mac_hdr: *mut u8) -> bool {
 
 pub fn rros_net_ether_accept(skb: RrosSkBuff) -> bool {
     extern "C" {
-        fn rust_helper_test_bit(nr: i32, addr: *const usize) -> bool; // TODO: 这里addr应该是volatile的
+        fn rust_helper_test_bit(nr: i32, addr: *const usize) -> bool; // TODO: The addr here should be volatile.
         fn rust_helper_eth_type_vlan(ethertype: be16) -> bool;
         #[allow(improper_ctypes)]
         fn rust_helper__vlan_hwaccel_get_tag(
@@ -78,7 +78,7 @@ pub fn rros_net_ether_accept(skb: RrosSkBuff) -> bool {
         pr_debug!("tag && test_bit\n");
         return pick(skb);
     }
-    // TODO:下面这条路径没有测试过
+    // TODO: The following path has not been tested.
     if skb.vlan_present() == 0 && unsafe { rust_helper_eth_type_vlan(be16::new(skb.protocol)) } {
         pr_debug!("this path is not tested\n");
         let mac_hdr = unsafe { skb.head.offset(skb.mac_header as isize) as *mut u8 };
@@ -150,10 +150,6 @@ pub fn rros_net_store_vlans(buf: *const u8, len: usize) -> i32 {
     return len as i32;
 }
 
-// ssize_t rros_net_show_vlans(char *buf, SizeT len)
-// {
-// 	return scnprintf(buf, len, "%*pbl\n", VLAN_N_VID, VLAN_MAP);
-// }
 
 #[allow(unused)]
 pub fn rros_show_vlans() {

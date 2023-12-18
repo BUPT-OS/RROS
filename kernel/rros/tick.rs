@@ -44,7 +44,6 @@ pub fn rros_notify_proxy_tick(rq: *mut RrosRq) {
 pub struct RrosProxySetNextKtime;
 
 impl clockchips::ProxySetNextKtime for RrosProxySetNextKtime {
-    // 未测试
     fn proxy_set_next_ktime(expires: KtimeT, _arg1: clockchips::ClockEventDevice) -> i32 {
         //pr_debug!("proxy_set_next_ktime: in");
         let delta = ktime_sub(expires, ktime_get());
@@ -70,7 +69,6 @@ impl clockchips::ProxySetNextKtime for RrosProxySetNextKtime {
 pub struct RrosProxySetOneShotStopped;
 
 impl clockchips::ProxySetOneshotStopped for RrosProxySetOneShotStopped {
-    // 未测试
     fn proxy_set_oneshot_stopped(dev: clockchips::ClockProxyDevice) -> c_types::c_int {
         pr_debug!("proxy_set_oneshot_stopped: in");
         let flags = unsafe { rust_helper_hard_local_irq_save() };
@@ -149,7 +147,7 @@ pub fn rros_enable_tick() -> Result<usize> {
 pub struct RrosSetupProxy;
 
 impl clockchips::SetupProxy for RrosSetupProxy {
-    // 新的setup
+    // new setup
     fn setup_proxy(dev: clockchips::ClockProxyDevice) {
         let _real_dev: ClockEventDevice;
         match clockchips::ClockEventDevice::from_proxy_device(dev.get_real_device()) {

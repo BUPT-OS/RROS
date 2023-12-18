@@ -130,7 +130,6 @@ macro_rules! list_del_init {
     };
 }
 
-// 获取当前链表节点，并将其从链表中移出去
 /// Macro to get the first entry from a list and remove it from the list.
 /// This macro takes a pointer to the list head, a type, and a field, and returns a pointer to the first entry in the list.
 /// The entry is also removed from the list.
@@ -187,7 +186,6 @@ macro_rules! list_add {
     };
 }
 
-// 常规实现
 /// Macro to iterate over a list of given type.
 /// This macro takes an identifier for the loop cursor, a list head, a type, a block of code to execute for each entry, and a list of fields.
 /// It starts from the first entry and continues until it reaches the head of the list, executing the block of code for each entry.

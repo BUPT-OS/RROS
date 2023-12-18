@@ -164,7 +164,7 @@ fn __rros_get_fifo_schedparam(
     p.unwrap().lock().fifo.prio = thread.unwrap().lock().cprio;
 }
 
-//逻辑完整，未测试
+// The logic is complete, but haven't been tested.
 fn __rros_chk_fifo_schedparam(
     thread: Option<Arc<SpinLock<RrosThread>>>,
     p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
@@ -204,7 +204,6 @@ fn __rros_ceil_fifo_priority(thread: Arc<SpinLock<sched::RrosThread>>, prio: i32
     unsafe { (*thread.locked_data().get()).cprio = prio };
 }
 
-//测试通过
 pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
     let rq_next = thread.lock().rq_next.clone();
     if rq_next.is_none() {
@@ -213,14 +212,13 @@ pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
         unsafe {
             // thread.lock().rq_next.clone().as_mut().unwrap().remove();
             thread.lock().rq_next.as_mut().unwrap().as_mut().remove();
-            //这里是否要释放？
+            // need a release here?
         }
     }
     Ok(0)
 }
 
-//按优先级大小入队，注意这里要赋值rq_next---这个变量在出队的时候使用
-//测试通过
+// Enter the queue according to the priority. Note that rq_next must be assigned here---this variable is used when dequeuing.
 pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
     let rq_ptr;
     match thread.lock().rq.clone() {
@@ -236,7 +234,7 @@ pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
         // pr_debug!("addr: {:p}", thread.lock().rq_next.clone().as_mut().unwrap());
     } else {
         let mut p = q.head.prev;
-        //倒序遍历
+        // Traverse in reverse order.
         loop {
             unsafe {
                 let pos_cprio = p.unwrap().as_ref().value.lock().cprio;
@@ -261,9 +259,6 @@ pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
     Ok(0)
 }
 
-//enqueue_fifo_thread是new_cprio <= pos_cprio
-//requeue_fifo_thread是new_cprio < pos_cprio
-//默认测试通过
 pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
     unsafe {
         let rq_ptr;
@@ -280,7 +275,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
             // pr_debug!("addr: {:p}", (*thread.locked_data().get()).rq_next.clone().as_mut().unwrap());
         } else {
             let mut p = q.head.prev;
-            //倒序遍历
+            // Traverse in reverse order.
             loop {
                 let pos_cprio = (*(p.unwrap().as_ref().value).locked_data().get()).cprio;
                 if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
@@ -305,92 +300,3 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
         Ok(0)
     }
 }
-
-// pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
-//     let rq_ptr;
-//     match thread.lock().rq.clone() {
-//         Some(rq) => rq_ptr = rq,
-//         None => return Err(kernel::Error::EINVAL),
-//     }
-
-//     let mut q = unsafe { (*rq_ptr).fifo.runnable.head.as_mut().unwrap() };
-//     let new_cprio = thread.lock().cprio;
-//     if q.is_empty() {
-//         q.add_head(thread.clone());
-//         unsafe {
-//             thread.lock().rq_next = Some(Node::new(q.head.prev.clone().unwrap().as_ref().value.clone()));
-//         }
-//         pr_debug!("addr: {:p}", thread.lock().rq_next.clone().as_mut().unwrap());
-//     } else {
-//         let mut p = q.head.prev;
-//         //倒序遍历
-//         while true {
-//             unsafe {
-//                 let pos_cprio = p.unwrap().as_ref().value.lock().cprio;
-//                 if p.unwrap().as_ptr()
-//                     == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
-//                     || new_cprio <= pos_cprio
-//                 {
-//                     p.unwrap()
-//                         .as_mut()
-//                         .add(p.unwrap().as_ref().next.unwrap().as_ptr(), thread.clone());
-//                     thread.lock().rq_next = Some(Node::new(p.unwrap().as_ref().next.clone().unwrap().as_ref().value.clone()));
-//                     break;
-//                 } else {
-//                     p = p.unwrap().as_ref().prev;
-//                 }
-//             }
-//             if p.unwrap().as_ptr() == q.head.prev.unwrap().as_ptr() {
-//                 break;
-//             }
-//         }
-//     }
-//     Ok(0)
-// }
-
-// //enqueue_fifo_thread是new_cprio <= pos_cprio
-// //requeue_fifo_thread是new_cprio < pos_cprio
-// //默认测试通过
-// pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
-//     unsafe {
-//         let rq_ptr;
-//         match (*thread.locked_data().get()).rq.clone() {
-//             Some(rq) => rq_ptr = rq,
-//             None => return Err(kernel::Error::EINVAL),
-//         }
-//         let mut q = unsafe { (*rq_ptr).fifo.runnable.head.as_mut().unwrap() };
-//         let new_cprio = (*thread.locked_data().get()).cprio;
-//         if q.is_empty() {
-//             q.add_head(thread.clone());
-//             unsafe {
-//                 (*thread.locked_data().get()).rq_next = Some(Node::new(q.head.prev.clone().unwrap().as_ref().value.clone()));
-//             }
-//             pr_debug!("addr: {:p}", (*thread.locked_data().get()).rq_next.clone().as_mut().unwrap());
-//         } else {
-//             let mut p = q.head.prev;
-//             //倒序遍历
-//             while true {
-//                 unsafe {
-//                     let pos_cprio = (*(p.unwrap().as_ref().value).locked_data().get()).cprio;
-//                     if p.unwrap().as_ptr()
-//                         == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
-//                         || new_cprio < pos_cprio
-//                     {
-//                         p.unwrap()
-//                             .as_mut()
-//                             .add(p.unwrap().as_ref().next.unwrap().as_ptr(), thread.clone());
-//                         (*thread.locked_data().get()).rq_next =
-//                             Some(Node::new(p.unwrap().as_ref().next.clone().unwrap().as_ref().value.clone()));
-//                         break;
-//                     } else {
-//                         p = p.unwrap().as_ref().prev;
-//                     }
-//                 }
-//                 if p.unwrap().as_ptr() == q.head.prev.unwrap().as_ptr() {
-//                     break;
-//                 }
-//             }
-//         }
-//         Ok(0)
-//     }
-// }

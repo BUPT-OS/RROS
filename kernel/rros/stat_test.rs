@@ -1,5 +1,3 @@
-//stat.rs测试文件
-//用于测试stat.rs里的函数正确性
 use crate::{
     clock::*, factory::RrosElement, factory::RrosFactory, factory::RustFile, lock::*, sched::*,
     timer::*, RROS_OOB_CPUS, factory, list::*,
@@ -17,4 +15,3 @@ use kernel::{
     sync::Lock, sync::SpinLock, sysfs, timekeeping,
 };
 
-// CFG为!CONFIG_RROS_RUNSTATS未测试，理论可行

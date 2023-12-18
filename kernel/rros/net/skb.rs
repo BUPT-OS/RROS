@@ -356,7 +356,7 @@ impl RrosSkBuff {
         // // rros_signal_poll_events(&est->poll_head,	POLLOUT|POLLWRNORM); // rros poll
     }
     fn free_skb(&mut self) {
-        // 对应 free_skb
+        // Corresponds to free_skb.
         extern "C" {
             #[allow(improper_ctypes)]
             fn skb_release_oob_skb(skb: *mut bindings::sk_buff, dref: *mut i32) -> bool;
@@ -458,7 +458,7 @@ pub fn free_skb_list(list: *mut bindings::list_head) {
 
 // pub struct RROSNetSkbQueue{
 //     pub queue : bindings::list_head,
-//     pub lock : SpinLock<()>, //不直接封装在上面是因为不够灵活，以后可以重新封装下
+//     pub lock : SpinLock<()>, // It is not packaged directly because it is not flexible enough. It can be re-encapsulated later.
 //     // phantom : core::marker::PhantomData<RrosSkBuff>,
 // }
 
@@ -634,7 +634,6 @@ fn skb_recycler(_work: &mut RrosWork) -> i32 {
     0
 }
 
-/// 初始化函数
 pub fn rros_net_init_pools() -> Result<()> {
     extern "C" {
         fn rust_helper_list_add(new: *mut bindings::list_head, head: *mut bindings::list_head);

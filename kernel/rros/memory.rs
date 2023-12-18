@@ -194,7 +194,6 @@ fn init_shared_heap(heap: Arc<SpinLock<RrosHeap>>) -> Result<usize> {
     Ok(0)
 }
 
-// #[allow(dead_code)]
 fn rros_init_heap(heap: Arc<SpinLock<RrosHeap>>, membase: *mut u8, size: usize) -> Result<usize> {
     let nrpages;
 

@@ -1,9 +1,6 @@
-//timer.rs测试文件
-//用于测试timer.rs里的函数正确性
 use crate::{clock::*, sched::*, timer::*};
 use kernel::{prelude::*, spinlock_init, sync::SpinLock};
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_insert_tnode() -> Result<usize> {
     pr_debug!("~~~test_rros_insert_tnode begin~~~");
@@ -44,7 +41,6 @@ pub fn test_rros_insert_tnode() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_enqueue_timer() -> Result<usize> {
     pr_debug!("~~~test_rros_insert_tnode begin~~~");
@@ -86,7 +82,6 @@ pub fn test_rros_enqueue_timer() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_get_timer_gravity() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_gravity begin~~~");
@@ -110,7 +105,6 @@ pub fn test_rros_get_timer_gravity() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_update_timer_date() -> Result<usize> {
     pr_debug!("~~~test_rros_update_timer_date begin~~~");
@@ -133,7 +127,6 @@ pub fn test_rros_update_timer_date() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_get_timer_next_date() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_next_date begin~~~");
@@ -153,7 +146,6 @@ pub fn test_rros_get_timer_next_date() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_timer_at_front() -> Result<usize> {
     unsafe {
@@ -185,14 +177,14 @@ pub fn test_timer_at_front() -> Result<usize> {
         (*tmb).q.add_head(yy.clone());
         (*tmb).q.add_head(zz.clone());
 
-        //测试第一个if分支
+        // Test the first if branch.
         if timer_at_front(zz.clone()) == true {
             pr_debug!("test_timer_at_front if1 true");
         } else {
             pr_debug!("test_timer_at_front if1 false");
         }
 
-        //测试第二个if分支
+        // Test the second if branch.
         if timer_at_front(yy.clone()) == true {
             pr_debug!("test_timer_at_front if2 true");
         } else {
@@ -202,7 +194,6 @@ pub fn test_timer_at_front() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_timer_deactivate() -> Result<usize> {
     unsafe {
@@ -251,7 +242,6 @@ pub fn test_rros_timer_deactivate() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_get_timer_expiry() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_expiry begin~~~");
@@ -271,7 +261,6 @@ pub fn test_rros_get_timer_expiry() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_get_timer_delta() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_delta begin~~~");
@@ -296,7 +285,6 @@ pub fn test_rros_get_timer_delta() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_get_timer_date() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_date begin~~~");
@@ -319,7 +307,6 @@ pub fn test_rros_get_timer_date() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_program_timer() -> Result<usize> {
     pr_debug!("~~~test_program_timer begin~~~");
@@ -347,7 +334,6 @@ pub fn test_program_timer() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_start_timer() -> Result<usize> {
     pr_debug!("~~~test_rros_start_timer begin~~~");
@@ -379,7 +365,6 @@ pub fn test_rros_start_timer() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_stop_timer_locked() -> Result<usize> {
     pr_debug!("~~~test_stop_timer_locked begin~~~");
@@ -406,7 +391,6 @@ pub fn test_stop_timer_locked() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_destroy_timer() -> Result<usize> {
     pr_debug!("~~~test_rros_destroy_timer begin~~~");

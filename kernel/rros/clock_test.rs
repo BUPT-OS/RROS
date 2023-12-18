@@ -1,9 +1,7 @@
-//clock.rs测试文件
-//用于测试clock.rs里的函数正确&性
 use crate::{clock::*, timer::*};
+
 use kernel::{ktime::*, prelude::*, spinlock_init, sync::SpinLock};
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_do_clock_tick() -> Result<usize> {
     pr_debug!("~~~test_do_clock_tick begin~~~");
@@ -30,7 +28,6 @@ pub fn test_do_clock_tick() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_adjust_timer() -> Result<usize> {
     pr_debug!("~~~test_adjust_timer begin~~~");
@@ -57,7 +54,6 @@ pub fn test_adjust_timer() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_adjust_timers() -> Result<usize> {
     pr_debug!("~~~test_rros_adjust_timers begin~~~");
@@ -103,7 +99,6 @@ pub fn test_rros_adjust_timers() -> Result<usize> {
     Ok(0)
 }
 
-//测试通过
 #[allow(dead_code)]
 pub fn test_rros_stop_timers() -> Result<usize> {
     pr_debug!("~~~test_rros_stop_timers begin~~~");

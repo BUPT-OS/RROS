@@ -59,7 +59,8 @@ use kernel::{
     types::PointerWrapper,
     uidgid::{KgidT, KuidT},
     user_ptr::UserSlicePtr,
-    Error,
+    Error, 
+    linked_list::{ List,Links,GetLinks },
 };
 
 const POLLER_NEST_MAX: i32 = 4;
@@ -76,9 +77,9 @@ pub const RROS_POLIOC_CTL: u32 = kernel::ioctl::_IOW::<(i64, i64, i64)>(RROS_POL
 pub const RROS_POLIOC_WAIT: u32 = kernel::ioctl::_IOWR::<(i64, i64, i64)>(RROS_POLL_IOCBASE, 1);
 
 pub struct RrosPollGroup {
-    pub item_index: rbtree::RBTree<u32, Arc<Box<RrosPollItem>>>,
-    pub item_list: list_head,
-    pub waiter_list: SpinLock<list_head>,
+    pub item_index: rbtree::RBTree<u32, Arc<RrosPollItem>>,
+    pub item_list: List<Arc<RrosPollItem>>,
+    pub waiter_list: SpinLock<List<Arc<RrosPollWaiter>>>,
     pub rfile: RrosFile,
     // pub item_lock: mutex::RrosKMutex,
     pub nr_items: i32,
@@ -89,8 +90,8 @@ impl RrosPollGroup {
     pub fn new() -> Self {
         Self {
             item_index: rbtree::RBTree::new(),
-            item_list: list_head::default(),
-            waiter_list: unsafe { SpinLock::new(list_head::default()) },
+            item_list: List::new(),
+            waiter_list: unsafe { SpinLock::new(List::new()) },
             rfile: RrosFile::new(),
             // item_lock: mutex::RrosKMutex::new(),
             nr_items: 0,
@@ -99,10 +100,8 @@ impl RrosPollGroup {
     }
 
     pub fn init(&mut self) {
-        init_list_head!(&mut self.item_list);
         let pinned = unsafe { Pin::new_unchecked(&mut self.waiter_list) };
         spinlock_init!(pinned, "RrosPollGroup::waiter_list");
-        init_list_head!(self.waiter_list.locked_data().get());
         //FIXME: init kmutex fail
         // rros_init_kmutex(&mut item_lock as *mut RrosKMutex);
     }
@@ -118,26 +117,22 @@ impl RrosPollGroup {
 
     #[inline]
     pub fn flush_item(&mut self) {
-        let item: *mut RrosPollItem;
-        let n: *mut RrosPollItem;
-        list_for_each_entry_safe!(
-            item,
-            n,
-            &self.item_list,
-            RrosPollItem,
-            {
-                drop(item);
-            },
-            next
-        );
+        drop(&mut self.item_list);
     }
 }
 
 pub struct RrosPollItem {
     pub fd: u32,
     pub events_polled: i32,
-    pub next: list_head,
+    pub next: Links<RrosPollItem>,
     pub pollval: Option<Rc<RefCell<RrosValue>>>,
+}
+
+impl GetLinks for RrosPollItem {
+    type EntryType = RrosPollItem;
+    fn get_links(data: &Self::EntryType) -> &Links<Self::EntryType> {
+        &data.next
+    }
 }
 
 impl RrosPollItem {
@@ -145,21 +140,28 @@ impl RrosPollItem {
         Self {
             fd: 0,
             events_polled: 0,
-            next: list_head::default(),
+            next: Links::new(),
             pollval: None,
         }
     }
 }
 pub struct RrosPollWaiter {
     pub flag: Option<Rc<RefCell<RrosFlag>>>,
-    pub next: list_head,
+    pub next: Links<RrosPollWaiter>,
+}
+
+impl GetLinks for RrosPollWaiter {
+    type EntryType = RrosPollWaiter;
+    fn get_links(data: &Self::EntryType) -> &Links<Self::EntryType> {
+        &data.next
+    }
 }
 
 impl RrosPollWaiter {
     pub fn new() -> Self {
         Self {
             flag: Some(Rc::try_new(RefCell::new(RrosFlag::new())).unwrap()),
-            next: list_head::default(),
+            next: Links::new(),
         }
     }
 }
@@ -453,15 +455,6 @@ fn check_no_loop_deeper(origin: &File, item: &RrosPollItem, depth: i32) -> Resul
                     group = &mut *(((*rfilp.filp).private_data as *mut u8).offset(8)
                         as *mut RrosPollGroup);
                     // group = &mut *((*rfilp.filp).private_data as *mut RrosPollGroup);
-                    pr_debug!(
-                        "poll: check_no_loop_deeper: address of group is {:p}",
-                        group as *mut RrosPollGroup
-                    );
-                    pr_debug!(
-                        "poll: check_no_loop_deeper: group.item_list: next is {:p}, prev is {:p}",
-                        group.item_list.next,
-                        group.item_list.prev
-                    );
                 }
             }
             None => {
@@ -471,20 +464,15 @@ fn check_no_loop_deeper(origin: &File, item: &RrosPollItem, depth: i32) -> Resul
         }
 
         // rros_lock_kmutex(&mut group.item_lock as *mut RrosKMutex);
-        list_for_each_entry!(
-            item2,
-            &group.item_list,
-            RrosPollItem,
-            {
-                unsafe {
-                    ret = check_no_loop_deeper(origin, &*item2, depth + 1);
-                }
-                if ret.is_err() {
-                    break;
-                }
-            },
-            next
-        );
+        let mut cursor = group.item_list.cursor_front();
+        while cursor.current().is_some() {
+            let item = cursor.current().unwrap();
+            ret = check_no_loop_deeper(origin, item, depth + 1);
+            if ret.is_err() {
+                break;
+            }
+            cursor.move_next();
+        }
         // rros_unlock_kmutex(&mut group.item_lock as *mut RrosKMutex);
         break;
     }
@@ -506,8 +494,8 @@ fn add_item(filp: &File, group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Res
     pr_debug!("poll: add_item: filp.ptr.private_data is {:p}", unsafe {
         (*filp.ptr).private_data
     });
-    let mut item: Box<RrosPollItem> = Box::try_new(RrosPollItem::new())?;
-    let mut rfilp: &mut RrosFile = &mut RrosFile::new();
+    let mut item: RrosPollItem = RrosPollItem::new();
+    let rfilp: &mut RrosFile;
     let mut ret: Result<i32> = Ok(0);
     let events: i32;
 
@@ -521,11 +509,6 @@ fn add_item(filp: &File, group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Res
             match rros_get_file(creq.fd) {
                 Some(mut f) => {
                     rfilp = unsafe { f.as_mut() };
-                    pr_debug!(
-                        "poll: add_item: rfilp is {:p}, rfilp.filp.private_data is {:p}",
-                        rfilp as *mut RrosFile,
-                        unsafe { (*rfilp.filp).private_data }
-                    );
                 }
                 None => {
                     ret = Err(Error::EBADF);
@@ -534,36 +517,24 @@ fn add_item(filp: &File, group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Res
             }
 
             // rros_lock_kmutex(&mut group.item_lock as *mut RrosKMutex);
-            pr_debug!(
-                "poll: add_item: group address is {:p}",
-                group as *mut RrosPollGroup
-            );
-            pr_debug!(
-                "poll: add_item: group.item_list: next is {:p}, prev is {:p}",
-                group.item_list.next,
-                group.item_list.prev
-            );
-            pr_debug!(
-                "poll: add_item: address of item is {:p}",
-                &mut *item as *mut RrosPollItem
-            );
             if let Err(e) = check_no_loop(filp, &item) {
                 ret = Err(e);
-                pr_debug!("poll: add_item: check_no_loop is false");
+                pr_err!("poll: add_item: check_no_loop is false");
                 break 'fail_add;
             }
 
-            let itptr = &mut item.next as *mut list_head;
+            let item_fd = item.fd;
+            let arc_item = Arc::try_new(item).unwrap();
             if group
                 .item_index
-                .try_insert(item.fd, Arc::try_new(item)?)
+                .try_insert(item_fd, arc_item.clone())
                 .is_err()
             {
-                pr_debug!("poll: add_item: try_insert is error");
+                pr_err!("poll: add_item: try_insert is error");
                 break 'fail_add;
             }
 
-            list_add!(itptr, &mut group.item_list);
+            group.item_list.push_front(arc_item);
             group.nr_items += 1;
             group.new_generation();
             // rros_unlock_kmutex(&mut group.item_lock as *mut RrosKMutex);
@@ -580,7 +551,7 @@ fn add_item(filp: &File, group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Res
 }
 
 fn del_item(group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Result<i32> {
-    let mut item: Arc<Box<RrosPollItem>>;
+    let mut item: Arc<RrosPollItem>;
 
     // rros_lock_kmutex(&mut group.item_lock as *mut RrosKMutex);
     match group.item_index.remove(&creq.fd) {
@@ -591,7 +562,7 @@ fn del_item(group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Result<i32> {
         }
     }
 
-    list_del!(&mut Arc::get_mut(&mut item).unwrap().next);
+    unsafe{ group.item_list.remove(&item) };
     group.nr_items -= 1;
     group.new_generation();
     // rros_unlock_kmutex(&mut group.item_lock as *mut RrosKMutex);
@@ -642,7 +613,7 @@ fn mod_item(group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Result<i32> {
 
     match group.item_index.get_mut(&creq.fd) {
         Some(i) => {
-            let mut item: &mut RrosPollItem = Arc::get_mut(i).unwrap();
+            let mut item: &mut RrosPollItem = unsafe{ Arc::get_mut_unchecked(i) };
             item.events_polled = events | POLLERR as i32 | POLLHUP as i32;
             if let Some(r) = Rc::get_mut(item.pollval.as_mut().unwrap()) {
                 let pvref = r.try_borrow_mut();
@@ -668,20 +639,7 @@ fn mod_item(group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Result<i32> {
 }
 
 fn setup_item(filp: &File, group: &mut RrosPollGroup, creq: RrosPollCtlreq) -> Result<i32> {
-    pr_debug!("poll: setup_item: filp.ptr.private_data is {:p}", unsafe {
-        (*filp.ptr).private_data
-    });
-    pr_debug!(
-        "poll: setup_item: group.item_list: next is {:p}, prev is {:p}",
-        group.item_list.next,
-        group.item_list.prev
-    );
-    pr_debug!(
-        "poll: setup_item: group address is {:p}",
-        group as *mut RrosPollGroup
-    );
-    pr_debug!("poll: setup_item: creq.fd is {}", creq.fd);
-    let mut ret: Result<i32>;
+    let ret: Result<i32>;
 
     match creq.action {
         RROS_POLL_CTLADD => {
@@ -765,31 +723,15 @@ fn collect_events(
             if let Some(wpt) = curr.poll_context.table.as_mut() {
                 let mut i: usize = 0;
                 let w = wpt.as_mut_slice();
-                pr_debug!("poll: collect_events: group.item_list.next is {:p}, group.item_list.prev is {:p}", group.item_list.next, group.item_list.prev);
-                list_for_each_entry!(
-                    item,
-                    &group.item_list,
-                    RrosPollItem,
-                    {
-                        pr_debug!("poll: collect_events: current i is {}", i);
-                        unsafe {
-                            pr_debug!(
-                                "poll: collect_events: address of item is {:p}",
-                                item as *mut u8
-                            );
-                            pr_debug!(
-                                "poll: collect_events: group.item_list current item.fd is {}",
-                                (*item).fd
-                            );
-                            pr_debug!("poll: collect_events: group.item_list current item.events_polled is {}", (*item).events_polled);
-                            w[i].fd = (*item).fd;
-                            w[i].events_polled = (*item).events_polled;
-                            w[i].pollval = Some((*item).pollval.as_ref().unwrap().clone());
-                        }
-                        i += 1;
-                    },
-                    next
-                );
+                let mut cursor = group.item_list.cursor_front();
+                while cursor.current().is_some() {
+                    let item = cursor.current().unwrap();
+                    w[i].fd = item.fd;
+                    w[i].events_polled = item.events_polled;
+                    w[i].pollval = Some(item.pollval.as_ref().unwrap().clone());
+                    i += 1;
+                    cursor.move_next();
+                }
             }
             break 'collect;
         }
@@ -967,12 +909,14 @@ fn wait_events(
                 tmode = RrosTmode::RrosRel;
             }
 
+            let waiter_list = unsafe{ &mut *group.waiter_list.locked_data().get() };
+            let arc_waiter = Arc::try_new(waiter).unwrap();
             flags = group.waiter_list.irq_lock_noguard();
-            list_add!(&mut waiter.next, group.waiter_list.locked_data().get());
+            waiter_list.push_front(arc_waiter.clone());
             group.waiter_list.irq_unlock_noguard(flags);
             let num = waiter_flag_mut.wait_timeout(timeout, tmode);
             flags = group.waiter_list.irq_lock_noguard();
-            list_del!(&mut waiter.next);
+            unsafe{ waiter_list.remove(&arc_waiter) };
             group.waiter_list.irq_unlock_noguard(flags);
 
             if num == 0 {
@@ -1013,20 +957,12 @@ fn poll_release(obj: Box<RefCell<RrosPollGroup>>, filp: &File) -> i32 {
     let mut flags: u64;
     let refmut_g = group.deref_mut();
     flags = refmut_g.waiter_list.irq_lock_noguard();
-    list_for_each_entry!(
-        waiter,
-        &*(refmut_g.waiter_list.locked_data().get() as *mut list_head),
-        RrosPollWaiter,
-        {
-            unsafe {
-                Rc::get_mut((*waiter).flag.as_mut().unwrap())
-                    .unwrap()
-                    .get_mut()
-                    .flush_nosched(T_RMID as i32);
-            }
-        },
-        next
-    );
+    let mut cursor = unsafe{ (*refmut_g.waiter_list.locked_data().get()).cursor_front_mut() };
+    while cursor.current().is_some() {
+        let waiter = cursor.current().unwrap();
+        waiter.flag.as_deref().unwrap().try_borrow_mut().unwrap().flush_nosched(T_RMID as i32);
+        cursor.move_next();
+    }
     refmut_g.waiter_list.irq_unlock_noguard(flags);
     unsafe {
         rros_schedule();

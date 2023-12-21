@@ -3,7 +3,7 @@
 //! dovetail
 //!
 //! C header: [`include/linux/dovetail.h`](../../../../include/linux/dovetail.h)
-use crate::{bindings, prelude::*, c_types::*};
+use crate::{bindings, c_types::*, prelude::*};
 
 use core::ptr;
 
@@ -51,7 +51,9 @@ impl OobThreadState {
 
     /// `set_thread`: A method that set the `thread` field to the `curr` parameter.
     pub fn set_thread(&self, curr: *mut c_void) {
-        unsafe { (*(self.ptr)).thread = curr; }
+        unsafe {
+            (*(self.ptr)).thread = curr;
+        }
     }
 }
 

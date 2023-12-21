@@ -4,10 +4,7 @@
 //!
 //! C header: [`include/linux/tick.h`](../../../../include/linux/tick.h)
 
-use crate::{
-    bindings,
-    c_types::*,
-};
+use crate::{bindings, c_types::*};
 
 use core::option::Option;
 

@@ -5,11 +5,10 @@
 //! C header: [`include/linux/uio.h`](../../../../include/linux/uio.h)
 
 use crate::{
-    bindings,
+    bindings, c_types,
     error::Error,
     io_buffer::{IoBufferReader, IoBufferWriter},
     Result,
-    c_types,
 };
 use core::cell::UnsafeCell;
 

@@ -1,6 +1,9 @@
-use core::{cell::RefCell, clone::Clone, convert::TryInto, default::Default, result::Result::Ok, ptr, mem::size_of};
+use core::{
+    cell::RefCell, clone::Clone, convert::TryInto, default::Default, mem::size_of, ptr,
+    result::Result::Ok,
+};
 
-use crate::{clock, control, file::RrosFileBinding, proxy, thread, xbuf, poll};
+use crate::{clock, control, file::RrosFileBinding, poll, proxy, thread, xbuf};
 
 use alloc::rc::Rc;
 
@@ -8,21 +11,20 @@ use kernel::{
     bindings,
     bitmap::{self, bitmap_zalloc},
     c_str, c_types, chrdev, class, device,
-    file::{self, File, fd_install},
+    device::DeviceType,
+    file::{self, fd_install, File},
     file_operations::FileOperations,
+    file_operations::{FileOpener, IoctlCommand},
     fs::{self, Filename},
-    irq_work, rbtree, spinlock_init, kernelh,
+    io_buffer::IoBufferWriter,
+    irq_work, kernelh,
     prelude::*,
+    rbtree, spinlock_init,
     str::CStr,
     sync::{Lock, SpinLock},
-    sysfs,
-    types,
-    uidgid, workqueue, ThisModule,
-    file_operations::{FileOpener, IoctlCommand},
+    sysfs, types, uidgid,
     uidgid::{KgidT, KuidT},
-    device::DeviceType,
-    io_buffer::IoBufferWriter,
-    kernelh,
+    workqueue, ThisModule,
 };
 
 extern "C" {

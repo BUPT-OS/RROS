@@ -1,45 +1,50 @@
 use crate::{
-    clock::{self, rros_read_clock}, factory, fifo::{self, RROS_SCHED_FIFO}, file::RrosFileBinding, idle,
-    lock::{self, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore}, sched::*, timeout,
-    timer::{self, program_timer, rros_dequeue_timer, rros_stop_timer, rros_update_timer_date}, RROS_OOB_CPUS,
+    clock::{self, rros_read_clock},
+    factory,
+    fifo::{self, RROS_SCHED_FIFO},
+    file::RrosFileBinding,
+    idle,
+    lock::{self, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
+    sched::*,
+    timeout,
+    timer::{self, program_timer, rros_dequeue_timer, rros_stop_timer, rros_update_timer_date},
     wait::RrosWaitChannel,
+    RROS_OOB_CPUS,
 };
 
 use alloc::rc::Rc;
 
 use core::{
-    ops::DerefMut,
-    result::Result::{Ok, Err},
     cell::RefCell,
     clone::Clone,
+    ops::DerefMut,
+    result::Result::{Err, Ok},
 };
 
 #[warn(unused_mut)]
 use kernel::{
-    bindings, c_types,
-    prelude::*,
-    spinlock_init, c_str,
-    sched::sched_setscheduler,
-    sync::{Lock, SpinLock},
-    types,
-    kernelh,
-    dovetail,
-    premmpt,
-    cred,
-    fs,
-    task::{self, Task},
-    capability,
-    ktime,
-    str::CStr,
-    irq_work::IrqWork,
-    io_buffer::IoBufferWriter,
-    file::File,
-    file_operations::FileOperations,
-    error::from_kernel_err_ptr,
-    device::DeviceType,
-    ktime::ktime_sub,
+    bindings, c_str, c_types, capability,
     completion::Completion,
     cpumask::CpumaskT,
+    cred,
+    device::DeviceType,
+    dovetail,
+    error::from_kernel_err_ptr,
+    file::File,
+    file_operations::FileOperations,
+    fs,
+    io_buffer::IoBufferWriter,
+    irq_work::IrqWork,
+    kernelh, ktime,
+    ktime::ktime_sub,
+    prelude::*,
+    premmpt,
+    sched::sched_setscheduler,
+    spinlock_init,
+    str::CStr,
+    sync::{Lock, SpinLock},
+    task::{self, Task},
+    types,
 };
 
 extern "C" {
@@ -140,7 +145,7 @@ pub const CONFIG_RROS_NR_THREADS: usize = 16;
 
 pub static mut RROS_THREAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
-        // TODO: move this and clock factory name to a variable 
+        // TODO: move this and clock factory name to a variable
         name: CStr::from_bytes_with_nul_unchecked("thread\0".as_bytes()),
         // fops: Some(&ThreadOps),
         nrdev: CONFIG_RROS_NR_THREADS,
@@ -343,11 +348,23 @@ pub fn rros_init_thread(
     // thread_lock.u_window = None;
     // thread_lock.observable = iattr_ptr.observable.clone();
 
-    thread.clone().unwrap().lock().deref_mut().inband_disable_count.atomic_set(0);
+    thread
+        .clone()
+        .unwrap()
+        .lock()
+        .deref_mut()
+        .inband_disable_count
+        .atomic_set(0);
     // memset(&thread->PollContext, 0, sizeof(thread->PollContext));
     // memset(&thread->stat, 0, sizeof(thread->stat));
     // memset(&thread->altsched, 0, sizeof(thread->altsched));
-    thread.clone().unwrap().lock().deref_mut().inband_work.init_irq_work(inband_task_wakeup)?;
+    thread
+        .clone()
+        .unwrap()
+        .lock()
+        .deref_mut()
+        .inband_work
+        .init_irq_work(inband_task_wakeup)?;
     // pr_debug!("yinyongcishu is {}", Arc::strong_count(&thread.clone().unwrap()));
 
     //tp set gps
@@ -775,12 +792,22 @@ fn map_kthread_self(kthread: &mut RrosKthread) -> Result<usize> {
 
     let ret;
     unsafe {
-        pr_debug!("map_kthread_self: the altched add is {:p}", &mut (*thread.locked_data().get()).altsched);
-        (*thread.locked_data().get()).altsched.dovetail_init_altsched();
+        pr_debug!(
+            "map_kthread_self: the altched add is {:p}",
+            &mut (*thread.locked_data().get()).altsched
+        );
+        (*thread.locked_data().get())
+            .altsched
+            .dovetail_init_altsched();
         pr_debug!("map_kthread_self: after dovetail_init_altsched");
 
-        set_oob_threadinfo(Arc::into_raw(thread.clone()) as *mut SpinLock<RrosThread> as *mut c_types::c_void);
-        pr_debug!("map_kthread_self rros_current address is {:p}", rros_current());
+        set_oob_threadinfo(
+            Arc::into_raw(thread.clone()) as *mut SpinLock<RrosThread> as *mut c_types::c_void
+        );
+        pr_debug!(
+            "map_kthread_self rros_current address is {:p}",
+            rros_current()
+        );
         dovetail::dovetail_start_altsched();
 
         rros_release_thread(thread.clone(), T_DORMANT as u32, 0 as u32);
@@ -1033,7 +1060,9 @@ pub fn set_oob_threadinfo(curr: *mut c_types::c_void) {
 
 pub fn set_oob_mminfo(thread: Arc<SpinLock<RrosThread>>) {
     // pr_debug!("set_oob_mminfo: in");
-    unsafe { (*thread.locked_data().get()).oob_mm = dovetail::dovetail_mm_state(); }
+    unsafe {
+        (*thread.locked_data().get()).oob_mm = dovetail::dovetail_mm_state();
+    }
 }
 
 pub fn kthread_run_on_cpu(
@@ -1315,10 +1344,7 @@ pub fn __rros_propagate_schedparam_change(_curr: &mut SpinLock<RrosThread>) {
 }
 
 #[no_mangle]
-unsafe extern "C" fn rust_handle_inband_event(
-    event: u32,
-    _data: *mut c_types::c_void,
-) {
+unsafe extern "C" fn rust_handle_inband_event(event: u32, _data: *mut c_types::c_void) {
     match event {
         // case INBAND_TASK_SIGNAL:
         // 	handle_sigwake_event(data);
@@ -1803,7 +1829,9 @@ fn map_uthread_self(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // 	 * core. Filtering access to /dev/rros/control can be used to
     // 	 * restrict attachment.
     // 	 */
-    unsafe { (*thread.locked_data().get()).raised_cap = capability::KernelCapStruct::new(); }
+    unsafe {
+        (*thread.locked_data().get()).raised_cap = capability::KernelCapStruct::new();
+    }
     // 	thread->raised_cap = CAP_EMPTY_SET;
     // TODO: add the cred wrappers/ maybe first check the lastest RFL wrap
     let new_cap = cred::Credential::prepare_creds();
@@ -1838,7 +1866,11 @@ fn map_uthread_self(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // TODO: add the trace function
     // 	trace_rros_thread_map(thread);
 
-    unsafe { (*thread.locked_data().get()).altsched.dovetail_init_altsched(); }
+    unsafe {
+        (*thread.locked_data().get())
+            .altsched
+            .dovetail_init_altsched();
+    }
     // 	dovetail_init_altsched(&thread->altsched);
     unsafe {
         pr_debug!(
@@ -1949,10 +1981,10 @@ fn rros_signal_thread(thread: *mut RrosThread, sig: i32, arg: u32) -> Result<usi
     Ok(0)
 }
 
-unsafe extern "C" fn sig_irqwork(_work:*mut IrqWork) {
-	let _sigd = SigIrqworkData::new();
-	// unsafe{do_inband_signal(sigd.thread, sigd.signo, sigd.sigval)};
-	// rros_put_element(&sigd->thread->element);
+unsafe extern "C" fn sig_irqwork(_work: *mut IrqWork) {
+    let _sigd = SigIrqworkData::new();
+    // unsafe{do_inband_signal(sigd.thread, sigd.signo, sigd.sigval)};
+    // rros_put_element(&sigd->thread->element);
 }
 
 // fn do_inband_signal(thread:*mut RrosThread, signo:i32, sigval:i32){

@@ -11,21 +11,15 @@ use crate::{
 
 use alloc::sync::Arc;
 
-use core::{
-    ops::FnMut,
-    clone::Clone,
-    ptr::NonNull,
-    sync::atomic::AtomicBool,
-};
+use core::{clone::Clone, ops::FnMut, ptr::NonNull, sync::atomic::AtomicBool};
 
 use kernel::{
-    bindings,
+    bindings, delay,
     ktime::KtimeT,
-    prelude::*,
-    Result,
-    sync::{SpinLock, Lock, HardSpinlock},
     linked_list::List,
-    delay,
+    prelude::*,
+    sync::{HardSpinlock, Lock, SpinLock},
+    Result,
 };
 
 pub const RROS_WAIT_PRIO: usize = 1 << 0;
@@ -137,7 +131,7 @@ impl RrosWaitQueue {
             "before adding the wait list length is {}",
             self.wchan.wait_list.len()
         );
-        if curr.state & T_WOLI != 0  && curr.inband_disable_count.atomic_read() > 0 {
+        if curr.state & T_WOLI != 0 && curr.inband_disable_count.atomic_read() > 0 {
             let _ret = rros_notify_thread(
                 curr as *const _ as *mut RrosThread,
                 RROS_HMDIAG_SYSDEMOTE as u32,
@@ -329,7 +323,9 @@ pub fn wait_test() {
         unsafe { (*flag_ptr).store(true, Relaxed) };
 
         unsafe { (*ptr_queue).flush_locked(0) }
-        unsafe { (*ptr_queue).lock.raw_spin_unlock_irqrestore(flags); }
+        unsafe {
+            (*ptr_queue).lock.raw_spin_unlock_irqrestore(flags);
+        }
         unsafe { rros_schedule() };
     }
     pr_debug!("wait test done")

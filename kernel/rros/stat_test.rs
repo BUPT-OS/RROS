@@ -1,12 +1,12 @@
 use crate::{
-    clock::*, factory::RrosElement, factory::RrosFactory, factory::RustFile, lock::*, sched::*,
-    timer::*, RROS_OOB_CPUS, factory, list::*,
+    clock::*, factory, factory::RrosElement, factory::RrosFactory, factory::RustFile, list::*,
+    lock::*, sched::*, timer::*, RROS_OOB_CPUS,
 };
 use core::{
     borrow::{Borrow, BorrowMut},
     cell::{RefCell, UnsafeCell},
-    ops::{Deref, DerefMut},
     mem::{align_of, size_of},
+    ops::{Deref, DerefMut},
     todo,
 };
 use kernel::{
@@ -14,4 +14,3 @@ use kernel::{
     ktime::*, percpu, percpu_defs, prelude::*, premmpt, spinlock_init, str::CStr, sync::Guard,
     sync::Lock, sync::SpinLock, sysfs, timekeeping,
 };
-

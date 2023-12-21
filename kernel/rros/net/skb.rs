@@ -1,31 +1,26 @@
+use super::{device::NetDevice, socket::RrosSocket};
+use crate::{
+    clock::RROS_MONO_CLOCK,
+    sched::rros_schedule,
+    timeout::{RrosTmode, RROS_NONBLOCK},
+    wait::RROS_WAIT_PRIO,
+    work::RrosWork,
+};
 use core::{
-    mem::transmute,
     default::Default,
-    ops::{Deref, DerefMut,},
+    mem::transmute,
+    ops::{Deref, DerefMut},
     option::Option::None,
     ptr::NonNull,
     result::Result::Ok,
     sync::atomic::{AtomicBool, Ordering},
 };
 use kernel::{
-    skbuff,
-    bindings,
-    init_static_sync, pr_debug, Result,
-    sync::{
-        Lock, SpinLock,
-    },
+    bindings, init_static_sync,
     ktime::KtimeT,
-};
-use crate::{
-    work::RrosWork,
-    sched::rros_schedule,
-    clock::RROS_MONO_CLOCK,
-    wait::RROS_WAIT_PRIO,
-    timeout::{RrosTmode, RROS_NONBLOCK,},
-};
-use super::{
-    device::NetDevice,
-    socket::RrosSocket,
+    pr_debug, skbuff,
+    sync::{Lock, SpinLock},
+    Result,
 };
 
 struct CloneControl {
@@ -163,9 +158,7 @@ impl RrosSkBuff {
             return Some(Self::from_raw_ptr(skb));
         }
         let mut dma_addr = 0 as u64;
-        let skb = unsafe {
-            rust_helper_netdev_alloc_oob_skb(dev.0.as_ptr(), &mut dma_addr)
-        };
+        let skb = unsafe { rust_helper_netdev_alloc_oob_skb(dev.0.as_ptr(), &mut dma_addr) };
         if !skb.is_null() {
             let mut skb = Self::from_raw_ptr(skb);
             unsafe {

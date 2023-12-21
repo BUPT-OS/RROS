@@ -74,7 +74,7 @@ impl File {
         self.ptr
     }
 
-    /// Returns the parent directory name of the file 
+    /// Returns the parent directory name of the file
     pub fn get_parent_name(&self) -> Result<&str> {
         let d = unsafe { (*(*self.ptr).f_path.dentry).d_parent };
         if d.is_null() {
@@ -190,7 +190,9 @@ impl Drop for FileDescriptorReservation {
 /// call linux fd_install
 pub fn fd_install(fd: u32, filp: *mut bindings::file) {
     // SAFETY: The caller must ensure that `filp` is a valid pointer.
-    unsafe { bindings::fd_install(fd, filp); }
+    unsafe {
+        bindings::fd_install(fd, filp);
+    }
 }
 
 /// Wraps the kernel's `struct files_struct`.

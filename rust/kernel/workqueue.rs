@@ -10,7 +10,7 @@ use core::{fmt, ops::Deref, ptr::NonNull};
 
 extern "C" {
     #[allow(improper_ctypes)]
-    fn rust_helper_init_work(work: *mut bindings::work_struct, func: extern "Rust" fn(*mut Work));
+    fn rust_helper_init_work(work: *mut bindings::work_struct, func: fn(*mut Work));
 }
 
 /// Struct `Queue` represents a work queue.

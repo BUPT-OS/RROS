@@ -4,15 +4,18 @@
 //!
 //! C header: [`include/linux/wait.h`](../../../../include/linux/wait.h)
 
-use crate::{
-    bindings,
-    c_types::*,
-};
+use crate::{bindings, c_types::*};
 use core::ptr;
 
 extern "C" {
-    fn rust_helper_add_wait_queue(wq_head: *mut bindings::wait_queue_head, wq_entry: *mut bindings::wait_queue_entry);
-    fn rust_helper_wait_event_interruptible(wq_head: *mut bindings::wait_queue_head, condition: bool) -> i32;
+    fn rust_helper_add_wait_queue(
+        wq_head: *mut bindings::wait_queue_head,
+        wq_entry: *mut bindings::wait_queue_entry,
+    );
+    fn rust_helper_wait_event_interruptible(
+        wq_head: *mut bindings::wait_queue_head,
+        condition: bool,
+    ) -> i32;
     #[allow(improper_ctypes)]
     fn __init_waitqueue_head(
         wq_head: *mut bindings::wait_queue_head,

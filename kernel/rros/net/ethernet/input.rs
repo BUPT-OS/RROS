@@ -1,20 +1,9 @@
-use core::ops::Deref;
 use crate::{
+    net::{input::rros_net_receive, packet::rros_net_packet_deliver, skb::RrosSkBuff},
     DECLARE_BITMAP,
-    net::{
-        packet::rros_net_packet_deliver,
-        skb::RrosSkBuff,
-        input::rros_net_receive
-    },
 };
-use kernel::{
-    bindings,
-    endian::be16,
-    c_types::c_void,
-    prelude::*,
-    bitmap,
-    if_vlan::VlanEthhdr
-};
+use core::ops::Deref;
+use kernel::{bindings, bitmap, c_types::c_void, endian::be16, if_vlan::VlanEthhdr, prelude::*};
 
 fn pick(skb: RrosSkBuff) -> bool {
     rros_net_receive(skb, net_ether_ingress);
@@ -44,8 +33,7 @@ fn untag(mut skb: RrosSkBuff, ehdr: &mut VlanEthhdr, mac_hdr: *mut u8) -> bool {
         kernel::str::memmove(
             unsafe { mac_hdr.offset(bindings::VLAN_HLEN as isize) as *mut c_void },
             mac_hdr as *mut c_void,
-            (mac_len - bindings::VLAN_HLEN as usize - bindings::ETH_TLEN as usize)
-                as u64,
+            (mac_len - bindings::VLAN_HLEN as usize - bindings::ETH_TLEN as usize) as u64,
         );
     }
     skb.mac_header += bindings::VLAN_HLEN as u16;
@@ -149,7 +137,6 @@ pub fn rros_net_store_vlans(buf: *const u8, len: usize) -> i32 {
     }
     return len as i32;
 }
-
 
 #[allow(unused)]
 pub fn rros_show_vlans() {

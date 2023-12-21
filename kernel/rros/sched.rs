@@ -2,18 +2,21 @@ use alloc::rc::Rc;
 
 use core::{
     cell::RefCell,
-    ops::DerefMut,
-    ptr::{NonNull, null, null_mut},
     mem::{align_of, size_of, transmute},
+    ops::DerefMut,
+    ptr::{null, null_mut, NonNull},
 };
 
 #[warn(unused_mut)]
 use kernel::{
-    bindings, c_str, c_types,
+    bindings, c_str, c_types, capability, completion,
     cpumask::{self, online_cpus, possible_cpus},
     double_linked_list::*,
     dovetail::{self, OobMmState},
+    irq_pipeline,
     irq_work::IrqWork,
+    ktime::Timespec64,
+    linked_list::{GetLinks, Links},
     percpu::alloc_per_cpu,
     percpu_defs,
     prelude::*,
@@ -21,27 +24,23 @@ use kernel::{
     str::{kstrdup, CStr},
     sync::{HardSpinlock, Lock, SpinLock},
     types::Atomic,
-    irq_pipeline,
-    ktime::Timespec64,
-    completion,
-    capability,
     waitqueue,
-    linked_list::{GetLinks, Links},
 };
 
 use crate::{
-    idle, sched, tp,
     clock::{self, RrosClock},
     factory::RrosElement,
-    fifo,
+    fifo, idle,
     list::ListHead,
-    lock, stat,
+    lock,
+    poll::RrosPollWatchpoint,
+    sched, stat,
     thread::*,
     tick,
     timeout::RROS_INFINITE,
     timer::*,
-    wait::{RROS_WAIT_PRIO, RrosWaitChannel, RrosWaitQueue},
-    poll::RrosPollWatchpoint
+    tp,
+    wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO},
 };
 
 extern "C" {
@@ -1072,10 +1071,10 @@ impl RrosObservable {
                 next: 0 as *mut ListHead,
                 prev: 0 as *mut ListHead,
             },
-            oob_wait: unsafe{
+            oob_wait: unsafe {
                 RrosWaitQueue::new(
                     &mut RROS_MONO_CLOCK as *mut RrosClock,
-                    RROS_WAIT_PRIO as i32
+                    RROS_WAIT_PRIO as i32,
                 )
             },
             inband_wait: waitqueue::WaitQueueHead::new(),
@@ -2009,7 +2008,11 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
         // fix!!!!!
         let inband_tail;
         // pr_debug!("before the inband_tail next state is {}", next.lock().state);
-        inband_tail = dovetail::dovetail_context_switch(&mut (*prev.locked_data().get()).altsched, &mut (*next.locked_data().get()).altsched, leaving_inband);
+        inband_tail = dovetail::dovetail_context_switch(
+            &mut (*prev.locked_data().get()).altsched,
+            &mut (*next.locked_data().get()).altsched,
+            leaving_inband,
+        );
         // next.unlock();
         // finish_rq_switch(inband_tail, flags); //b kernel/rros/sched.rs:1751
 
@@ -2047,7 +2050,11 @@ pub fn pick_next_thread(rq: Option<*mut rros_rq>) -> Option<Arc<SpinLock<RrosThr
             break;
         }
         unsafe {
-            if test_bit(RROS_MM_PTSYNC_BIT, &(*(oob_mm.ptr)).flags as *const _ as *const usize) == false {
+            if test_bit(
+                RROS_MM_PTSYNC_BIT,
+                &(*(oob_mm.ptr)).flags as *const _ as *const usize,
+            ) == false
+            {
                 break;
             }
         }

@@ -1,25 +1,15 @@
-use core::{
-    mem::size_of,
-    ptr::NonNull,
-};
+use crate::{clock::*, fifo::*, sched::*, thread::*, timeout::*, timer::*};
+use core::{mem::size_of, ptr::NonNull};
 use kernel::{
-    ktime,
-    c_types,
-    prelude::*,
-    ktime::{Timespec64, ktime_to_timespec64, timespec64_to_ktime},
-    c_str, spinlock_init,
+    c_str, c_types,
     double_linked_list::*,
-    sync::{SpinLock, Lock},
+    ktime,
+    ktime::{ktime_to_timespec64, timespec64_to_ktime, Timespec64},
     memory_rros::*,
+    prelude::*,
+    spinlock_init,
+    sync::{Lock, SpinLock},
     types::Atomic,
-};
-use crate::{
-    sched::*,
-    clock::*,
-	thread::*,
-    timer::*,
-    timeout::*,
-    fifo::*,
 };
 
 pub static mut RROS_SCHED_TP: RrosSchedClass = RrosSchedClass {
@@ -382,7 +372,7 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
                     .clone()
                     .locked_data()
                     .get())
-                    .cprio;
+                .cprio;
                 if thread_cprio <= cprio_in_list {
                     flag = 0;
                     let rq_next = (*thread.locked_data().get()).rq_next.clone();
@@ -434,7 +424,7 @@ pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
                     .clone()
                     .locked_data()
                     .get())
-                    .cprio;
+                .cprio;
                 if thread_cprio < cprio_in_list {
                     flag = 0;
                     let rq_next = (*thread.locked_data().get()).rq_next.clone();
@@ -753,19 +743,23 @@ pub fn tp_control(
                 break;
             }
             (*p).offset = &mut ktime_to_timespec64((*w).w_offset) as *mut Timespec64;
-            (*pp).duration = &mut ktime_to_timespec64(ktime::ktime_sub((*w).w_offset, (*pw).w_offset)) as *mut Timespec64;
+            (*pp).duration =
+                &mut ktime_to_timespec64(ktime::ktime_sub((*w).w_offset, (*pw).w_offset))
+                    as *mut Timespec64;
             (*p).ptid = (*w).w_part;
             loop_n += 1;
         }
-        (*pp).duration = &mut ktime_to_timespec64(ktime::ktime_sub((*gps).tf_duration, (*pw).w_offset)) as *mut Timespec64;
+        (*pp).duration =
+            &mut ktime_to_timespec64(ktime::ktime_sub((*gps).tf_duration, (*pw).w_offset))
+                as *mut Timespec64;
         put_tp_schedule(gps);
         let ret = size_of::<RrosTpCtlinfo>() + size_of::<RrosTpWindow>() * nr_windows as usize;
         return Ok(ret as i64);
     }
 }
 
-pub fn rros_timer_is_running(timer: *mut RrosTimer) -> bool{
-    unsafe{
+pub fn rros_timer_is_running(timer: *mut RrosTimer) -> bool {
+    unsafe {
         if (*timer).get_status() & RROS_TIMER_RUNNING != 0 {
             return true;
         } else {

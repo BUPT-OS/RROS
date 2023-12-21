@@ -78,9 +78,7 @@ pub struct List<T> {
 impl<T> List<T> {
     /// The `new` method is a constructor for `List`. It takes a value of type `T` and creates a new `List` with a head `Node` that holds the provided value.
     pub fn new(v: T) -> Self {
-        List {
-            head: Node::new(v),
-        }
+        List { head: Node::new(v) }
     }
 
     /// The `add_head` method adds a new node at the head of the list. It takes a value of type `T` for the new node. If the list is empty, it adds the new node after the head. Otherwise, it adds the new node after the node currently following the head.

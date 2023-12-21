@@ -1,10 +1,11 @@
 use core::ptr::NonNull;
 
 use kernel::{
-    types::*,
-    prelude::*,
-    initialize_lock_hashtable, hash_for_each_possible, pr_debug,
+    hash_for_each_possible, initialize_lock_hashtable,
     linked_list::{GetLinks, Links, List},
+    pr_debug,
+    prelude::*,
+    types::*,
 };
 
 #[allow(dead_code)]

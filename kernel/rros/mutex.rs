@@ -283,7 +283,7 @@ pub fn ceil_owner_priority(
                     .clone()
                     .locked_data()
                     .get())
-                    .wprio;
+                .wprio;
                 if (*mutex).wprio <= wprio_in_list {
                     flag = 0;
                     (*boosters).enqueue_by_index(i, (*(*mutex).next_booster).value.clone());
@@ -858,7 +858,7 @@ pub fn rros_lock_mutex_timeout(
                             .clone()
                             .locked_data()
                             .get())
-                            .wprio;
+                        .wprio;
                         if curr_wprio <= wprio_in_list {
                             flag = 0;
                             let wait_next = (*curr.locked_data().get()).wait_next;
@@ -895,7 +895,7 @@ pub fn rros_lock_mutex_timeout(
                                 .clone()
                                 .locked_data()
                                 .get())
-                                .wprio;
+                            .wprio;
                             if (*mutex).wprio <= wprio_in_list {
                                 flag = 0;
                                 (*boosters)
@@ -928,7 +928,7 @@ pub fn rros_lock_mutex_timeout(
                             .clone()
                             .locked_data()
                             .get())
-                            .wprio;
+                        .wprio;
                         if curr_wprio <= wprio_in_list {
                             flag = 0;
                             let wait_next = (*curr.locked_data().get()).wait_next;
@@ -1174,7 +1174,7 @@ pub fn rros_reorder_mutex_wait(
                     .clone()
                     .locked_data()
                     .get())
-                    .wprio;
+                .wprio;
                 if (*waiter_ptr).wprio <= wprio_in_list {
                     flag = 0;
                     (*(*mutex).wchan.wait_list)
@@ -1216,7 +1216,7 @@ pub fn rros_reorder_mutex_wait(
                     .clone()
                     .locked_data()
                     .get())
-                    .wprio;
+                .wprio;
                 if (*mutex).wprio <= wprio_in_list {
                     flag = 0;
                     (*boosters).enqueue_by_index(i, (*((*mutex).next_booster)).value.clone());

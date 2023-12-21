@@ -1,19 +1,18 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
-use kernel::{
-    bindings,
-    irq_work::IrqWork,
-    container_of,
-    pr_debug,
-    workqueue::{Work, queue_work_on, init_work},
-};
 use crate::factory::RrosElement;
+use kernel::{
+    bindings, container_of,
+    irq_work::IrqWork,
+    pr_debug,
+    workqueue::{init_work, queue_work_on, Work},
+};
 
-pub struct RrosWork{
-    irq_work : IrqWork,
+pub struct RrosWork {
+    irq_work: IrqWork,
     wq_work: Work,
-    wq : *mut bindings::workqueue_struct,
+    wq: *mut bindings::workqueue_struct,
     pub handler: Option<fn(arg: &mut RrosWork) -> i32>,
     // element : Rc<RefCell<RrosElement>>
     element: Option<Rc<RefCell<RrosElement>>>,
@@ -36,7 +35,7 @@ unsafe extern "C" fn do_irq_work(irq_work: *mut IrqWork) {
         !queue_work_on(
             bindings::WORK_CPU_UNBOUND as _,
             (*work).wq,
-            &mut (*work).wq_work
+            &mut (*work).wq_work,
         ) && (*work).element.is_some()
     } {
         pr_debug!("uncompleted rros_put_element()");

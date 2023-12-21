@@ -3,7 +3,7 @@
 //! clockchips
 //!
 //! C header: [`include/linux/clockchips.h`](../../../../include/linux/clockchips.h)
-use crate::{bindings, c_types, prelude::*, container_of};
+use crate::{bindings, c_types, container_of, prelude::*};
 
 extern "C" {
     #[allow(dead_code)]
@@ -198,7 +198,12 @@ pub trait ProxySetOneshotStopped {
 pub unsafe extern "C" fn proxy_set_oneshot_stopped<T: ProxySetOneshotStopped>(
     proxy_dev: *mut bindings::clock_event_device,
 ) -> c_types::c_int {
-    let dev = ClockProxyDevice::new(container_of!(proxy_dev, bindings::clock_proxy_device, proxy_device) as *mut bindings::clock_proxy_device).unwrap();
+    let dev = ClockProxyDevice::new(container_of!(
+        proxy_dev,
+        bindings::clock_proxy_device,
+        proxy_device
+    ) as *mut bindings::clock_proxy_device)
+    .unwrap();
     T::proxy_set_oneshot_stopped(dev)
 }
 

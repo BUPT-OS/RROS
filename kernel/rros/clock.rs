@@ -1,15 +1,17 @@
 #![allow(warnings, unused)]
 #![feature(stmt_expr_attributes)]
 use crate::{
-    factory::{CloneData, RrosElement, RrosFactory, RustFile, RROS_CLONE_PUBLIC},
     factory,
-    lock::*,
-    tick::*, timer::*, RROS_OOB_CPUS,
+    factory::{CloneData, RrosElement, RrosFactory, RustFile, RROS_CLONE_PUBLIC},
     list::*,
+    lock::*,
     sched::{rros_cpu_rq, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
     thread::T_ROOT,
     tick,
+    tick::*,
     timeout::RROS_INFINITE,
+    timer::*,
+    RROS_OOB_CPUS,
 };
 
 use alloc::rc::Rc;
@@ -18,20 +20,27 @@ use core::{
     borrow::{Borrow, BorrowMut},
     cell::{RefCell, UnsafeCell},
     clone::Clone,
-    ops::{DerefMut, Deref},
     mem::{align_of, size_of},
+    ops::{Deref, DerefMut},
     todo,
 };
 
 use kernel::{
-    bindings, c_types, cpumask, double_linked_list::*, file_operations::{FileOperations, FileOpener}, ktime::*,
-    percpu, prelude::*, premmpt, spinlock_init, str::CStr, sync::Lock, sync::SpinLock, sysfs,
-    timekeeping,
-    clockchips,
-    uidgid::{KgidT, KuidT},
-    file::File,
-    io_buffer::IoBufferWriter,
+    bindings, c_types, clockchips, cpumask,
     device::DeviceType,
+    double_linked_list::*,
+    file::File,
+    file_operations::{FileOpener, FileOperations},
+    io_buffer::IoBufferWriter,
+    ktime::*,
+    percpu,
+    prelude::*,
+    premmpt, spinlock_init,
+    str::CStr,
+    sync::Lock,
+    sync::SpinLock,
+    sysfs, timekeeping,
+    uidgid::{KgidT, KuidT},
 };
 
 static mut CLOCKLIST_LOCK: SpinLock<i32> = unsafe { SpinLock::new(1) };

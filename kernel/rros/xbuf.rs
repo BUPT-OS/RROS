@@ -18,9 +18,11 @@ use crate::{
 use kernel::{
     bindings,
     c_types::*,
+    device::DeviceType,
     error::Error,
     file::File,
     file_operations::{FileOpener, FileOperations},
+    fs,
     io_buffer::{IoBufferReader, IoBufferWriter},
     irq_work::*,
     prelude::*,
@@ -29,8 +31,6 @@ use kernel::{
     user_ptr::{UserSlicePtrReader, UserSlicePtrWriter},
     vmalloc::c_kzalloc,
     waitqueue,
-    fs,
-    device::DeviceType,
 };
 
 #[derive(Default)]
@@ -686,7 +686,8 @@ pub fn xbuf_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> i32 {
 }
 
 pub fn xbuf_write<T: IoBufferReader>(filp: &File, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
+    let fbind: *const RrosFileBinding =
+        unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut wd: XbufWdesc = XbufWdesc {
@@ -788,7 +789,8 @@ pub fn outbound_signal_output(ring: &XbufRing, _sigpoll: bool) {
 }
 
 pub fn xbuf_oob_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
+    let fbind: *const RrosFileBinding =
+        unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut rd: XbufRdesc = XbufRdesc {
@@ -808,7 +810,8 @@ pub fn xbuf_oob_read<T: IoBufferWriter>(filp: &File, data: &mut T) -> i32 {
 }
 
 pub fn xbuf_oob_write<T: IoBufferReader>(filp: &File, data: &mut T) -> i32 {
-    let fbind: *const RrosFileBinding = unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
+    let fbind: *const RrosFileBinding =
+        unsafe { (*filp.get_ptr()).private_data as *const RrosFileBinding };
     let xbuf = unsafe { (*((*fbind).element)).pointer as *mut RrosXbuf };
 
     let mut wd: XbufWdesc = XbufWdesc {
@@ -950,7 +953,10 @@ fn xbuf_factory_build(
         let mut key1 = waitqueue::LockClassKey::default();
         let name1 =
             CStr::from_bytes_with_nul_unchecked("XBUF RING IBOUND WAITQUEUE HEAD\0".as_bytes());
-        (*xbuf_ptr).ibnd.i_event.init_waitqueue_head(name1.as_ptr() as *const i8, &mut key1);
+        (*xbuf_ptr)
+            .ibnd
+            .i_event
+            .init_waitqueue_head(name1.as_ptr() as *const i8, &mut key1);
 
         (*xbuf_ptr).ibnd.o_event.init();
         raw_spin_lock_init(&mut (*xbuf_ptr).ibnd.lock);
@@ -975,7 +981,10 @@ fn xbuf_factory_build(
         let mut key2 = waitqueue::LockClassKey::default();
         let _name2 =
             CStr::from_bytes_with_nul_unchecked("XBUF RING OUTBOUND WAITQUEUE HEAD\0".as_bytes());
-        (*xbuf_ptr).obnd.o_event.init_waitqueue_head(uname.as_ptr() as *const i8, &mut key2);
+        (*xbuf_ptr)
+            .obnd
+            .o_event
+            .init_waitqueue_head(uname.as_ptr() as *const i8, &mut key2);
 
         let _ret = (*xbuf_ptr)
             .obnd

@@ -224,5 +224,5 @@ impl HardSpinlock {
 #[repr(transparent)]
 pub struct RawSpinLock {
     #[allow(dead_code)]
-    lock: bindings::raw_spinlock_t
+    lock: bindings::raw_spinlock_t,
 }

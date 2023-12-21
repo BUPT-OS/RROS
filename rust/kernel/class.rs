@@ -6,7 +6,7 @@
 
 use core::u32;
 
-use crate::{bindings, c_types, error::Error, Result, device};
+use crate::{bindings, c_types, device, error::Error, Result};
 
 extern "C" {
     #[allow(improper_ctypes)]
@@ -31,7 +31,7 @@ impl DevT {
 }
 
 /// The `Class` struct represents a device class in the kernel. It contains a raw pointer to the underlying `bindings::class` struct.
-/// 
+///
 /// # Invariants
 ///
 /// - [`self.0`] is valid and non-null.
@@ -53,7 +53,9 @@ impl Class {
     /// Add the devnode call back function to the class.
     pub fn set_devnode<T: device::ClassDevnode>(&mut self) {
         // SAFETY: The `self.ptr` is a valid and created by `class_create` function.
-        unsafe { (*(self.0)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback(); }
+        unsafe {
+            (*(self.0)).devnode = device::ClassDevnodeVtable::<T>::get_class_devnode_callback();
+        }
     }
 
     /// The `get_ptr` method returns the raw pointer to the underlying `bindings::class` struct.

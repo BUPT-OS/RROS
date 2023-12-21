@@ -31,7 +31,6 @@ impl KuidT {
     }
 }
 
-
 impl KgidT {
     /// Returns a `KgidT` struct with the value of 0.
     /// Corresponds to the C macro GLOBAL_ROOT_GID.

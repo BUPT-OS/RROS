@@ -11,10 +11,9 @@ use crate::{
 };
 
 use kernel::{
-    c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error, device::DeviceType,
-    file::File,
-    file_operations::FileOperations,
-    io_buffer::IoBufferWriter,
+    c_types, device::DeviceType, file::File, file_operations::FileOperations,
+    io_buffer::IoBufferWriter, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr,
+    Error,
 };
 
 #[allow(dead_code)]

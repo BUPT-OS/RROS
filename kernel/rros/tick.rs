@@ -1,7 +1,7 @@
 use kernel::{
-    bindings, c_types, clockchips, cpumask, interrupt,
+    bindings, c_types, clockchips, clockchips::ClockEventDevice, cpumask, interrupt,
     irq_pipeline::*, ktime::*, percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr,
-    sync::Lock, tick, clockchips::ClockEventDevice,
+    sync::Lock, tick,
 };
 
 use crate::{
@@ -94,7 +94,9 @@ pub struct RrosClockIpiHandler;
 impl clockchips::ClockIpiHandler for RrosClockIpiHandler {
     fn clock_ipi_handler(_irq: c_types::c_int, _dev_id: *mut c_types::c_void) -> c_types::c_uint {
         pr_debug!("god nn");
-        unsafe { clockchips::core_tick::<RrosCoreTick>(null_mut()); }
+        unsafe {
+            clockchips::core_tick::<RrosCoreTick>(null_mut());
+        }
         return bindings::irqreturn_IRQ_HANDLED;
     }
 }
@@ -120,7 +122,8 @@ pub fn rros_enable_tick() -> Result<usize> {
     #[cfg(CONFIG_SMP)]
     if cpumask::num_possible_cpus() > 1 {
         pr_debug!("rros_enable_tick123");
-        let ret = unsafe { interrupt::__request_percpu_irq(
+        let ret = unsafe {
+            interrupt::__request_percpu_irq(
                 irq_get_timer_oob_ipi() as c_types::c_uint,
                 Some(clockchips::clock_ipi_handler::<RrosClockIpiHandler>),
                 rust_helper_IRQF_OOB(),
@@ -134,7 +137,9 @@ pub fn rros_enable_tick() -> Result<usize> {
         }
     }
 
-    let _ret = tick::tick_install_proxy(Some(clockchips::setup_proxy::<RrosSetupProxy>), unsafe { RROS_OOB_CPUS.as_cpumas_ptr() });
+    let _ret = tick::tick_install_proxy(Some(clockchips::setup_proxy::<RrosSetupProxy>), unsafe {
+        RROS_OOB_CPUS.as_cpumas_ptr()
+    });
     pr_info!("enable tick success!");
     // if (ret && IS_ENABLED(CONFIG_SMP) && num_possible_cpus() > 1) {
     // 	free_percpu_irq(TIMER_OOB_IPI, &rros_machine_cpudata);

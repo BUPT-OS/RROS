@@ -1,41 +1,23 @@
-use core::{
-    clone::Clone,
-    ffi::c_void,
-    mem::size_of,
-    ptr::NonNull,
-};
+use core::{clone::Clone, ffi::c_void, mem::size_of, ptr::NonNull};
 
 use kernel::{
-    bindings,
+    bindings, c_str, init_static_sync,
+    linked_list::{GetLinks, Links, List},
     net::Namespace,
-    init_static_sync, c_str, spinlock_init, Result,
-    sync::{
-        SpinLock,
-        Lock,
-    },
-    vmalloc,
-    prelude::*,
-    linked_list::{
-        GetLinks,
-        Links,
-        List,
-    },
     notifier::NotifierBlock,
+    prelude::*,
+    spinlock_init,
+    sync::{Lock, SpinLock},
+    vmalloc, Result,
 };
 
+use super::{skb::RrosSkbQueue, socket::RrosNetdevActivation};
 use crate::{
+    crossing::RrosCrossing,
     flags::RrosFlag,
-    net::{
-        input::rros_net_do_rx,
-        skb::rros_net_dev_build_pool,
-    },
+    net::{input::rros_net_do_rx, skb::rros_net_dev_build_pool},
     thread::KthreadRunner,
     wait::RrosWaitQueue,
-    crossing::RrosCrossing,
-};
-use super::{
-    skb::RrosSkbQueue,
-    socket::RrosNetdevActivation,
 };
 
 const IFF_OOB_PORT: usize = 1 << 1;
@@ -415,11 +397,7 @@ pub fn netif_oob_switch_port(dev: *mut bindings::net_device, enabled: bool) -> i
 
 /// netdevice notifier
 #[allow(dead_code)]
-fn rros_netdev_event(
-    _ev_block: *mut NotifierBlock,
-    event: u64,
-    ptr: *mut c_void,
-) -> i32 {
+fn rros_netdev_event(_ev_block: *mut NotifierBlock, event: u64, ptr: *mut c_void) -> i32 {
     extern "C" {
         #[allow(improper_ctypes)]
         fn rust_helper_netdev_notifier_info_to_dev(ptr: *mut c_void) -> *mut bindings::net_device;

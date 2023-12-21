@@ -17,7 +17,7 @@ use crate::{
 };
 
 use kernel::{
-    bindings,
+    bindings, c_types,
     file::FilesStruct,
     init_static_sync,
     prelude::*,
@@ -25,7 +25,6 @@ use kernel::{
     str::CStr,
     sync::{Lock, SpinLock},
     task::Task,
-    c_types,
 };
 
 pub struct RrosFileBinding {
@@ -282,7 +281,7 @@ no_mangle_function_declaration! {
             Some(rfd) => {
                 unsafe{ rros_drop_watchpoints((*rfd).poll_nodes.as_mut()); }
                 unsafe { (*rfd).rfilp = NonNull::new((*filp).oob_data as *const _ as *mut RrosFile).unwrap() };
-                unsafe { sched::rros_schedule(); } 
+                unsafe { sched::rros_schedule(); }
             },
             None => {
                 install_inband_fd(fd, filp, files.get_ptr());
@@ -300,7 +299,10 @@ pub fn rros_get_fileref(rfilp: &mut RrosFile) -> Result<usize> {
 
 pub fn rros_get_file(fd: u32) -> Option<NonNull<RrosFile>> {
     // TODO: Temporarily changed to NonNull.
-    let rfd = lookup_rfd(fd, &mut FilesStruct::from_ptr(unsafe { (*Task::current_ptr()).files }));
+    let rfd = lookup_rfd(
+        fd,
+        &mut FilesStruct::from_ptr(unsafe { (*Task::current_ptr()).files }),
+    );
 
     match rfd {
         Some(rfd) => {
@@ -316,17 +318,19 @@ pub fn rros_get_file(fd: u32) -> Option<NonNull<RrosFile>> {
 }
 
 pub fn rros_watch_fd(fd: u32, node: &mut RrosPollNode) -> Option<NonNull<RrosFile>> {
-    let rfd = lookup_rfd(fd, unsafe { &mut FilesStruct::from_ptr((*Task::current_ptr()).files) });
+    let rfd = lookup_rfd(fd, unsafe {
+        &mut FilesStruct::from_ptr((*Task::current_ptr()).files)
+    });
 
     match rfd {
         Some(rfd) => {
-            if let Err(_) = unsafe{ rros_get_fileref((*rfd).rfilp.as_mut()) } {
+            if let Err(_) = unsafe { rros_get_fileref((*rfd).rfilp.as_mut()) } {
                 pr_err!("rros_watch_fd: rros_get_fileref fail");
                 return None;
             }
             list_add!(&mut node.next, (*rfd).poll_nodes.as_mut());
-            unsafe{ Some((*rfd).rfilp) }
-        },
+            unsafe { Some((*rfd).rfilp) }
+        }
         None => None,
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 //! Rros Net module.
-use crate::{bindings, str::CStr, ARef, AlwaysRefCounted, c_types};
+use crate::{bindings, c_types, str::CStr, ARef, AlwaysRefCounted};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 extern "C" {

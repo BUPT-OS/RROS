@@ -1,8 +1,4 @@
-use kernel::{
-    bindings,
-    prelude::*,
-    ptrace::PtRegs,
-};
+use kernel::{bindings, prelude::*, ptrace::PtRegs};
 
 /// Returns the first register value from the given out-of-bounds pointer.
 #[macro_export]

@@ -182,12 +182,12 @@ impl<const N: usize> Registration<{ N }> {
     }
 
     /// The device number of last registered device
-    pub fn last_registered_devt(self: Pin<&mut Self>) -> Option<u32>{
+    pub fn last_registered_devt(self: Pin<&mut Self>) -> Option<u32> {
         // SAFETY: We must ensure that we never move out of `this`.
         let this = unsafe { self.get_unchecked_mut() };
-        this.inner.as_mut().map(|inner|{
-            (inner.dev as u32 + (inner.used as u32 - 1)) as u32
-        })
+        this.inner
+            .as_mut()
+            .map(|inner| (inner.dev as u32 + (inner.used as u32 - 1)) as u32)
     }
 }
 

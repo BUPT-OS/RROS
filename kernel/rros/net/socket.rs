@@ -6,39 +6,34 @@
  * PF_OOB family, which we use as a protocol mutiplexor.
  */
 use crate::{
-    clock::RROS_MONO_CLOCK,
-    timeout::RrosTmode,
-    THIS_MODULE,
-    bindings,
-    c_types,
-    crossing::RrosCrossing, file::RrosFile,
-    wait::RrosWaitQueue,
-    poll::RrosPollHead,
+    bindings, c_types, clock::RROS_MONO_CLOCK, crossing::RrosCrossing, file::RrosFile,
+    poll::RrosPollHead, timeout::RrosTmode, wait::RrosWaitQueue, THIS_MODULE,
 };
 
 use kernel::{
-    sync::{Mutex, SpinLock},
+    container_of,
     endian::be16,
     iov_iter::Iovec,
-    net::{Socket, NetProtoFamily, Namespace, CreateSocket, create_socket_callback},
-    prelude::*,
-    static_init_net_proto_family,
-    sock::Sock,
-    Error,
     ktime::{KtimeT, Timespec64},
+    mutex_init,
+    net::{create_socket_callback, CreateSocket, Namespace, NetProtoFamily, Socket},
+    prelude::*,
+    sock::Sock,
     socket::Sockaddr,
+    spinlock_init, static_init_net_proto_family,
+    sync::{Mutex, SpinLock},
     types::HlistNode,
-    mutex_init, spinlock_init, container_of,
     vmalloc::{c_kzalloc, c_kzfree},
+    Error,
 };
 
 use core::{
-    ptr::NonNull,
-    ptr,
-    pin::Pin,
-    mem::transmute,
-    sync::atomic::{AtomicI32, Ordering},
     default::Default,
+    mem::transmute,
+    pin::Pin,
+    ptr,
+    ptr::NonNull,
+    sync::atomic::{AtomicI32, Ordering},
 };
 
 use super::device::NetDevice;
@@ -124,7 +119,9 @@ const RROS_SOCKIOC_SENDMSG: u32 = 1079045636;
 impl RrosSocket {
     pub fn from_socket(sock: Socket) -> NonNull<Self> {
         // evk_sk
-        unsafe { NonNull::new((*(*sock.get_ptr()).sk).oob_data as *const _ as *mut RrosSocket).unwrap() }
+        unsafe {
+            NonNull::new((*(*sock.get_ptr()).sk).oob_data as *const _ as *mut RrosSocket).unwrap()
+        }
     }
     #[inline]
     pub fn from_file(filp: *mut bindings::file) -> Option<NonNull<Self>> {
@@ -194,7 +191,16 @@ impl RrosSocket {
 
             fn rust_helper_raw_put_user(x: u32, ptr: *mut u32) -> i32;
         }
-        let mut fast_iov: [Iovec; 8] = [Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default()];
+        let mut fast_iov: [Iovec; 8] = [
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+        ];
         let mut iov_ptr: u64 = 0;
         let mut iovlen: u32 = 0;
         if unsafe { rust_helper_raw_get_user_64(&mut iov_ptr, &(*msghdr).iov_ptr) } != 0 {
@@ -342,7 +348,7 @@ no_mangle_function_declaration! {
             #[allow(improper_ctypes)]
             #[allow(dead_code)]
             fn rust_helper_ptr_err(ptr: *const c_types::c_void) -> c_types::c_long;
-            
+
             #[allow(improper_ctypes)]
             fn rust_helper_sock_net(sk: *const Sock) -> *mut Namespace;
 
@@ -399,7 +405,7 @@ no_mangle_function_declaration! {
         let _ret = rsk.wmem_drain.init();
         rsk.proto = Some(proto);
         proto.attach(&mut rsk, unsafe { be16::new((*sk).sk_protocol) });
-        
+
         unsafe{
             (*sk).oob_data = rsk as *const _ as *mut c_types::c_void;
         }
@@ -420,7 +426,7 @@ no_mangle_function_declaration! {
     {
         let sk = unsafe { (*sock.get_ptr()).sk };
         let rsk = unsafe { RrosSocket::from_socket(sock).as_mut() };
-        
+
         let _ret = rsk.efile.rros_release_file();
         rsk.wmem_drain.pass();
         free_skb_list(&mut rsk.input);
@@ -492,7 +498,12 @@ pub fn do_load_iov(iov: *mut Iovec, u_iov: *mut Iovec, iovlen: usize) -> Result<
         fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
     }
     unsafe {
-        if rust_helper_raw_copy_from_user(iov as *const _ as *mut u8, u_iov as *const _ as *mut u8, iovlen * core::mem::size_of::<Iovec>()) != 0 {
+        if rust_helper_raw_copy_from_user(
+            iov as *const _ as *mut u8,
+            u_iov as *const _ as *mut u8,
+            iovlen * core::mem::size_of::<Iovec>(),
+        ) != 0
+        {
             Err(Error::EFAULT)
         } else {
             Ok(())
@@ -510,8 +521,13 @@ pub fn load_iov(u_iov: *mut Iovec, iovlen: usize, fast_iov: *mut Iovec) -> Resul
     }
 }
 
-pub fn rros_import_iov(iov_vec: &[Iovec], data: *mut u8, mut len: u64, remainder: Option<&mut usize>) -> i32 {
-    extern "C"{
+pub fn rros_import_iov(
+    iov_vec: &[Iovec],
+    data: *mut u8,
+    mut len: u64,
+    remainder: Option<&mut usize>,
+) -> i32 {
+    extern "C" {
         fn rust_helper_raw_copy_from_user(to: *mut u8, from: *const u8, n: usize) -> usize;
     }
     let mut n = 0;
@@ -559,7 +575,7 @@ pub fn rros_import_iov(iov_vec: &[Iovec], data: *mut u8, mut len: u64, remainder
 }
 
 pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> i32 {
-    extern "C"{
+    extern "C" {
         fn rust_helper_raw_copy_to_user(to: *mut u8, from: *const u8, n: usize) -> usize;
     }
     let mut written = 0;
@@ -573,7 +589,11 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
             nbytes = len;
         }
         let ret = unsafe {
-            rust_helper_raw_copy_to_user(iov.get_iov_base() as *const _ as *mut u8, data, nbytes as usize)
+            rust_helper_raw_copy_to_user(
+                iov.get_iov_base() as *const _ as *mut u8,
+                data,
+                nbytes as usize,
+            )
         };
         if ret != 0 {
             return -(bindings::EFAULT as i32);

@@ -1,19 +1,16 @@
-use core::ffi::c_void;
+use super::skb::RrosSkBuff;
 use crate::{
     list_entry_is_head, list_next_entry,
     net::{skb::RrosSkbQueueInner, socket::uncharge_socke_wmem},
 };
+use core::ffi::c_void;
 use kernel::{
-    bindings,
-    init_static_sync,
+    bindings, init_static_sync, interrupt,
     irq_work::IrqWork,
-    sync::{Lock, SpinLock},
-    Error,
-    Result,
-    interrupt,
     netdevice,
+    sync::{Lock, SpinLock},
+    Error, Result,
 };
-use super::skb::RrosSkBuff;
 
 // NOTE:initialize in rros_net_init_tx
 // TODO: The implementation here does not use DEFINE_PER_CPU because Rust does not yet support statically defined percpu variables.
@@ -182,7 +179,7 @@ pub fn rros_net_transmit(mut skb: &mut RrosSkBuff) -> Result<()> {
 //     }
 // }
 
-unsafe extern "C" fn xmit_inband(_work : *mut IrqWork){
+unsafe extern "C" fn xmit_inband(_work: *mut IrqWork) {
     interrupt::__raise_softirq_irqoff(bindings::NET_TX_SOFTIRQ);
 }
 

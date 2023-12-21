@@ -345,21 +345,21 @@ pub fn hash_init(ht: *mut bindings::hlist_head, size: u32) {
 }
 
 /// A list to store structs needed to hash.
-pub struct Hashtable<const N:usize> {
-    table: [bindings::hlist_head; N]
+pub struct Hashtable<const N: usize> {
+    table: [bindings::hlist_head; N],
 }
 
-unsafe impl<const N:usize> Sync for Hashtable<N> {}
+unsafe impl<const N: usize> Sync for Hashtable<N> {}
 
-unsafe impl<const N:usize> Send for Hashtable<N> {}
+unsafe impl<const N: usize> Send for Hashtable<N> {}
 
-impl<const N:usize> Hashtable<N> {
+impl<const N: usize> Hashtable<N> {
     /// Constructs a new struct.
     pub const fn new() -> Self {
-        let table = [bindings::hlist_head { first:core::ptr::null_mut() }; N];
-        Self {
-            table:table
-        }
+        let table = [bindings::hlist_head {
+            first: core::ptr::null_mut(),
+        }; N];
+        Self { table: table }
     }
 
     /// Add a new struct to Hashtable.

@@ -1,15 +1,7 @@
-use core::{
-    convert::TryInto,
-    default::Default,
-    mem::transmute,
-    ops::DerefMut,
-    ptr::NonNull,
-    u16,
-};
 use super::{
-    socket::{RrosSocket,RrosNetProto, UserOobMsghdr,},
     input::RrosNetRxqueue,
     skb::RrosSkBuff,
+    socket::{RrosNetProto, RrosSocket, UserOobMsghdr},
 };
 use crate::{
     net::{
@@ -20,23 +12,19 @@ use crate::{
     sched::{rros_disable_preempt, rros_enable_preempt},
     timeout::{RrosTmode, RROS_INFINITE, RROS_NONBLOCK},
 };
+use core::{convert::TryInto, default::Default, mem::transmute, ops::DerefMut, ptr::NonNull, u16};
 use kernel::{
-    types::*,
-    prelude::*,
-    bindings,
-    socket::Sockaddr,
-    skbuff,
-    Result, Error, init_static_sync, hash_for_each_possible,
-    sync::Lock,
-    c_types,
-    ktime::{
-        timespec64_to_ktime,
-        KtimeT,
-        Timespec64,
-    },
-    iov_iter::Iovec,
-    if_packet,
+    bindings, c_types,
     endian::be16,
+    hash_for_each_possible, if_packet, init_static_sync,
+    iov_iter::Iovec,
+    ktime::{timespec64_to_ktime, KtimeT, Timespec64},
+    prelude::*,
+    skbuff,
+    socket::Sockaddr,
+    sync::Lock,
+    types::*,
+    Error, Result,
 };
 
 // protocol hash table
@@ -483,7 +471,10 @@ fn copy_packet_to_user(
         addr.get_mut().sll_hatype = unsafe { dev.0.as_ref().type_ };
         addr.get_mut().sll_pkttype = unsafe { skb.0.as_ref().pkt_type() };
         addr.get_mut().sll_halen = unsafe {
-            rust_helper_dev_parse_header(skb.0.as_ptr(), &mut addr.get_mut().sll_addr as *const _ as *mut u8)
+            rust_helper_dev_parse_header(
+                skb.0.as_ptr(),
+                &mut addr.get_mut().sll_addr as *const _ as *mut u8,
+            )
         }
         .try_into()
         .unwrap();

@@ -3,7 +3,7 @@
 //! ktime
 //!
 //! C header: [`include/linux/ktime.h`](../../../../include/linux/ktime.h)
-use crate::bindings;
+use crate::{bindings, c_types::c_longlong};
 
 /// The `KtimeT` type is a type alias for `i64`. It represents a ktime value in the kernel.
 pub type KtimeT = i64;
@@ -23,6 +23,24 @@ extern "C" {
 #[derive(Default, Copy, Clone)]
 #[repr(transparent)]
 pub struct Timespec64(pub bindings::timespec64);
+
+impl Timespec64 {
+    /// Construct Timespec64 with `tv_sec` and `tv_nsec`
+    pub fn new(tv_sec: KtimeT, tv_nsec: c_longlong) -> Self {
+        Self(bindings::timespec64 { tv_sec, tv_nsec })
+    }
+}
+
+/// A wrapper for [`bindings::itimerspec64`]
+#[derive(Default, Copy, Clone)]
+#[repr(C)]
+pub struct Itimerspec64 {
+    /// timer period
+    pub it_interval: Timespec64,
+
+    /// timer expiration
+    pub it_value: Timespec64,
+}
 
 /// The function `timespec64_to_ktime` will call kernel's `ktime_set` to get a `KtimeT` from `Timespec64`.
 pub fn timespec64_to_ktime(u_ts: Timespec64) -> KtimeT {

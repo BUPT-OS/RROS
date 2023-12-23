@@ -1207,8 +1207,7 @@ fn rros_sleep_until(timeout: ktime::KtimeT) -> Result<usize> {
     }
 }
 
-#[allow(dead_code)]
-fn rros_delay(
+pub fn rros_delay(
     timeout: ktime::KtimeT,
     timeout_mode: timeout::RrosTmode,
     clock: &clock::RrosClock,

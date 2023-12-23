@@ -1144,6 +1144,16 @@ int rust_helper_pa(unsigned long x) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_pa);
 
+void rust_helper_schedule_work(struct work_struct*work){
+	schedule_work(work);
+}
+EXPORT_SYMBOL_GPL(rust_helper_schedule_work);
+
+unsigned int rust_helper_minor(dev_t dev) {
+	return MINOR(dev);
+}
+EXPORT_SYMBOL_GPL(rust_helper_minor);
+
 // void rust_helper_anon_inode_getfile(const char *name,
 // 				const struct file_operations *fops,
 // 				void *priv, int flags) {

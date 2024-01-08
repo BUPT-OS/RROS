@@ -9,6 +9,7 @@ support for building the kernel with LLVM/Clang varies (please see
 Documentation/kbuild/llvm.rst). This support is needed for ``bindgen``
 which uses ``libclang``.
 
+``loongarch``  Maintained        -
 Below is a general summary of architectures that currently work. Level of
 support corresponds to ``S`` values in the ``MAINTAINERS`` file.
 

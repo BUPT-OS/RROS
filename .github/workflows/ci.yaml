@@ -243,6 +243,9 @@ jobs:
           echo 'obj-m	+= rust_module_parameters_loadable_default.o' >> samples/rust/Makefile
           echo 'obj-m	+= rust_module_parameters_loadable_custom.o'  >> samples/rust/Makefile
 
+      # Pre-check
+      - run: make LLVM=1 rustfmtcheck
+
       # Build
       - run: mv .github/workflows/kernel-${{ matrix.arch }}-${{ matrix.config }}.config .config
 

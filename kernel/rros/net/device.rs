@@ -1,27 +1,24 @@
-use core::clone::Clone;
-use core::ffi::c_void;
-use core::mem::size_of;
-use core::ptr::NonNull;
+use core::{clone::Clone, ffi::c_void, mem::size_of, ptr::NonNull};
 
-use kernel::linked_list::{GetLinks, Links, List};
-use kernel::prelude::*;
-use kernel::sync::Lock;
-use kernel::{bindings, init_static_sync, sync::SpinLock};
-use kernel::{c_str, spinlock_init, vmalloc, Result};
-use kernel::notifier::NotifierBlock;
-use kernel::net::Namespace;
-use alloc::sync::Arc;
+use kernel::{
+    bindings, c_str, init_static_sync,
+    linked_list::{GetLinks, Links, List},
+    net::Namespace,
+    notifier::NotifierBlock,
+    prelude::*,
+    spinlock_init,
+    sync::{Lock, SpinLock},
+    vmalloc, Result,
+};
 
-use crate::crossing::RrosCrossing;
-use crate::flags::RrosFlag;
-use crate::net::input::rros_net_do_rx;
-use crate::net::skb::rros_net_dev_build_pool;
-use crate::thread::KthreadRunner;
-// use crate::uapi::rros::socket::RrosNetdevActivation;
-use crate::wait::RrosWaitQueue;
-
-use super::skb::RrosSkbQueue;
-use super::socket::RrosNetdevActivation;
+use super::{skb::RrosSkbQueue, socket::RrosNetdevActivation};
+use crate::{
+    crossing::RrosCrossing,
+    flags::RrosFlag,
+    net::{input::rros_net_do_rx, skb::rros_net_dev_build_pool},
+    thread::KthreadRunner,
+    wait::RrosWaitQueue,
+};
 
 const IFF_OOB_PORT: usize = 1 << 1;
 const IFF_OOB_CAPABLE: usize = 1 << 0;
@@ -207,6 +204,7 @@ impl NetDevice {
 
     pub fn get_net(&self) -> *const Namespace {
         extern "C" {
+            #[allow(improper_ctypes)]
             fn rust_helper_dev_net(dev: *const bindings::net_device) -> *const Namespace;
         }
         unsafe { rust_helper_dev_net(self.0.as_ptr() as *const bindings::net_device) }
@@ -269,7 +267,7 @@ impl NetDevice {
             .unwrap();
             est.rx_handler = start_handler_thread(func, c_str!("rros oob net rx handler")).unwrap();
 
-            // 只有有带外能力的才需要
+            // Only those with out-of-band capabilities are required.
             if real_dev.is_oob_capable() {
 
                 // rros_init_flag(&est->tx_flag);
@@ -296,7 +294,7 @@ impl NetDevice {
         pr_crit!("enable oob port success");
 
         return 0;
-        // TODO: 优雅地处理一下异常
+        // TODO: Handle exceptions gracefully.
         //     rros_stop_kthread(est->rx_handler);
         //     rros_destroy_flag(&est->tx_flag);
         // fail_start_rx:
@@ -399,11 +397,7 @@ pub fn netif_oob_switch_port(dev: *mut bindings::net_device, enabled: bool) -> i
 
 /// netdevice notifier
 #[allow(dead_code)]
-fn rros_netdev_event(
-    _ev_block: *mut NotifierBlock,
-    event: u64,
-    ptr: *mut c_void,
-) -> i32 {
+fn rros_netdev_event(_ev_block: *mut NotifierBlock, event: u64, ptr: *mut c_void) -> i32 {
     extern "C" {
         #[allow(improper_ctypes)]
         fn rust_helper_netdev_notifier_info_to_dev(ptr: *mut c_void) -> *mut bindings::net_device;

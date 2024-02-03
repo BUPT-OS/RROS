@@ -16,9 +16,9 @@ extern "C" {
     fn rust_helper_smp_processor_id() -> c_types::c_int;
 }
 
-//per_cpu原型：
+// per_cpu prototype:
 //#define per_cpu(var, cpu)	(*per_cpu_ptr(&(var), cpu))
-//per_cpu返回具体值无法实现，因此只能用per_cpu_ptr来返回指针
+// It is not possible to return a specific value per_cpu, so per_cpu_ptr can only be used to return a pointer.
 
 /// Function `per_cpu_ptr` gets a per-CPU pointer.
 /// It takes a variable and a CPU ID as parameters and returns a per-CPU pointer.

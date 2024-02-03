@@ -1,26 +1,19 @@
-use core::ffi::c_void;
-
+use super::skb::RrosSkBuff;
 use crate::{
     list_entry_is_head, list_next_entry,
     net::{skb::RrosSkbQueueInner, socket::uncharge_socke_wmem},
 };
+use core::ffi::c_void;
 use kernel::{
-    bindings,
-    init_static_sync,
+    bindings, init_static_sync, interrupt,
     irq_work::IrqWork,
+    netdevice,
     sync::{Lock, SpinLock},
-    Error,
-    Result,
-    percpu::alloc_per_cpu,
-    pr_info,
+    Error, Result,
 };
-use super::{device::OOBNetdevState, skb::RrosSkBuff};
-use kernel::interrupt;
-use kernel::netdevice;
-use kernel::percpu;
 
 // NOTE:initialize in rros_net_init_tx
-// TODO: 这里的实现没用DEFINE_PER_CPU，因为Rust还没有支持静态定义的percpu变量
+// TODO: The implementation here does not use DEFINE_PER_CPU because Rust does not yet support statically defined percpu variables.
 init_static_sync! {
     static OOB_TX_RELAY : SpinLock<RrosSkbQueueInner> = RrosSkbQueueInner::default();
 }
@@ -109,7 +102,7 @@ fn skb_inband_xmit_backlog() {
     }
     let mut list = bindings::list_head::default();
     init_list_head!(&mut list);
-    let flags = OOB_TX_RELAY.irq_lock_noguard(); // TODO: 是否需要lock
+    let flags = OOB_TX_RELAY.irq_lock_noguard(); // TODO: Whether lock is required.
 
     if unsafe { (*OOB_TX_RELAY.locked_data().get()).move_queue(&mut list) } {
         list_for_each_entry_safe!(
@@ -173,7 +166,7 @@ pub fn rros_net_transmit(mut skb: &mut RrosSkBuff) -> Result<()> {
     unsafe { (*OOB_TX_RELAY.locked_data().get()).add(skb) };
     OOB_TX_RELAY.irq_unlock_noguard(flags);
     unsafe {
-        OOB_XMIT_WORK.irq_work_queue();
+        OOB_XMIT_WORK.irq_work_queue()?;
     }
     Ok(())
 }
@@ -186,7 +179,7 @@ pub fn rros_net_transmit(mut skb: &mut RrosSkBuff) -> Result<()> {
 //     }
 // }
 
-unsafe extern "C" fn xmit_inband(_work : *mut IrqWork){
+unsafe extern "C" fn xmit_inband(_work: *mut IrqWork) {
     interrupt::__raise_softirq_irqoff(bindings::NET_TX_SOFTIRQ);
 }
 

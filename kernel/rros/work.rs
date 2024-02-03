@@ -1,21 +1,18 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
-use kernel::{
-    bindings,
-    c_types::c_void,
-    irq_work::IrqWork,
-    container_of,
-    Result,
-    pr_debug,
-    workqueue::{Queue, Work, queue_work_on, init_work},
-};
 use crate::factory::RrosElement;
+use kernel::{
+    bindings, container_of,
+    irq_work::IrqWork,
+    pr_debug,
+    workqueue::{init_work, queue_work_on, Work},
+};
 
-pub struct RrosWork{
-    irq_work : IrqWork,
+pub struct RrosWork {
+    irq_work: IrqWork,
     wq_work: Work,
-    wq : *mut bindings::workqueue_struct,
+    wq: *mut bindings::workqueue_struct,
     pub handler: Option<fn(arg: &mut RrosWork) -> i32>,
     // element : Rc<RefCell<RrosElement>>
     element: Option<Rc<RefCell<RrosElement>>>,
@@ -38,12 +35,12 @@ unsafe extern "C" fn do_irq_work(irq_work: *mut IrqWork) {
         !queue_work_on(
             bindings::WORK_CPU_UNBOUND as _,
             (*work).wq,
-            &mut (*work).wq_work
+            &mut (*work).wq_work,
         ) && (*work).element.is_some()
     } {
         pr_debug!("uncompleted rros_put_element()");
     }
-    // TODO: 没有实现rros_put_element
+    // TODO: rros_put_element is not implemented
     // if unsafe{rust_helper_queue_work((*work).wq,&mut (*work).wq_work)} && unsafe{(*)}
     // if (!queue_work(work->wq, &work->wq_work) && work->element)
     // rros_put_element(work->element);
@@ -91,7 +88,7 @@ impl RrosWork {
     }
     pub fn call_inband_from(&mut self, wq: *mut bindings::workqueue_struct) {
         self.wq = wq;
-        // TODO: 没有实现rros_put_element
+        // TODO: rros_put_element is not implemented
         // if (work->element)
         if self.element.is_some() {
             pr_debug!("uncompleted rros_get_element()");

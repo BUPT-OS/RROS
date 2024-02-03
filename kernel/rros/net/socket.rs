@@ -5,45 +5,35 @@
  * in-band network stack. RROS-specific protocols belong to the generic
  * PF_OOB family, which we use as a protocol mutiplexor.
  */
-use crate::bindings::{iovec, sockaddr};
-use crate::clock::RROS_MONO_CLOCK;
-use crate::timeout::RrosTmode;
-use crate::THIS_MODULE;
-use crate::{bindings, c_types};
 use crate::{
-    crossing::RrosCrossing, file::RrosFile, list::ListHead, sched::SsizeT,
-    wait::RrosWaitQueue,
+    bindings, c_types, clock::RROS_MONO_CLOCK, crossing::RrosCrossing, file::RrosFile,
+    poll::RrosPollHead, timeout::RrosTmode, wait::RrosWaitQueue, THIS_MODULE,
 };
-use crate::lock::raw_spin_lock_init;
-use kernel::initialize_lock_hashtable;
-use alloc::rc::Rc;
-use kernel::ktime::{KtimeT, Timespec64};
-use kernel::socket::Sockaddr;
-use kernel::types::HlistNode;
-use kernel::{ThisModule, mutex_init, spinlock_init, container_of};
-use kernel::vmalloc::{c_kzfree, c_kzalloc};
-use kernel::net::{NetProtoFamily, Namespace, CreateSocket, create_socket_callback};
-use core::cell::{RefCell, Ref,UnsafeCell};
-use core::clone::Clone;
-use core::default::Default;
-use core::mem::transmute;
-use core::pin::Pin;
-use core::ptr;
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicI32, Ordering};
+
 use kernel::{
-    sync::{Mutex, RawSpinLock, SpinLock},
-    double_linked_list::List,
+    container_of,
     endian::be16,
-    file::File,
-    init_static_sync,
     iov_iter::Iovec,
-    net::Device,
-    net::{Namespace as Net, Socket},
+    ktime::{KtimeT, Timespec64},
+    mutex_init,
+    net::{create_socket_callback, CreateSocket, Namespace, NetProtoFamily, Socket},
     prelude::*,
-    static_init_net_proto_family,
     sock::Sock,
+    socket::Sockaddr,
+    spinlock_init, static_init_net_proto_family,
+    sync::{Mutex, SpinLock},
+    types::HlistNode,
+    vmalloc::{c_kzalloc, c_kzfree},
     Error,
+};
+
+use core::{
+    default::Default,
+    mem::transmute,
+    pin::Pin,
+    ptr,
+    ptr::NonNull,
+    sync::atomic::{AtomicI32, Ordering},
 };
 
 use super::device::NetDevice;
@@ -95,10 +85,6 @@ pub trait RrosNetProto {
     // fn oob_poll(&mut self, wait:&oob_poll_wait) -> __poll_t;
     fn get_netif(&self, sock: &mut RrosSocket) -> Option<NetDevice>;
 }
-pub struct RrosPollHead {
-    pub watchpoints: ListHead,
-    pub lock: RawSpinLock,
-}
 pub struct Binding {
     pub real_ifindex: i32,
     pub vlan_ifindex: i32,
@@ -133,7 +119,9 @@ const RROS_SOCKIOC_SENDMSG: u32 = 1079045636;
 impl RrosSocket {
     pub fn from_socket(sock: Socket) -> NonNull<Self> {
         // evk_sk
-        unsafe { NonNull::new((*(*sock.get_ptr()).sk).oob_data as *const _ as *mut RrosSocket).unwrap() }
+        unsafe {
+            NonNull::new((*(*sock.get_ptr()).sk).oob_data as *const _ as *mut RrosSocket).unwrap()
+        }
     }
     #[inline]
     pub fn from_file(filp: *mut bindings::file) -> Option<NonNull<Self>> {
@@ -191,7 +179,7 @@ impl RrosSocket {
             return 0;
         }
         let arg = unsafe { NonNull::new_unchecked(skb) };
-        // TODO: 绕开mutable borrow检查
+        // TODO: Bypass mutable borrow check
         let wmem_wait = unsafe { &mut *(&self.wmem_wait as *const _ as *mut RrosWaitQueue) };
         return wmem_wait.wait_timeout(timeout, tmode, || self.charge_socket_wmem(arg));
     }
@@ -203,7 +191,16 @@ impl RrosSocket {
 
             fn rust_helper_raw_put_user(x: u32, ptr: *mut u32) -> i32;
         }
-        let mut fast_iov: [Iovec; 8] = [Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default(), Iovec::default()];
+        let mut fast_iov: [Iovec; 8] = [
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+            Iovec::default(),
+        ];
         let mut iov_ptr: u64 = 0;
         let mut iovlen: u32 = 0;
         if unsafe { rust_helper_raw_get_user_64(&mut iov_ptr, &(*msghdr).iov_ptr) } != 0 {
@@ -313,7 +310,7 @@ impl CreateSocket for CreateRrosSocket {
 // 	 * attached to the out-of-band core in sock_oob_attach().
 // 	 */
 //     unsafe{(*sock).sk_protocol = protocol};
-//     // sk_refcnt_debug_inc(sk); TODO: 用于Debug的东西
+//     // sk_refcnt_debug_inc(sk); TODO: Stuff for Debug
 //     unsafe{(*sock).sk_destruct = &destroy_rros_socket as ::core::option::Option<unsafe extern "C" fn(sk: *mut sock)>};
 
 //     // unsafe{local_bh_disable();}
@@ -351,7 +348,7 @@ no_mangle_function_declaration! {
             #[allow(improper_ctypes)]
             #[allow(dead_code)]
             fn rust_helper_ptr_err(ptr: *const c_types::c_void) -> c_types::c_long;
-            
+
             #[allow(improper_ctypes)]
             fn rust_helper_sock_net(sk: *const Sock) -> *mut Namespace;
 
@@ -408,7 +405,7 @@ no_mangle_function_declaration! {
         let _ret = rsk.wmem_drain.init();
         rsk.proto = Some(proto);
         proto.attach(&mut rsk, unsafe { be16::new((*sk).sk_protocol) });
-        
+
         unsafe{
             (*sk).oob_data = rsk as *const _ as *mut c_types::c_void;
         }
@@ -429,7 +426,7 @@ no_mangle_function_declaration! {
     {
         let sk = unsafe { (*sock.get_ptr()).sk };
         let rsk = unsafe { RrosSocket::from_socket(sock).as_mut() };
-        
+
         let _ret = rsk.efile.rros_release_file();
         rsk.wmem_drain.pass();
         free_skb_list(&mut rsk.input);
@@ -501,7 +498,12 @@ pub fn do_load_iov(iov: *mut Iovec, u_iov: *mut Iovec, iovlen: usize) -> Result<
         fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
     }
     unsafe {
-        if rust_helper_raw_copy_from_user(iov as *const _ as *mut u8, u_iov as *const _ as *mut u8, iovlen * core::mem::size_of::<Iovec>()) != 0 {
+        if rust_helper_raw_copy_from_user(
+            iov as *const _ as *mut u8,
+            u_iov as *const _ as *mut u8,
+            iovlen * core::mem::size_of::<Iovec>(),
+        ) != 0
+        {
             Err(Error::EFAULT)
         } else {
             Ok(())
@@ -519,8 +521,13 @@ pub fn load_iov(u_iov: *mut Iovec, iovlen: usize, fast_iov: *mut Iovec) -> Resul
     }
 }
 
-pub fn rros_import_iov(iov_vec: &[Iovec], data: *mut u8, mut len: u64, remainder: Option<&mut usize>) -> i32 {
-    extern "C"{
+pub fn rros_import_iov(
+    iov_vec: &[Iovec],
+    data: *mut u8,
+    mut len: u64,
+    remainder: Option<&mut usize>,
+) -> i32 {
+    extern "C" {
         fn rust_helper_raw_copy_from_user(to: *mut u8, from: *const u8, n: usize) -> usize;
     }
     let mut n = 0;
@@ -568,7 +575,7 @@ pub fn rros_import_iov(iov_vec: &[Iovec], data: *mut u8, mut len: u64, remainder
 }
 
 pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> i32 {
-    extern "C"{
+    extern "C" {
         fn rust_helper_raw_copy_to_user(to: *mut u8, from: *const u8, n: usize) -> usize;
     }
     let mut written = 0;
@@ -582,7 +589,11 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
             nbytes = len;
         }
         let ret = unsafe {
-            rust_helper_raw_copy_to_user(iov.get_iov_base() as *const _ as *mut u8, data, nbytes as usize)
+            rust_helper_raw_copy_to_user(
+                iov.get_iov_base() as *const _ as *mut u8,
+                data,
+                nbytes as usize,
+            )
         };
         if ret != 0 {
             return -(bindings::EFAULT as i32);
@@ -606,10 +617,10 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 // 	// bindings::local_bh_disable();
 // 	// unsafe{bindings::sock_prot_inuse_add(rust_helper_sock_net(sk),sk_prot!(sk), -1 as c_types::c_int)};
 // 	// bindings::local_bh_enable();
-//     // sk_refcnt_debug_dec(sk); // TODO: 没有实现，rros中用于debug
+//     // sk_refcnt_debug_dec(sk); // TODO: Not implemented, used for debugging in rros.
 // }
 
-// // todo: 字符串用什么格式？
+// // TODO: What format is used for strings?
 // #[no_mangle]
 // fn sock_oob_read(flip:File, buf:*mut u8, count:usize, pos:off_t) -> SsizeT
 // {
@@ -627,7 +638,7 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 //     }
 //     let rsk = rsk.unwrap();
 //     let proto = rsk.proto.as_mut().unwrap();
-//     // TODO: 接口
+//     // TODO: Interface
 //     proto.oob_receive(rsk,proto,core::ptr::null(),&iov as *const bindings::iovec,1 as c_types::c_int)
 // }
 
@@ -647,7 +658,7 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 //         iov.iov_len = count as u64;
 //     }
 //     let proto = rsk.proto.as_mut();
-//     // TODO: oob_send接口
+//     // TODO: Interface `oob_send`.
 //     proto.oob_send()
 // }
 
@@ -683,7 +694,7 @@ pub fn rros_export_iov(iov_vec: &mut [Iovec], mut data: *mut u8, len: usize) -> 
 
 // #[inline]
 // fn get_domain_hash(af_domain : i32) -> u32{
-//     /// 计算协议哈希
+//     /// Calculate protocol hash.
 //     let hsrc : u32 = af_domain as u32;
 //     extern "C"{
 //         fn rust_helper_jhash2(k :*const u32, length:u32, initval:u32) -> u32;
@@ -702,7 +713,7 @@ fn find_oob_proto(
     _type_: i32,
     _protocol: be16,
 ) -> Option<&'static impl RrosNetProto> {
-    // TODO: 支持更多协议
+    // TODO: Support more protocols.
     // let hkey = get_domain_hash(domain);
     // let gurad = domain_hash.lock();
     // drop(gurad);

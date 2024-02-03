@@ -1,7 +1,9 @@
 use crate::{queue, sched, thread::*};
 use alloc::rc::Rc;
-use core::cell::RefCell;
-use core::ptr::{null, null_mut};
+use core::{
+    cell::RefCell,
+    ptr::{null, null_mut},
+};
 use kernel::{prelude::*, Error};
 
 pub static mut RrosSchedWeak: Rc<RefCell<sched::RrosSchedClass>> = sched::RrosSchedClass {

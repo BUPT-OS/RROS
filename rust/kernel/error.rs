@@ -10,6 +10,7 @@ use alloc::{
     alloc::{AllocError, LayoutError},
     collections::TryReserveError,
 };
+use core::cell::BorrowMutError;
 use core::convert::From;
 use core::fmt;
 use core::num::TryFromIntError;
@@ -86,6 +87,9 @@ impl Error {
 
     /// File exists
     pub const EEXIST: Self = Error(-(bindings::EEXIST as i32));
+
+    /// Poll cycles
+    pub const ELOOP: Self = Error(-(bindings::ELOOP as i32));
 
     /// Creates an [`Error`] from a kernel error code.
     ///
@@ -193,6 +197,12 @@ impl From<AllocError> for Error {
 impl From<LayoutError> for Error {
     fn from(_: LayoutError) -> Error {
         Error::ENOMEM
+    }
+}
+
+impl From<BorrowMutError> for Error {
+    fn from(_: BorrowMutError) -> Error {
+        Error::EBUSY
     }
 }
 

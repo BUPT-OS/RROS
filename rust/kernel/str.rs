@@ -276,10 +276,12 @@ macro_rules! c_str {
     }};
 }
 
+/// Call `Linux` kstrdup.
 pub fn kstrdup(s: *const c_types::c_char, gfp: bindings::gfp_t) -> *mut c_types::c_char {
     unsafe { bindings::kstrdup(s, gfp) }
 }
 
+/// Call `Linux` memmove.
 pub fn memmove(
     arg1: *mut c_types::c_void,
     arg2: *const c_types::c_void,

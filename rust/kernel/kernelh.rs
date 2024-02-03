@@ -4,11 +4,7 @@
 //!
 //! C header: [`include/linux/kernel.h`](../../../../include/linux/kernel.h)
 
-use crate::{
-    bindings,
-    c_types::*,
-    prelude::*,
-};
+use crate::{bindings, c_types::*, prelude::*};
 
 // FIXME: how to wrapper `...` in parameters
 /// The `printk` function is a wrapper around the `printk` function from the kernel.
@@ -19,13 +15,20 @@ pub fn _kasprintf_1(gfp: bindings::gfp_t, fmt: *const c_char, arg1: *const c_cha
 
 /// The `printk` function is a wrapper around the `printk` function from the kernel.
 #[inline]
-pub fn _kasprintf_2(gfp: bindings::gfp_t, fmt: *const c_char, arg1: *const c_char,arg2: *const c_char) -> *mut c_char {
-    unsafe { bindings::kasprintf(gfp, fmt, arg1,arg2) }
+pub fn _kasprintf_2(
+    gfp: bindings::gfp_t,
+    fmt: *const c_char,
+    arg1: *const c_char,
+    arg2: *const c_char,
+) -> *mut c_char {
+    unsafe { bindings::kasprintf(gfp, fmt, arg1, arg2) }
 }
 
 /// A wrapper to store thread's exit code.
 pub enum ThreadExitCode {
+    /// Represent a thread exit successfully.
     Successfully,
+    /// Represent a thread exit with a error.
     WithError(Error),
 }
 

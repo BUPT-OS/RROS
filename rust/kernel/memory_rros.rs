@@ -437,7 +437,7 @@ impl RrosHeap {
             }
         }
         pr_debug!("rros_alloc_chunk: time2 is {}", ktime_get_real_fast_ns());
-        //上锁
+        // Lock.
         if bsize >= (RROS_HEAP_PAGE_SIZE as usize) {
             block = self.add_free_range(bsize, 0);
             pr_debug!("rros_alloc_chunk: time2.1 is {}", ktime_get_real_fast_ns());
@@ -482,12 +482,11 @@ impl RrosHeap {
             }
             pr_debug!("rros_alloc_chunk: time4 is {}", ktime_get_real_fast_ns());
         }
-        //解锁
+        // Unlock.
         pr_debug!("rros_alloc_chunk: time5 is {}", ktime_get_real_fast_ns());
         return block;
     }
 
-    //将申请的内存空间初始化为0
     /// Method `rros_alloc_chunk_zeroed` allocates a chunk of memory from the `RrosHeap` and initializes it to zero.
     /// It takes a size as a parameter and returns an `Option<*mut u8>`.
     /// It first calls `rros_alloc_chunk` to allocate a memory block.
@@ -504,7 +503,6 @@ impl RrosHeap {
         }
     }
 
-    //重新分配空间
     /// Method `rros_realloc_chunk` reallocates a chunk of memory in the `RrosHeap`.
     /// It takes a pointer to the old memory block, the old size, and the new size as parameters, and returns an `Option<*mut u8>`.
     /// It first calls `rros_alloc_chunk` to allocate a new memory block.
@@ -515,7 +513,6 @@ impl RrosHeap {
         old_size: SizeT,
         new_size: SizeT,
     ) -> Option<*mut u8> {
-        //开辟新空间
         let ptr_op = self.rros_alloc_chunk(new_size);
         match ptr_op {
             Some(ptr) => {
@@ -546,7 +543,6 @@ impl RrosHeap {
     /// It first reserves a page range with a size aligned to `RROS_HEAP_PAGE_SIZE`.
     /// If the reservation is successful, it gets the page map of the page and sets the page type and map or block size based on `log2size`.
     /// If `log2size` is not zero, it sets the page type to `log2size`, the map to the bitwise OR of the bitwise NOT of the block mask and 1, and adds the page to the front of the page list.
-    //检查、无误
     fn add_free_range(&mut self, bsize: SizeT, log2size: i32) -> Option<*mut u8> {
         let pg_op = self
             .reserve_page_range(unsafe { rust_helper_align(bsize, RROS_HEAP_PAGE_SIZE) } as SizeT);
@@ -594,7 +590,6 @@ impl RrosHeap {
     /// If it finds a node with a size equal to the given size, it returns a pointer to the range of that node.
     /// If it doesn't find a node with a size equal to the given size, it sets `rb` to `deepest` and iterates over the size tree again.
     /// This time, if it finds a node with a size greater than or equal to the given size, it returns a pointer to the range of that node.
-    //检查：逻辑完整、暂未找到优化点 检查2、无误
     fn search_size_ge(&mut self, size: SizeT) -> Option<*mut RrosHeapRange> {
         let mut rb = self.size_tree.as_mut().unwrap().rb_node;
         let mut deepest = core::ptr::null_mut();
@@ -632,7 +627,6 @@ impl RrosHeap {
     /// If it finds such a range, it removes the range from the size tree.
     /// If the size of the range is equal to the given size, it also removes the range from the address tree and returns the page number of the range.
     /// If the size of the range is greater than the given size, it splits the range into two ranges, inserts the smaller range back into the size tree, and returns the page number of the larger range.
-    //检查、无误
     fn reserve_page_range(&mut self, size: SizeT) -> Option<i32> {
         let new_op = self.search_size_ge(size);
         let mut new;
@@ -735,7 +729,6 @@ impl RrosHeap {
     /// It first calculates `ilog` as the difference between `log2size` and `RROS_HEAP_MIN_LOG2`.
     /// If the bucket is empty, it sets the bucket to the page number and sets the previous and next pointers of the page map to the page number.
     /// Otherwise, it gets the page map of the first page in the bucket, sets the previous pointer of the new page map to the first page, sets the next pointer of the new page map to the second page, sets the previous pointer of the second page to the new page, sets the next pointer of the first page to the new page, and sets the bucket to the new page.
-    //检查、无误
     fn add_page_front(&mut self, pg: i32, log2size: i32) {
         let ilog = ((log2size as u32) - RROS_HEAP_MIN_LOG2) as usize;
         pr_debug!("add_page_front: ilog is {}", ilog);
@@ -797,15 +790,14 @@ impl RrosHeap {
         } else {
             let log2size = page_type as i32;
             bsize = 1 << log2size;
-            let boff = pgoff & !RROS_HEAP_PAGE_MASK; //页内偏移
+            let boff = pgoff & !RROS_HEAP_PAGE_MASK; // In-page offset
             if (boff & ((bsize - 1) as u32)) != 0 {
                 return;
-                //解锁
                 //raw_spin_unlock_irqrestore(&heap->lock, flags);
             }
             let n = boff >> log2size;
             let oldmap = unsafe { (*pagemap).pginfo.map };
-            unsafe { (*pagemap).pginfo.map &= !((1 as u32) << n) }; //置原map对应的位置为0，表示释放
+            unsafe { (*pagemap).pginfo.map &= !((1 as u32) << n) }; // Set the corresponding position of the original map to 0, indicating release.
             unsafe {
                 pr_debug!(
                     "rros_free_chunk: pg is {}, log2size is {}, oldmap is {}, newmap is {}",
@@ -816,7 +808,7 @@ impl RrosHeap {
                 );
             }
             if unsafe { (*pagemap).pginfo.map == !gen_block_mask(log2size) } {
-                //释放后页为空
+                // The page is empty after release.
                 pr_debug!("rros_free_chunk: 1");
                 self.remove_page(pg, log2size);
                 pr_debug!("rros_free_chunk: 1.2");

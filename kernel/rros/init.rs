@@ -11,8 +11,6 @@
 //! This file is the entry point of the rros kernel module.
 //! Importing necessary features and modules
 
-// use alloc::vec;
-// use alloc::vec;
 use kernel::{
     bindings, c_types, chrdev, cpumask, dovetail, irqstage, percpu, prelude::*, str::CStr, task,
 };
@@ -22,6 +20,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 mod control;
 mod idle;
+mod poll;
 mod queue;
 mod sched;
 use sched::rros_init_sched;
@@ -176,7 +175,7 @@ fn set_rros_state(state: RrosRunStates) {
 fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>>>> {
     let res =
         irqstage::enable_oob_stage(CStr::from_bytes_with_nul("rros\0".as_bytes())?.as_char_ptr());
-    pr_debug!("hello");
+    pr_info!("hello");
     match res {
         Ok(_o) => (),
         Err(_e) => {
@@ -184,7 +183,7 @@ fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>
             return Err(kernel::Error::EINVAL);
         }
     }
-    pr_debug!("hella");
+    pr_info!("hella");
     let res = rros_init_memory();
     match res {
         Ok(_o) => (),
@@ -202,7 +201,7 @@ fn init_core() -> Result<Pin<Box<chrdev::Registration<{ factory::NR_FACTORIES }>
             return Err(_e);
         }
     }
-    pr_debug!("haly");
+    pr_info!("haly");
 
     let res = rros_clock_init();
     match res {
@@ -343,7 +342,7 @@ impl KernelModule for Rros {
         }
 
         let cpu_online_mask = unsafe { cpumask::read_cpu_online_mask() };
-        //size_of 为0，align_of为4，alloc报错
+        // When size_of is 0, align_of is 4, alloc reports an error.
         // unsafe {RROS_MACHINE_CPUDATA =
         //     percpu::alloc_per_cpu(size_of::<RrosMachineCpuData>() as usize,
         //                   align_of::<RrosMachineCpuData>() as usize) as *mut RrosMachineCpuData};
@@ -359,7 +358,7 @@ impl KernelModule for Rros {
                 )
             };
             match res {
-                Ok(_o) => (pr_debug!("load parameters {}\n", str::from_utf8(oobcpus_arg.read())?)),
+                Ok(_o) => (pr_info!("load parameters {}\n", str::from_utf8(oobcpus_arg.read())?)),
                 Err(_e) => {
                     pr_warn!("wrong oobcpus_arg");
                     unsafe {
@@ -395,7 +394,7 @@ impl KernelModule for Rros {
         test_mem();
         match res {
             Ok(_o) => {
-                pr_debug!("Success boot the rros.");
+                pr_info!("Success boot the rros.");
                 fac_reg = _o;
             }
             Err(_e) => {
@@ -422,11 +421,11 @@ impl KernelModule for Rros {
 
 #[no_mangle]
 unsafe extern "C" fn helloworld() {
-    pr_debug!("hello world! from C to rust");
+    pr_info!("hello world! from C to rust");
 }
 
 impl Drop for Rros {
     fn drop(&mut self) {
-        pr_debug!("Bye world from rros!\n");
+        pr_info!("Bye world from rros!\n");
     }
 }

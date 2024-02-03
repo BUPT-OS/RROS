@@ -1,29 +1,31 @@
-use super::input::RrosNetRxqueue;
-use super::skb::RrosSkBuff;
-use crate::timeout::{RrosTmode, RROS_INFINITE, RROS_NONBLOCK};
-use core::convert::TryInto;
-use core::default::Default;
-use core::mem::transmute;
-use core::ops::DerefMut;
-use core::ptr::NonNull;
-use core::u16;
-use super::socket::{RrosSocket,RrosNetProto, UserOobMsghdr};
-use kernel::endian::be16;
-use kernel::hash_for_each_possible;
-use kernel::if_packet;
-use kernel::iov_iter::Iovec;
-use kernel::ktime::{timespec64_to_ktime, KtimeT, Timespec64};
-use kernel::prelude::*;
-use kernel::{double_linked_list, sync::{SpinLock, Lock}, c_types, init_static_sync};
-use kernel::{bindings, Result, Error};
-use kernel::types::{HlistHead ,HlistNode, Hashtable};
-use kernel::skbuff;
-use kernel::socket::Sockaddr;
-use crate::net::device::NetDevice;
-use crate::net::ethernet::output::rros_net_ether_transmit;
-use crate::net::socket::{rros_export_iov, rros_import_iov, uncharge_socke_wmem};
-use crate::sched::{rros_disable_preempt, rros_enable_preempt};
-use kernel::types::*;
+use super::{
+    input::RrosNetRxqueue,
+    skb::RrosSkBuff,
+    socket::{RrosNetProto, RrosSocket, UserOobMsghdr},
+};
+use crate::{
+    net::{
+        device::NetDevice,
+        ethernet::output::rros_net_ether_transmit,
+        socket::{rros_export_iov, rros_import_iov, uncharge_socke_wmem},
+    },
+    sched::{rros_disable_preempt, rros_enable_preempt},
+    timeout::{RrosTmode, RROS_INFINITE, RROS_NONBLOCK},
+};
+use core::{convert::TryInto, default::Default, mem::transmute, ops::DerefMut, ptr::NonNull, u16};
+use kernel::{
+    bindings, c_types,
+    endian::be16,
+    hash_for_each_possible, if_packet, init_static_sync,
+    iov_iter::Iovec,
+    ktime::{timespec64_to_ktime, KtimeT, Timespec64},
+    prelude::*,
+    skbuff,
+    socket::Sockaddr,
+    sync::Lock,
+    types::*,
+    Error, Result,
+};
 
 // protocol hash table
 init_static_sync! {
@@ -340,7 +342,7 @@ impl RrosNetProto for EthernetRrosNetProto {
         msg: *mut UserOobMsghdr,
         iov_vec: &mut [Iovec],
     ) -> isize {
-        // 用户态
+        // User mode.
         extern "C" {
             fn rust_helper_raw_get_user(result: *mut u32, addr: *const u32) -> isize;
             fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
@@ -469,7 +471,10 @@ fn copy_packet_to_user(
         addr.get_mut().sll_hatype = unsafe { dev.0.as_ref().type_ };
         addr.get_mut().sll_pkttype = unsafe { skb.0.as_ref().pkt_type() };
         addr.get_mut().sll_halen = unsafe {
-            rust_helper_dev_parse_header(skb.0.as_ptr(), &mut addr.get_mut().sll_addr as *const _ as *mut u8)
+            rust_helper_dev_parse_header(
+                skb.0.as_ptr(),
+                &mut addr.get_mut().sll_addr as *const _ as *mut u8,
+            )
         }
         .try_into()
         .unwrap();
@@ -507,7 +512,7 @@ fn __packet_deliver(rxq: &mut RrosNetRxqueue, skb: &mut RrosSkBuff, protocol: be
     let dev = skb.dev().unwrap();
     let mut delivered = false;
 
-    // list_for_each_entry，这里有continue和break，因此直接写了
+    // list_for_each_entry, there are `continue` and `break` here, so write it directly.
     let mut rsk = list_first_entry!(&mut rxq.subscribers, RrosSocket, next_sub);
     while !list_entry_is_head!(rsk, &mut rxq.subscribers, next_sub) {
         let ref_rsk = unsafe { &mut *rsk };
@@ -577,7 +582,6 @@ pub fn rros_net_packet_deliver(skb: &mut RrosSkBuff) -> bool {
     // return packet_deliver(skb, be16::new(skb.protocol));
     false
 }
-// deliver
 
 fn find_xmit_device(rsk: &mut RrosSocket, msghdr: &mut UserOobMsghdr) -> Result<NetDevice> {
     extern "C" {

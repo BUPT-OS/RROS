@@ -11,18 +11,18 @@ use crate::{
         rros_down_crossing, rros_init_crossing, rros_pass_crossing, rros_up_crossing, RrosCrossing,
     },
     factory::RrosElement,
-    list, sched,
+    init_list_head, list_add, list_del, list_empty,
+    poll::{rros_drop_watchpoints, RrosPollNode},
+    sched,
 };
 
 use kernel::{
-    bindings,
-    c_str,
-    c_types,
-    double_linked_list::*,
-    file::{File, FilesStruct},
+    bindings, c_types,
+    file::FilesStruct,
     init_static_sync,
     prelude::*,
     rbtree,
+    str::CStr,
     sync::{Lock, SpinLock},
     task::Task,
 };
@@ -87,6 +87,19 @@ impl RrosFile {
     pub fn put_file(&mut self) {
         self.crossing.up();
     }
+
+    pub fn get_name(&self) -> Result<&str> {
+        unsafe {
+            match CStr::from_char_ptr(
+                (*(*self.filp).f_path.dentry).d_name.name as *const c_types::c_char,
+            )
+            .to_str()
+            {
+                Ok(s) => Ok(s),
+                Err(_) => Err(Error::EINVAL),
+            }
+        }
+    }
 }
 
 impl Drop for RrosFile {
@@ -101,7 +114,7 @@ pub struct RrosFd {
     rfilp: NonNull<RrosFile>,
     #[allow(dead_code)]
     files: FilesStruct,
-    pub poll_nodes: list::ListHead,
+    pub poll_nodes: Box<bindings::list_head>,
 }
 
 impl RrosFd {
@@ -109,8 +122,8 @@ impl RrosFd {
         RrosFd {
             fd,
             rfilp: NonNull::new(rfilp).unwrap(),
-            files,
-            poll_nodes: list::ListHead::default(),
+            files: files,
+            poll_nodes: Box::try_new(bindings::list_head::default()).unwrap(),
         }
     }
 
@@ -159,7 +172,7 @@ pub fn index_rfd(rfd: RrosFd, _filp: *mut bindings::file) -> Result<usize> {
 /// Returns a reference to the rfd corresponding to the fd.
 pub fn lookup_rfd(fd: u32, _files: &mut FilesStruct) -> Option<*mut RrosFd> {
     let flags = FD_TREE.irq_lock_noguard();
-    // get_mut和锁的get_mut重名了，所以用unsafe了
+    // `get_mut` has the same name as the lock's `get_mut`, so unsafe is used.
     if let Some(rfd) = unsafe { (*FD_TREE.locked_data().get()).get_mut(&fd) } {
         FD_TREE.irq_unlock_noguard(flags);
         return Some(rfd as *mut RrosFd);
@@ -207,7 +220,7 @@ no_mangle_function_declaration! {
         let mut rfd = RrosFd::new(fd, files, unsafe {
             (*filp).oob_data as *const _ as *mut RrosFile
         });
-        rfd.rfilp = unsafe { NonNull::new_unchecked((*filp).oob_data as *mut RrosFile) };
+        init_list_head!(rfd.poll_nodes.as_mut());
         let ret = index_rfd(rfd, filp);
         pr_debug!("install_inband_fd 2");
         if ret.is_err() {
@@ -217,11 +230,12 @@ no_mangle_function_declaration! {
 }
 
 // fdt_lock held, irqs off. CAUTION: resched required on exit.
-// static void drop_watchpoints(struct rros_fd *efd)
-// {
-// 	if (!list_empty(&efd->poll_nodes))
-// 		rros_drop_watchpoints(&efd->poll_nodes);
-// }
+fn drop_watchpoints(rfd: &mut RrosFd) {
+    let refmut_pn = rfd.poll_nodes.as_mut();
+    if !list_empty!(refmut_pn) {
+        rros_drop_watchpoints(refmut_pn);
+    }
+}
 
 // in-band, caller holds files->file_lock
 no_mangle_function_declaration! {
@@ -246,7 +260,7 @@ no_mangle_function_declaration! {
         let rfd = unindex_rfd(fd, &mut files);
         pr_debug!("uninstall_inband_fd 2");
         match rfd {
-            Some(_rfd) => (), // drop_watchpoints(rfd);
+            Some(mut rfd) => drop_watchpoints(&mut rfd), // drop_watchpoints(rfd);
             None => (),
         }
         unsafe { sched::rros_schedule(); }
@@ -265,9 +279,9 @@ no_mangle_function_declaration! {
         let rfd = lookup_rfd(fd, &mut files);
         match rfd {
             Some(rfd) => {
-                // drop_watchpoints(rfd);
+                unsafe{ rros_drop_watchpoints((*rfd).poll_nodes.as_mut()); }
                 unsafe { (*rfd).rfilp = NonNull::new((*filp).oob_data as *const _ as *mut RrosFile).unwrap() };
-                unsafe { sched::rros_schedule(); } 
+                unsafe { sched::rros_schedule(); }
             },
             None => {
                 install_inband_fd(fd, filp, files.get_ptr());
@@ -284,8 +298,11 @@ pub fn rros_get_fileref(rfilp: &mut RrosFile) -> Result<usize> {
 }
 
 pub fn rros_get_file(fd: u32) -> Option<NonNull<RrosFile>> {
-    // TODO: 暂时改成NonNull
-    let rfd = lookup_rfd(fd, &mut FilesStruct::from_ptr(unsafe { (*Task::current_ptr()).files }));
+    // TODO: Temporarily changed to NonNull.
+    let rfd = lookup_rfd(
+        fd,
+        &mut FilesStruct::from_ptr(unsafe { (*Task::current_ptr()).files }),
+    );
 
     match rfd {
         Some(rfd) => {
@@ -300,25 +317,28 @@ pub fn rros_get_file(fd: u32) -> Option<NonNull<RrosFile>> {
     }
 }
 
-// pub fn rros_watch_fd(fd: u32, node: RrosPollNode) -> Option<Arc<RrosFile>> {
-//     let rfd = lookup_rfd(fd, unsafe { (*Task::current_ptr()).files });
+pub fn rros_watch_fd(fd: u32, node: &mut RrosPollNode) -> Option<NonNull<RrosFile>> {
+    let rfd = lookup_rfd(fd, unsafe {
+        &mut FilesStruct::from_ptr((*Task::current_ptr()).files)
+    });
 
-//     match rfd {
-//         Some(rfd) => {
-//             unsafe {
-//                 rros_get_fileref((*rfd).rfilp.as_mut().unwrap());
-//                 Some(Arc::from_raw((*rfd).rfilp.as_ref().unwrap() as *const RrosFile))
-//                 // (*rfd).poll_nodes.add(node.next);
-//             }
-//         },
-//         None => None,
-//     }
-// }
+    match rfd {
+        Some(rfd) => {
+            if let Err(_) = unsafe { rros_get_fileref((*rfd).rfilp.as_mut()) } {
+                pr_err!("rros_watch_fd: rros_get_fileref fail");
+                return None;
+            }
+            list_add!(&mut node.next, (*rfd).poll_nodes.as_mut());
+            unsafe { Some((*rfd).rfilp) }
+        }
+        None => None,
+    }
+}
 
-// pub fn rros_ignore_fd(node: RrosPollNode) -> Result<usize> {
-//     // list_del(node.next);
-//     Ok(0)
-// }
+pub fn rros_ignore_fd(node: &mut RrosPollNode) -> Result<usize> {
+    list_del!(&mut node.next);
+    Ok(0)
+}
 
 /// Rros_open_file - Open new file with oob capabilities
 ///

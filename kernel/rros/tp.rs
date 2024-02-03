@@ -1,16 +1,15 @@
 use crate::{clock::*, fifo::*, sched::*, thread::*, timeout::*, timer::*};
-use core::mem::size_of;
-use core::ptr::NonNull;
+use core::{mem::size_of, ptr::NonNull};
 use kernel::{
+    c_str, c_types,
+    double_linked_list::*,
     ktime,
-    bindings, c_types, prelude::*, ktime::{Timespec64, ktime_to_timespec64, timespec64_to_ktime},str::CStr, c_str,double_linked_list::*,sync::{SpinLock, Lock, Guard},memory_rros::*, spinlock_init, types::Atomic,};
-use crate::{
-    sched::*,
-    clock::*,
-	thread::*,
-    timer::*,
-    timeout::*,
-    fifo::*,
+    ktime::{ktime_to_timespec64, timespec64_to_ktime, Timespec64},
+    memory_rros::*,
+    prelude::*,
+    spinlock_init,
+    sync::{Lock, SpinLock},
+    types::Atomic,
 };
 
 pub static mut RROS_SCHED_TP: RrosSchedClass = RrosSchedClass {
@@ -39,7 +38,7 @@ pub static mut RROS_SCHED_TP: RrosSchedClass = RrosSchedClass {
     flag: 4,
 };
 
-pub const CONFIG_RROS_SCHED_TP_NR_PART: i32 = 5; // 先默认设置为5
+pub const CONFIG_RROS_SCHED_TP_NR_PART: i32 = 5; // Set to 5 by default temporarily.
 pub const RROS_TP_MAX_PRIO: i32 = RROS_FIFO_MAX_PRIO;
 pub const RROS_TP_MIN_PRIO: i32 = RROS_FIFO_MIN_PRIO;
 #[allow(dead_code)]
@@ -136,7 +135,7 @@ pub fn tp_schedule_next(tp: &mut RrosSchedTp) -> Result<usize> {
 
 pub fn tp_tick_handler(timer: *mut RrosTimer) {
     unsafe {
-        // 这里的container_of有问题
+        // There is a problem with `container_of` here.
         let rq = kernel::container_of!(timer, rros_rq, tp.tf_timer) as *mut rros_rq;
         let mut tp = &mut (*rq).tp;
 
@@ -207,7 +206,7 @@ pub fn tp_init(rq: *mut rros_rq) -> Result<usize> {
             RROS_TIMER_IGRAVITY,
         );
         // rros_set_timer_name(&tp->tf_timer, "[tp-tick]");
-        pr_debug!("tp_init ok");
+        pr_info!("tp_init ok");
         Ok(0)
     }
 }
@@ -304,7 +303,7 @@ pub fn tp_chkparam(
         //     return Err(kernel::Error::EINVAL);
         // }
     }
-    pr_debug!("tp_chkparam success");
+    pr_info!("tp_chkparam success");
     Ok(0)
 }
 
@@ -331,7 +330,7 @@ pub fn tp_declare(
             .unwrap()
             .add_tail(tp_link.clone().as_mut().unwrap().value.clone());
     }
-    pr_debug!("tp_declare success!");
+    pr_info!("tp_declare success!");
     Ok(0)
 }
 
@@ -363,7 +362,7 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
             let rq_next = (*thread.locked_data().get()).rq_next.clone();
             head.add_head(rq_next.clone().as_mut().unwrap().as_mut().value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in head.len()..=1 {
                 let thread_cprio = (*thread.locked_data().get()).cprio;
                 let cprio_in_list = (*head
@@ -415,7 +414,7 @@ pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
             let rq_next = (*thread.locked_data().get()).rq_next.clone();
             head.add_head(rq_next.clone().as_mut().unwrap().as_mut().value.clone());
         } else {
-            let mut flag = 1; // flag指示是否到头
+            let mut flag = 1;
             for i in head.len()..=1 {
                 let thread_cprio = (*thread.locked_data().get()).cprio;
                 let cprio_in_list = (*head
@@ -744,19 +743,23 @@ pub fn tp_control(
                 break;
             }
             (*p).offset = &mut ktime_to_timespec64((*w).w_offset) as *mut Timespec64;
-            (*pp).duration = &mut ktime_to_timespec64(ktime::ktime_sub((*w).w_offset, (*pw).w_offset)) as *mut Timespec64;
+            (*pp).duration =
+                &mut ktime_to_timespec64(ktime::ktime_sub((*w).w_offset, (*pw).w_offset))
+                    as *mut Timespec64;
             (*p).ptid = (*w).w_part;
             loop_n += 1;
         }
-        (*pp).duration = &mut ktime_to_timespec64(ktime::ktime_sub((*gps).tf_duration, (*pw).w_offset)) as *mut Timespec64;
+        (*pp).duration =
+            &mut ktime_to_timespec64(ktime::ktime_sub((*gps).tf_duration, (*pw).w_offset))
+                as *mut Timespec64;
         put_tp_schedule(gps);
         let ret = size_of::<RrosTpCtlinfo>() + size_of::<RrosTpWindow>() * nr_windows as usize;
         return Ok(ret as i64);
     }
 }
 
-pub fn rros_timer_is_running(timer: *mut RrosTimer) -> bool{
-    unsafe{
+pub fn rros_timer_is_running(timer: *mut RrosTimer) -> bool {
+    unsafe {
         if (*timer).get_status() & RROS_TIMER_RUNNING != 0 {
             return true;
         } else {

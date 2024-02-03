@@ -7,17 +7,14 @@ use crate::{
     factory::{RrosElement, RrosFactory},
     fifo::RROS_FIFO_MAX_PRIO,
     list, sched,
-    Box,
     wait::RrosWaitQueue,
 };
 
 use kernel::{
-    c_types, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr, Error, device::DeviceType,
+    c_types, device::DeviceType, file::File, file_operations::FileOperations,
+    io_buffer::IoBufferWriter, prelude::*, spinlock_init, str::CStr, sync::SpinLock, user_ptr,
+    Error,
 };
-
-use kernel::file::File;
-use kernel::file_operations::FileOperations;
-use kernel::io_buffer::IoBufferWriter;
 
 #[allow(dead_code)]
 pub struct RrosMonitorItem1 {
@@ -102,7 +99,6 @@ impl RrosMonitor {
     }
 }
 
-// #[derive(Copy, Clone)]
 pub struct RrosMonitorStateItemGate {
     #[allow(dead_code)]
     owner: AtomicUsize,
@@ -114,7 +110,6 @@ pub struct RrosMonitorStateItemGate {
     nesting: u32,
 }
 
-// #[derive(Copy, Clone)]
 pub struct RrosMonitorStateItemEvent {
     #[allow(dead_code)]
     value: AtomicUsize,
@@ -128,6 +123,7 @@ pub struct RrosMonitorStateItemEvent {
 //     gate: RrosMonitorState_item_gate,
 //     event: RrosMonitorState_item_event,
 // }
+
 #[allow(dead_code)]
 pub enum RrosMonitorStateItem {
     Gate(RrosMonitorStateItemGate),
@@ -189,7 +185,7 @@ pub const CLOCK_MONOTONIC: u32 = 1;
 pub const CLOCK_REALTIME: u32 = 0;
 
 #[allow(dead_code)]
-const CONFIG_RROS_MONITOR: usize = 0; //未知
+const CONFIG_RROS_MONITOR: usize = 0; // Unknown.
 
 #[allow(dead_code)]
 pub fn monitor_factory_build(

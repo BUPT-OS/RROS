@@ -1,7 +1,9 @@
+use crate::{
+    net::{input::rros_net_receive, packet::rros_net_packet_deliver, skb::RrosSkBuff},
+    DECLARE_BITMAP,
+};
 use core::ops::Deref;
-
-use crate::{DECLARE_BITMAP, uapi::rros, net::{packet::rros_net_packet_deliver, skb::RrosSkBuff, input::rros_net_receive}};
-use kernel::{bindings, endian::be16, c_types::c_void, prelude::*, bitmap, if_vlan::VlanEthhdr};
+use kernel::{bindings, bitmap, c_types::c_void, endian::be16, if_vlan::VlanEthhdr, prelude::*};
 
 fn pick(skb: RrosSkBuff) -> bool {
     rros_net_receive(skb, net_ether_ingress);
@@ -17,12 +19,12 @@ fn untag(mut skb: RrosSkBuff, ehdr: &mut VlanEthhdr, mac_hdr: *mut u8) -> bool {
             vlan_tci: u16,
         );
     }
-    skb.protocol = ehdr.get_mut().h_vlan_encapsulated_proto;
+    skb.protocol = ehdr.get().unwrap().h_vlan_encapsulated_proto;
     unsafe {
         rust_helper__vlan_hwaccel_put_tag(
             skb.0.as_ptr(),
-            be16::new(ehdr.get_mut().h_vlan_proto),
-            u16::from(be16::new(ehdr.get_mut().h_vlan_TCI)),
+            be16::new(ehdr.get().unwrap().h_vlan_proto),
+            u16::from(be16::new(ehdr.get().unwrap().h_vlan_TCI)),
         )
     };
     kernel::skbuff::skb_pull(skb.0.as_ptr(), bindings::VLAN_HLEN as u32);
@@ -31,8 +33,7 @@ fn untag(mut skb: RrosSkBuff, ehdr: &mut VlanEthhdr, mac_hdr: *mut u8) -> bool {
         kernel::str::memmove(
             unsafe { mac_hdr.offset(bindings::VLAN_HLEN as isize) as *mut c_void },
             mac_hdr as *mut c_void,
-            (mac_len - bindings::VLAN_HLEN as usize - bindings::ETH_TLEN as usize)
-                as u64,
+            (mac_len - bindings::VLAN_HLEN as usize - bindings::ETH_TLEN as usize) as u64,
         );
     }
     skb.mac_header += bindings::VLAN_HLEN as u16;
@@ -41,7 +42,7 @@ fn untag(mut skb: RrosSkBuff, ehdr: &mut VlanEthhdr, mac_hdr: *mut u8) -> bool {
 
 pub fn rros_net_ether_accept(skb: RrosSkBuff) -> bool {
     extern "C" {
-        fn rust_helper_test_bit(nr: i32, addr: *const usize) -> bool; // TODO: 这里addr应该是volatile的
+        fn rust_helper_test_bit(nr: i32, addr: *const usize) -> bool; // TODO: The addr here should be volatile.
         fn rust_helper_eth_type_vlan(ethertype: be16) -> bool;
         #[allow(improper_ctypes)]
         fn rust_helper__vlan_hwaccel_get_tag(
@@ -65,7 +66,7 @@ pub fn rros_net_ether_accept(skb: RrosSkBuff) -> bool {
         pr_debug!("tag && test_bit\n");
         return pick(skb);
     }
-    // TODO:下面这条路径没有测试过
+    // TODO: The following path has not been tested.
     if skb.vlan_present() == 0 && unsafe { rust_helper_eth_type_vlan(be16::new(skb.protocol)) } {
         pr_debug!("this path is not tested\n");
         let mac_hdr = unsafe { skb.head.offset(skb.mac_header as isize) as *mut u8 };
@@ -73,11 +74,11 @@ pub fn rros_net_ether_accept(skb: RrosSkBuff) -> bool {
         pr_debug!("(*ehdr).h_vlan_encapsulated_proto {} ", unsafe {
             (*ehdr).get_mut().h_vlan_encapsulated_proto
         });
-        if be16::new(unsafe { (*ehdr).get_mut().h_vlan_encapsulated_proto })
+        if be16::new(unsafe { (*ehdr).get().unwrap().h_vlan_encapsulated_proto })
             == be16::from(bindings::ETH_P_IP as u16)
         {
             pr_debug!("handle the real packege\n");
-            let vlan_tci = unsafe { u16::from(be16::new((*ehdr).get_mut().h_vlan_TCI)) };
+            let vlan_tci = unsafe { u16::from(be16::new((*ehdr).get().unwrap().h_vlan_TCI)) };
             pr_debug!("h_vlan_TCI {}\n", vlan_tci);
             if unsafe {
                 rust_helper_test_bit(
@@ -137,11 +138,6 @@ pub fn rros_net_store_vlans(buf: *const u8, len: usize) -> i32 {
     return len as i32;
 }
 
-// ssize_t rros_net_show_vlans(char *buf, SizeT len)
-// {
-// 	return scnprintf(buf, len, "%*pbl\n", VLAN_N_VID, VLAN_MAP);
-// }
-
 #[allow(unused)]
 pub fn rros_show_vlans() {
     extern "C" {
@@ -166,6 +162,3 @@ pub fn rros_show_vlans() {
         pr_info!("oob net port: {:?}", buffer);
     }
 }
-// fn rros_net_show_vlans() //
-
-// fn rros_net_show_vlans() // 

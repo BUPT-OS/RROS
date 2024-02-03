@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
-use crate::module::{expect_group, expect_ident, expect_punct, try_ident};
-use proc_macro::{token_stream, Delimiter, Group, Literal, TokenStream, TokenTree};
+use crate::module::{expect_group, expect_punct, try_ident};
+use proc_macro::{token_stream, Delimiter, TokenStream, TokenTree};
 
 enum BindingsTypeMapper {
     HaveBindings(String, &'static str),
@@ -18,9 +18,9 @@ struct NoMangleParams {
 impl NoMangleParams {
     fn add_param(&mut self, name: String, ty: String) {
         let (ty, template) = match ty.trim() {
-            /// If the no_mangle function parameters that need to be defined
-            /// contain types that need to be converted from wrapper to bindings,
-            /// you need to add a conversion method here.
+            // If the no_mangle function parameters that need to be defined
+            // contain types that need to be converted from wrapper to bindings,
+            // you need to add a conversion method here.
             "PtRegs" => (
                 BindingsTypeMapper::HaveBindings(ty, "*mut bindings::pt_regs"),
                 Some("let % = PtRegs::from_ptr(%);"),

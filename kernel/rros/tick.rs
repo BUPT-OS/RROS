@@ -1,14 +1,17 @@
-use kernel::clockchips::ClockEventDevice;
 use kernel::{
-    bindings, c_types, clockchips, container_of, cpumask, double_linked_list::*, interrupt,
+    bindings, c_types, clockchips, clockchips::ClockEventDevice, cpumask, interrupt,
     irq_pipeline::*, ktime::*, percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr,
-    sync::Lock, sync::SpinLock, tick,
+    sync::Lock, tick,
 };
 
 use crate::{
     clock::*, sched::*, thread::*, timeout::*, timer::*, RROS_MACHINE_CPUDATA, RROS_OOB_CPUS,
 };
-use core::cmp;
+use core::{
+    cmp,
+    mem::{align_of, size_of},
+    ptr::null_mut,
+};
 
 extern "C" {
     fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
@@ -18,9 +21,6 @@ extern "C" {
 }
 
 static mut PROXY_DEVICE: *mut clockchips::ClockProxyDevice = 0 as *mut clockchips::ClockProxyDevice;
-
-use core::mem::{align_of, size_of};
-use core::ptr::{null, null_mut};
 
 pub const CLOCK_EVT_FEAT_KTIME: u32 = 0x000004;
 type KtimeT = i64;
@@ -44,7 +44,6 @@ pub fn rros_notify_proxy_tick(rq: *mut RrosRq) {
 pub struct RrosProxySetNextKtime;
 
 impl clockchips::ProxySetNextKtime for RrosProxySetNextKtime {
-    // 未测试
     fn proxy_set_next_ktime(expires: KtimeT, _arg1: clockchips::ClockEventDevice) -> i32 {
         //pr_debug!("proxy_set_next_ktime: in");
         let delta = ktime_sub(expires, ktime_get());
@@ -70,7 +69,6 @@ impl clockchips::ProxySetNextKtime for RrosProxySetNextKtime {
 pub struct RrosProxySetOneShotStopped;
 
 impl clockchips::ProxySetOneshotStopped for RrosProxySetOneShotStopped {
-    // 未测试
     fn proxy_set_oneshot_stopped(dev: clockchips::ClockProxyDevice) -> c_types::c_int {
         pr_debug!("proxy_set_oneshot_stopped: in");
         let flags = unsafe { rust_helper_hard_local_irq_save() };
@@ -96,7 +94,9 @@ pub struct RrosClockIpiHandler;
 impl clockchips::ClockIpiHandler for RrosClockIpiHandler {
     fn clock_ipi_handler(_irq: c_types::c_int, _dev_id: *mut c_types::c_void) -> c_types::c_uint {
         pr_debug!("god nn");
-        unsafe { clockchips::core_tick::<RrosCoreTick>(null_mut()); }
+        unsafe {
+            clockchips::core_tick::<RrosCoreTick>(null_mut());
+        }
         return bindings::irqreturn_IRQ_HANDLED;
     }
 }
@@ -122,7 +122,8 @@ pub fn rros_enable_tick() -> Result<usize> {
     #[cfg(CONFIG_SMP)]
     if cpumask::num_possible_cpus() > 1 {
         pr_debug!("rros_enable_tick123");
-        let ret = unsafe { interrupt::__request_percpu_irq(
+        let ret = unsafe {
+            interrupt::__request_percpu_irq(
                 irq_get_timer_oob_ipi() as c_types::c_uint,
                 Some(clockchips::clock_ipi_handler::<RrosClockIpiHandler>),
                 rust_helper_IRQF_OOB(),
@@ -136,7 +137,9 @@ pub fn rros_enable_tick() -> Result<usize> {
         }
     }
 
-    let _ret = tick::tick_install_proxy(Some(clockchips::setup_proxy::<RrosSetupProxy>), unsafe { RROS_OOB_CPUS.as_cpumas_ptr() });
+    let _ret = tick::tick_install_proxy(Some(clockchips::setup_proxy::<RrosSetupProxy>), unsafe {
+        RROS_OOB_CPUS.as_cpumas_ptr()
+    });
     pr_info!("enable tick success!");
     // if (ret && IS_ENABLED(CONFIG_SMP) && num_possible_cpus() > 1) {
     // 	free_percpu_irq(TIMER_OOB_IPI, &rros_machine_cpudata);
@@ -149,12 +152,12 @@ pub fn rros_enable_tick() -> Result<usize> {
 pub struct RrosSetupProxy;
 
 impl clockchips::SetupProxy for RrosSetupProxy {
-    // 新的setup
+    // new setup
     fn setup_proxy(dev: clockchips::ClockProxyDevice) {
         let _real_dev: ClockEventDevice;
         match clockchips::ClockEventDevice::from_proxy_device(dev.get_real_device()) {
             Ok(v) => _real_dev = v,
-            Err(e) => {
+            Err(_e) => {
                 pr_warn!("1setup real ced new error!");
                 return;
             }

@@ -658,7 +658,7 @@ ktime_t rust_helper_ktime_set(const s64 secs, const unsigned long nsecs) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_ktime_set);
 
-s64 rust_helper_timespec64_to_ktime(struct timespec64 ts){
+s64 rust_helper_timespec64_to_ktime(struct timespec64 ts) {
 	return ktime_set(ts.tv_sec, ts.tv_nsec);
 }
 EXPORT_SYMBOL_GPL(rust_helper_timespec64_to_ktime);
@@ -695,12 +695,12 @@ unsigned long rust_helper_IRQF_OOB(void) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_IRQF_OOB);
 
-struct oob_thread_state *rust_helper_dovetail_current_state(void){
+struct oob_thread_state *rust_helper_dovetail_current_state(void) {
 	return dovetail_current_state();
 }
 EXPORT_SYMBOL_GPL(rust_helper_dovetail_current_state);
 
-bool rust_helper_test_bit(long nr, const volatile unsigned long *addr){
+bool rust_helper_test_bit(long nr, const volatile unsigned long *addr) {
 	return test_bit(nr,addr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_test_bit);
@@ -730,12 +730,12 @@ void rust_helper_put_net(struct net *net)
 EXPORT_SYMBOL_GPL(rust_helper_put_net);
 
 
-void rust_helper_dovetail_request_ucall(struct task_struct *task){
+void rust_helper_dovetail_request_ucall(struct task_struct *task) {
 	dovetail_request_ucall(task);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dovetail_request_ucall);
 
-void rust_helper_init_completion(struct completion *x){
+void rust_helper_init_completion(struct completion *x) {
 	init_completion(x);
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_completion);
@@ -771,12 +771,12 @@ void rust_helper_hard_spin_unlock(struct raw_spinlock *rlock) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_hard_spin_unlock);
 
-void rust_helper_raw_spin_lock(hard_spinlock_t *lock){
+void rust_helper_raw_spin_lock(hard_spinlock_t *lock) {
 	raw_spin_lock(lock);
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_spin_lock);
 
-void rust_helper_raw_spin_unlock(hard_spinlock_t *lock){
+void rust_helper_raw_spin_unlock(hard_spinlock_t *lock) {
 	raw_spin_unlock(lock);
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_spin_unlock);
@@ -859,12 +859,12 @@ struct net * rust_helper_sock_net(const struct sock *sk) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_sock_net);
 
-u32 rust_helper_jhash(const void *key, u32 length, u32 initval){
+u32 rust_helper_jhash(const void *key, u32 length, u32 initval) {
 	return jhash(key,length,initval);
 }
 EXPORT_SYMBOL_GPL(rust_helper_jhash);
 
-u32 rust_helper_jhash2(const void *key, u32 length, u32 initval){
+u32 rust_helper_jhash2(const void *key, u32 length, u32 initval) {
 	return jhash2(key,length,initval);
 }
 EXPORT_SYMBOL_GPL(rust_helper_jhash2);
@@ -880,17 +880,17 @@ void rust_helper_local_bh_enable (void) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_local_bh_enable);
 
-void rust_helper_skb_list_del_init(struct sk_buff *skb){
+void rust_helper_skb_list_del_init(struct sk_buff *skb) {
 	skb_list_del_init(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_list_del_init);
 
-void rust_helper_list_splice_init(struct list_head *list,struct list_head *head){
+void rust_helper_list_splice_init(struct list_head *list,struct list_head *head) {
 	list_splice_init(list,head);
 }
 EXPORT_SYMBOL_GPL(rust_helper_list_splice_init);
 
-bool rust_helper_list_empty(struct list_head *head){
+bool rust_helper_list_empty(struct list_head *head) {
 	return list_empty(head);
 }
 EXPORT_SYMBOL_GPL(rust_helper_list_empty);
@@ -912,31 +912,31 @@ u_int64_t rust_helper_BITS_TO_LONGS(int nr) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_BITS_TO_LONGS);
 
-void* rust_helper_this_cpu_ptr(void* ptr){
+void* rust_helper_this_cpu_ptr(void* ptr) {
 	return this_cpu_ptr(ptr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_this_cpu_ptr);
 
-__be16 rust_helper_vlan_dev_vlan_proto(const struct net_device *dev){
+__be16 rust_helper_vlan_dev_vlan_proto(const struct net_device *dev) {
 	return vlan_dev_vlan_proto(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_vlan_dev_vlan_proto);
-__u16 rust_helper_vlan_dev_vlan_id(const struct net_device *dev){
+__u16 rust_helper_vlan_dev_vlan_id(const struct net_device *dev) {
 	return vlan_dev_vlan_id(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_vlan_dev_vlan_id);
 
-struct net_device* rust_helper_vlan_dev_real_dev(const struct net_device *dev){
+struct net_device* rust_helper_vlan_dev_real_dev(const struct net_device *dev) {
 	return vlan_dev_real_dev(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_vlan_dev_real_dev);
 
-__u16 rust_helper_vlan_dev_get_egress_qos_mask(struct net_device *dev,u32 skprio){
+__u16 rust_helper_vlan_dev_get_egress_qos_mask(struct net_device *dev,u32 skprio) {
 	return vlan_dev_get_egress_qos_mask(dev,skprio);
 }
 EXPORT_SYMBOL_GPL(rust_helper_vlan_dev_get_egress_qos_mask);
 
-bool rust_helper_is_vlan_dev(const struct net_device *dev){
+bool rust_helper_is_vlan_dev(const struct net_device *dev) {
 	return is_vlan_dev(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_is_vlan_dev);
@@ -952,48 +952,48 @@ void rust_helper_hash_add(struct hlist_head *hashtable,size_t length,struct hlis
 }
 EXPORT_SYMBOL_GPL(rust_helper_hash_add);
 
-void rust_helper_hash_del(struct hlist_node* node){
+void rust_helper_hash_del(struct hlist_node* node) {
 	hlist_del_init(node);
 }
 EXPORT_SYMBOL_GPL(rust_helper_hash_del);
 
 // 这个函数是自己加的
-struct hlist_head* rust_helper_get_hlist_head(struct hlist_head *hashtable,size_t length,u32 key){
+struct hlist_head* rust_helper_get_hlist_head(struct hlist_head *hashtable,size_t length,u32 key) {
 	return &hashtable[hash_min(key, ilog2(length))];
 }
 EXPORT_SYMBOL_GPL(rust_helper_get_hlist_head);
 
-__be16 rust_helper_htons(__u16 x){
+__be16 rust_helper_htons(__u16 x) {
 	return htons(x);
 }
 EXPORT_SYMBOL_GPL(rust_helper_htons);
 
-__u16 rust_helper_ntohs(__be16 x){
+__u16 rust_helper_ntohs(__be16 x) {
 	return ntohs(x);
 }
 EXPORT_SYMBOL_GPL(rust_helper_ntohs);
 
-void rust_helper_raw_spin_lock_init(hard_spinlock_t *lock){
+void rust_helper_raw_spin_lock_init(hard_spinlock_t *lock) {
 	raw_spin_lock_init(lock);
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_spin_lock_init);
 
-bool rust_helper_hard_irqs_disabled(void){
+bool rust_helper_hard_irqs_disabled(void) {
 	return native_irqs_disabled();
 }
 EXPORT_SYMBOL_GPL(rust_helper_hard_irqs_disabled);
 
-bool rust_helper_rros_enable_preempt_top_part(void){
+bool rust_helper_rros_enable_preempt_top_part(void) {
 	return(--dovetail_current_state()->preempt_count == 0);
 }
 EXPORT_SYMBOL_GPL(rust_helper_rros_enable_preempt_top_part);
 
-void rust_helper_rros_disable_preempt(void){
+void rust_helper_rros_disable_preempt(void) {
 	dovetail_current_state()->preempt_count++;
 }
 EXPORT_SYMBOL_GPL(rust_helper_rros_disable_preempt);
 
-unsigned int rust_helper_raw_get_user(unsigned int *x,unsigned int* ptr){
+unsigned int rust_helper_raw_get_user(unsigned int *x,unsigned int* ptr) {
 	unsigned int tmp;
 	unsigned ret = __get_user(tmp,ptr);
 	*x = tmp;
@@ -1001,7 +1001,7 @@ unsigned int rust_helper_raw_get_user(unsigned int *x,unsigned int* ptr){
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_get_user);
 
-unsigned int rust_helper_raw_get_user_64(unsigned long *x,unsigned long* ptr){
+unsigned int rust_helper_raw_get_user_64(unsigned long *x,unsigned long* ptr) {
 	unsigned long tmp;
 	unsigned ret = __get_user(tmp,ptr);
 	*x = tmp;
@@ -1009,131 +1009,131 @@ unsigned int rust_helper_raw_get_user_64(unsigned long *x,unsigned long* ptr){
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_get_user_64);
 
-int rust_helper_raw_put_user(unsigned int x,unsigned int* ptr){
+int rust_helper_raw_put_user(unsigned int x,unsigned int* ptr) {
 	return __put_user(x,ptr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_put_user);
 
-unsigned long rust_helper_raw_copy_from_user(void* dst,const void*src,unsigned long size){
+unsigned long rust_helper_raw_copy_from_user(void* dst,const void*src,unsigned long size) {
 	return raw_copy_from_user(dst,src,size);
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_copy_from_user);
 
-unsigned long rust_helper_raw_copy_to_user(void* dst,const void*src,unsigned long size){
+unsigned long rust_helper_raw_copy_to_user(void* dst,const void*src,unsigned long size) {
 	return raw_copy_to_user(dst,src,size);
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_copy_to_user);
 
-void rust_helper_bitmap_copy(unsigned long *dst, const unsigned long *src,unsigned int nbits){
+void rust_helper_bitmap_copy(unsigned long *dst, const unsigned long *src,unsigned int nbits) {
 	bitmap_copy(dst,src,nbits);
 }
 EXPORT_SYMBOL_GPL(rust_helper_bitmap_copy);
 
-void rust_helper_init_work(struct work_struct*work,void (*rust_helper_work_func)(struct work_struct *work)){
+void rust_helper_init_work(struct work_struct*work,void (*rust_helper_work_func)(struct work_struct *work)) {
 	INIT_WORK(work,rust_helper_work_func);
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_work);
 
 #ifdef CONFIG_NET_OOB
-void rust_helper__vlan_hwaccel_put_tag(struct sk_buff *skb, __be16 vlan_proto, __u16 vlan_tci){
+void rust_helper__vlan_hwaccel_put_tag(struct sk_buff *skb, __be16 vlan_proto, __u16 vlan_tci) {
 	__vlan_hwaccel_put_tag(skb,vlan_proto,vlan_tci);
 }
 EXPORT_SYMBOL_GPL(rust_helper__vlan_hwaccel_put_tag);
 
-int rust_helper__vlan_hwaccel_get_tag(struct sk_buff *skb, __u16* vlan_tci){
+int rust_helper__vlan_hwaccel_get_tag(struct sk_buff *skb, __u16* vlan_tci) {
 	return __vlan_hwaccel_get_tag(skb,vlan_tci);
 }
 EXPORT_SYMBOL_GPL(rust_helper__vlan_hwaccel_get_tag);
 
-void rust_helper_netdev_is_oob_capable(struct net_device *dev){
+void rust_helper_netdev_is_oob_capable(struct net_device *dev) {
 	netdev_is_oob_capable(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_netdev_is_oob_capable);
 
-struct sk_buff* rust_helper_netdev_alloc_oob_skb(struct net_device *dev,dma_addr_t *dma_addr){
+struct sk_buff* rust_helper_netdev_alloc_oob_skb(struct net_device *dev,dma_addr_t *dma_addr) {
 	return netdev_alloc_oob_skb(dev,dma_addr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_netdev_alloc_oob_skb);
 
-void rust_helper_set_bit(int nr, volatile unsigned long *addr){
+void rust_helper_set_bit(int nr, volatile unsigned long *addr) {
 	set_bit(nr,addr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_set_bit);
 
-void rust_helper_clear_bit(int nr, volatile unsigned long *addr){
+void rust_helper_clear_bit(int nr, volatile unsigned long *addr) {
 	clear_bit(nr,addr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_clear_bit);
 
 struct net_device *
-rust_helper_netdev_notifier_info_to_dev(const struct netdev_notifier_info *info){
+rust_helper_netdev_notifier_info_to_dev(const struct netdev_notifier_info *info) {
 	return info->dev;
 }
 EXPORT_SYMBOL_GPL(rust_helper_netdev_notifier_info_to_dev);
 
 struct net*
-rust_helper_dev_net(const struct net_device *dev){
+rust_helper_dev_net(const struct net_device *dev) {
 	return dev_net(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_net);
 
-void rust_helper_dev_kfree_skb(struct sk_buff *skb){
+void rust_helper_dev_kfree_skb(struct sk_buff *skb) {
 	dev_kfree_skb(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_kfree_skb);
 
-__u16 rust_helper_skb_vlan_tag_get_id(const struct sk_buff *skb){
+__u16 rust_helper_skb_vlan_tag_get_id(const struct sk_buff *skb) {
 	return skb_vlan_tag_get_id(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_vlan_tag_get_id);
 
-void rust_helper_skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb){
+void rust_helper_skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb) {
 	skb_morph_oob_skb(n,skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_morph_oob_skb);
 
-unsigned char * rust_helper_skb_mac_header(struct sk_buff *skb){
+unsigned char * rust_helper_skb_mac_header(struct sk_buff *skb) {
 	return skb_mac_header(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_mac_header);
 
 #include<linux/netdevice.h>
-int rust_helper_dev_parse_header(const struct sk_buff *skb,unsigned char *haddr){
+int rust_helper_dev_parse_header(const struct sk_buff *skb,unsigned char *haddr) {
 	return dev_parse_header(skb,haddr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_parse_header);
 
-bool rust_helper_eth_type_vlan(__be16 ethertype){
+bool rust_helper_eth_type_vlan(__be16 ethertype) {
 	return eth_type_vlan(ethertype);
 }
 EXPORT_SYMBOL_GPL(rust_helper_eth_type_vlan);
 
-void rust_helper_skb_reset_mac_header(struct sk_buff *skb){
+void rust_helper_skb_reset_mac_header(struct sk_buff *skb) {
 	skb_reset_mac_header(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_reset_mac_header);
 
-int rust_helper_skb_tailroom(const struct sk_buff *skb){
+int rust_helper_skb_tailroom(const struct sk_buff *skb) {
 	return skb_tailroom(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_tailroom);
 
-bool rust_helper_dev_validate_header(const struct net_device* dev,char* ll_header,int len){
+bool rust_helper_dev_validate_header(const struct net_device* dev,char* ll_header,int len) {
 	return dev_validate_header(dev,ll_header,len);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_validate_header);
 
-__be16 rust_helper_dev_parse_header_protocol(const struct sk_buff *skb){
+__be16 rust_helper_dev_parse_header_protocol(const struct sk_buff *skb) {
 	return dev_parse_header_protocol(skb);
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_parse_header_protocol);
 
-void rust_helper_skb_set_network_header(struct sk_buff *skb,int offset){
+void rust_helper_skb_set_network_header(struct sk_buff *skb,int offset) {
 	skb_set_network_header(skb,offset);
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_set_network_header);
 
-void rust_helper___vlan_hwaccel_put_tag(struct sk_buff *skb, __be16 vlan_proto, __u16 vlan_tci){
+void rust_helper___vlan_hwaccel_put_tag(struct sk_buff *skb, __be16 vlan_proto, __u16 vlan_tci) {
 	__vlan_hwaccel_put_tag(skb,vlan_proto,vlan_tci);
 }
 EXPORT_SYMBOL_GPL(rust_helper___vlan_hwaccel_put_tag);
@@ -1147,6 +1147,16 @@ void* rust_helper_kthread_run_on_cpu(int (*threadfn)(void *data), void *data, in
 }
 EXPORT_SYMBOL_GPL(rust_helper_kthread_run_on_cpu);
 
+
+void rust_helper_schedule_work(struct work_struct*work){
+	schedule_work(work);
+}
+EXPORT_SYMBOL_GPL(rust_helper_schedule_work);
+
+unsigned int rust_helper_minor(dev_t dev) {
+	return MINOR(dev);
+}
+EXPORT_SYMBOL_GPL(rust_helper_minor);
 
 // void rust_helper_anon_inode_getfile(const char *name,
 // 				const struct file_operations *fops,

@@ -5,7 +5,7 @@
 //! C headers: [`include/linux/fs.h`](../../../../include/linux/fs.h) and
 //! [`include/linux/file.h`](../../../../include/linux/file.h)
 
-use crate::{bindings, c_types, error::Error, Result};
+use crate::{bindings, c_types, error::Error, str::CStr, Result};
 use core::{mem::ManuallyDrop, ops::Deref};
 
 /// Wraps the kernel's `struct file`.
@@ -19,6 +19,7 @@ pub struct File {
 }
 
 impl File {
+    /// Constructs a new [`struct file`] wrapper from a file pointer.
     pub fn from_ptr(ptr: *mut bindings::file) -> Self {
         Self { ptr }
     }
@@ -38,6 +39,8 @@ impl File {
         Ok(Self { ptr })
     }
 
+    /// Creates a new file instance by hooking it up to an anonymous inode,
+    /// and a dentry that describe the "class" of the file.
     pub fn anon_inode_getfile(
         name: *const c_types::c_char,
         fops: *const bindings::file_operations,
@@ -69,6 +72,34 @@ impl File {
     /// Returns the raw pointer to the underlying `file` struct.
     pub fn get_ptr(&self) -> *mut bindings::file {
         self.ptr
+    }
+
+    /// Returns the parent directory name of the file
+    pub fn get_parent_name(&self) -> Result<&str> {
+        let d = unsafe { (*(*self.ptr).f_path.dentry).d_parent };
+        if d.is_null() {
+            return Err(Error::EINVAL);
+        }
+        unsafe {
+            match CStr::from_char_ptr((*d).d_name.name as *const c_types::c_char).to_str() {
+                Ok(s) => Ok(s),
+                Err(_) => Err(Error::EINVAL),
+            }
+        }
+    }
+
+    /// Returns the file's name
+    pub fn get_name(&self) -> Result<&str> {
+        unsafe {
+            match CStr::from_char_ptr(
+                (*(*self.ptr).f_path.dentry).d_name.name as *const c_types::c_char,
+            )
+            .to_str()
+            {
+                Ok(s) => Ok(s),
+                Err(_) => Err(Error::EINVAL),
+            }
+        }
     }
 }
 
@@ -158,8 +189,10 @@ impl Drop for FileDescriptorReservation {
 
 /// call linux fd_install
 pub fn fd_install(fd: u32, filp: *mut bindings::file) {
-    /// SAFETY: The caller must ensure that `filp` is a valid pointer.
-    unsafe { bindings::fd_install(fd, filp); }
+    // SAFETY: The caller must ensure that `filp` is a valid pointer.
+    unsafe {
+        bindings::fd_install(fd, filp);
+    }
 }
 
 /// Wraps the kernel's `struct files_struct`.

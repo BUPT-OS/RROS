@@ -127,6 +127,7 @@ pub fn module_misc_device(ts: TokenStream) -> TokenStream {
     module::module_misc_device(ts)
 }
 
+/// Declare a function with the #[no_mangle] attribute and do not need to use [`bindings`] in the parameters' types.
 #[proc_macro]
 pub fn no_mangle_function_declaration(ts: TokenStream) -> TokenStream {
     no_mangle::no_mangle_function_declaration(ts)

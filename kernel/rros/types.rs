@@ -1,7 +1,4 @@
 use kernel::bindings;
-use kernel::c_types::c_ulong;
-use kernel::sync::Mutex;
-use kernel::{container_of, init_static_sync, Opaque};
 
 /// Unofficial Wrap for some binding struct.
 /// Now are mostly used in net module.
@@ -71,7 +68,7 @@ macro_rules! list_entry_is_head {
 /// It uses the `rust_helper_INIT_LIST_HEAD` function from the C bindings.
 #[macro_export]
 macro_rules! init_list_head {
-    ($list:expr) => {
+    ($list:expr) => {{
         extern "C" {
             #[allow(dead_code)]
             fn rust_helper_INIT_LIST_HEAD(list: *mut $crate::bindings::list_head);
@@ -79,7 +76,7 @@ macro_rules! init_list_head {
         unsafe {
             rust_helper_INIT_LIST_HEAD($list as *mut $crate::bindings::list_head);
         }
-    };
+    }};
 }
 
 /// Function to check if a list is empty.
@@ -94,12 +91,12 @@ pub fn list_empty(list: *const bindings::list_head) -> bool {
 /// It uses the `rust_helper_list_empty` function from the C bindings.
 #[macro_export]
 macro_rules! list_empty {
-    ($list_head_ptr:expr) => {
+    ($list_head_ptr:expr) => {{
         extern "C" {
             fn rust_helper_list_empty(list: *const $crate::bindings::list_head) -> bool;
         }
         unsafe { rust_helper_list_empty($list_head_ptr as *const $crate::bindings::list_head) }
-    };
+    }};
 }
 
 /// Macro to delete a list entry.
@@ -133,7 +130,6 @@ macro_rules! list_del_init {
     };
 }
 
-// 获取当前链表节点，并将其从链表中移出去
 /// Macro to get the first entry from a list and remove it from the list.
 /// This macro takes a pointer to the list head, a type, and a field, and returns a pointer to the first entry in the list.
 /// The entry is also removed from the list.
@@ -190,7 +186,6 @@ macro_rules! list_add {
     };
 }
 
-// 常规实现
 /// Macro to iterate over a list of given type.
 /// This macro takes an identifier for the loop cursor, a list head, a type, a block of code to execute for each entry, and a list of fields.
 /// It starts from the first entry and continues until it reaches the head of the list, executing the block of code for each entry.

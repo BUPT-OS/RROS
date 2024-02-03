@@ -1,22 +1,27 @@
-use crate::timeout::{RrosTmode, RROS_NONBLOCK};
-use crate::wait::RROS_WAIT_PRIO;
-use core::default::Default;
-use core::mem::transmute;
-use core::ops::{Deref, DerefMut};
-use core::option::Option::None;
-use core::ptr::NonNull;
-use core::result::Result::Ok;
-use core::sync::atomic::{AtomicBool, Ordering};
-use kernel::ktime::KtimeT;
-use kernel::sync::{Lock, SpinLock};
-use kernel::{bindings, init_static_sync, pr_debug, Result};
-use kernel::skbuff;
-use crate::clock::RROS_MONO_CLOCK;
-use crate::sched::rros_schedule;
-use crate::work::RrosWork;
-use super::device::NetDevice;
-use super::socket::RrosSocket;
-// use super::{socket::RrosSocket, input::RROSNetHandler};
+use super::{device::NetDevice, socket::RrosSocket};
+use crate::{
+    clock::RROS_MONO_CLOCK,
+    sched::rros_schedule,
+    timeout::{RrosTmode, RROS_NONBLOCK},
+    wait::RROS_WAIT_PRIO,
+    work::RrosWork,
+};
+use core::{
+    default::Default,
+    mem::transmute,
+    ops::{Deref, DerefMut},
+    option::Option::None,
+    ptr::NonNull,
+    result::Result::Ok,
+    sync::atomic::{AtomicBool, Ordering},
+};
+use kernel::{
+    bindings, init_static_sync,
+    ktime::KtimeT,
+    pr_debug, skbuff,
+    sync::{Lock, SpinLock},
+    Result,
+};
 
 struct CloneControl {
     pub(crate) queue: bindings::list_head,
@@ -153,9 +158,7 @@ impl RrosSkBuff {
             return Some(Self::from_raw_ptr(skb));
         }
         let mut dma_addr = 0 as u64;
-        let skb = unsafe {
-            rust_helper_netdev_alloc_oob_skb(dev.0.as_ptr(), &mut dma_addr)
-        };
+        let skb = unsafe { rust_helper_netdev_alloc_oob_skb(dev.0.as_ptr(), &mut dma_addr) };
         if !skb.is_null() {
             let mut skb = Self::from_raw_ptr(skb);
             unsafe {
@@ -346,7 +349,7 @@ impl RrosSkBuff {
         // // rros_signal_poll_events(&est->poll_head,	POLLOUT|POLLWRNORM); // rros poll
     }
     fn free_skb(&mut self) {
-        // 对应 free_skb
+        // Corresponds to free_skb.
         extern "C" {
             #[allow(improper_ctypes)]
             fn skb_release_oob_skb(skb: *mut bindings::sk_buff, dref: *mut i32) -> bool;
@@ -448,7 +451,7 @@ pub fn free_skb_list(list: *mut bindings::list_head) {
 
 // pub struct RROSNetSkbQueue{
 //     pub queue : bindings::list_head,
-//     pub lock : SpinLock<()>, //不直接封装在上面是因为不够灵活，以后可以重新封装下
+//     pub lock : SpinLock<()>, // It is not packaged directly because it is not flexible enough. It can be re-encapsulated later.
 //     // phantom : core::marker::PhantomData<RrosSkBuff>,
 // }
 
@@ -624,7 +627,6 @@ fn skb_recycler(_work: &mut RrosWork) -> i32 {
     0
 }
 
-/// 初始化函数
 pub fn rros_net_init_pools() -> Result<()> {
     extern "C" {
         fn rust_helper_list_add(new: *mut bindings::list_head, head: *mut bindings::list_head);

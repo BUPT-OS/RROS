@@ -9,6 +9,7 @@ use crate::{bindings, c_str, prelude::*, Opaque, Result};
 use core::{fmt, ops::Deref, ptr::NonNull};
 
 extern "C" {
+    #[allow(improper_ctypes)]
     fn rust_helper_init_work(work: *mut bindings::work_struct, func: fn(*mut Work));
 }
 
@@ -114,10 +115,12 @@ impl Drop for BoxedQueue {
     }
 }
 
+/// The `queue_work_on` function is a wrapper around the `bindings::queue_work_on` function from the kernel bindings.
 pub fn queue_work_on(cpu: i32, wq: *mut bindings::workqueue_struct, work: *mut Work) -> bool {
     unsafe { bindings::queue_work_on(cpu, wq, work as *mut bindings::work_struct) }
 }
 
+/// Call `rust_helper_init_work` to init a `Work`.
 pub fn init_work(work: *mut Work, func: fn(*mut Work)) {
     unsafe {
         rust_helper_init_work(work as *mut bindings::work_struct, func);

@@ -35,9 +35,3 @@ impl AttributeGroup {
         unsafe { core::mem::zeroed() }
     }
 }
-
-// struct rros_clock_gravity {
-// 	ktime_t irq;
-// 	ktime_t kernel;
-// 	ktime_t user;
-// };

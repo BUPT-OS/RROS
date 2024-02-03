@@ -1,13 +1,12 @@
 use crate::{
     clock::{RrosClock, RROS_MONO_CLOCK},
+    lock::{raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
     sched::rros_schedule,
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
-use alloc::boxed::Box;
-use kernel::prelude::*;
 use core::{cell::Cell, ptr::NonNull};
-use kernel::bindings;
+use kernel::ktime::KtimeT;
 
 pub struct RrosFlag {
     pub wait: RrosWaitQueue,
@@ -48,6 +47,7 @@ impl RrosFlag {
     //     }
     //     self.raised
     // }
+
     #[inline]
     pub fn read(&self) -> bool {
         if self.raised.get() {
@@ -58,12 +58,26 @@ impl RrosFlag {
     }
     #[inline]
     pub fn wait(&mut self) -> i32 {
-        // TODO:尝试绕开不可变借用的限制
+        // TODO: Try to get around the limitations of immutable borrowing.
         let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
         unsafe {
             x.as_mut()
                 .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || self.read())
         }
+    }
+
+    #[inline]
+    pub fn wait_timeout(&mut self, timeout: KtimeT, tmode: RrosTmode) -> i32 {
+        let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
+        unsafe { x.as_mut().wait_timeout(timeout, tmode, || self.read()) }
+    }
+
+    #[inline]
+    pub fn raise_nosched(&mut self) {
+        let flags = self.wait.lock.raw_spin_lock_irqsave();
+        self.raised.set(true);
+        self.wait.flush_locked(0);
+        self.wait.lock.raw_spin_unlock_irqrestore(flags);
     }
 
     #[inline]
@@ -76,6 +90,20 @@ impl RrosFlag {
         // unsafe{bindings::_raw_spin_unlock_irqrestore(&mut self.wait.lock as *const _ as *mut bindings::raw_spinlock, flags)};
 
         unsafe { rros_schedule() };
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub fn flush_locked(&mut self, reason: i32) {
+        self.wait.flush_locked(reason);
+    }
+
+    #[inline]
+    pub fn flush_nosched(&mut self, reason: i32) {
+        let flags: u64;
+        flags = raw_spin_lock_irqsave();
+        self.wait.flush_locked(reason);
+        raw_spin_unlock_irqrestore(flags);
     }
 }
 

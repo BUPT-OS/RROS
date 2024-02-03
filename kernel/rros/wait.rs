@@ -7,21 +7,19 @@ use crate::{
     },
     timeout::{self, timeout_nonblock, RROS_INFINITE},
     uapi::rros::thread::RROS_HMDIAG_SYSDEMOTE,
-    types::list_empty,
 };
-use alloc::{rc::Rc, sync::Arc, boxed::Box};
-use core::ops::FnMut;
-use core::{clone::Clone, ptr::NonNull, sync::atomic::AtomicBool, cell::RefCell, ops::FnOnce};
+
+use alloc::sync::Arc;
+
+use core::{clone::Clone, ops::FnMut, ptr::NonNull, sync::atomic::AtomicBool};
 
 use kernel::{
-    bindings,
+    bindings, delay,
     ktime::KtimeT,
+    linked_list::List,
     prelude::*,
+    sync::{HardSpinlock, Lock, SpinLock},
     Result,
-    str::CStr,
-    sync::{SpinLock, Lock, HardSpinlock},
-    linked_list::{List, GetLinks},
-    delay,
 };
 
 pub const RROS_WAIT_PRIO: usize = 1 << 0;
@@ -62,7 +60,7 @@ impl RrosWaitQueue {
         wait.init(clock, flags);
         wait
     }
-    // 删掉了key:*mut bindings::lock_class_key,和name:&'static CStr
+    // delete `key:*mut bindings::lock_class_key`, and `name:&'static CStr`.
     pub fn init(&mut self, clock: *mut RrosClock, flags: i32) {
         self.flags = flags;
         self.clock = clock;
@@ -71,7 +69,7 @@ impl RrosWaitQueue {
         // self.wchan.wait_list.
         // init_list_head!(&self.wchan.wait_list);
         // lockdep_set_class_and_name(&wq->lock, key, name);
-        // 这个是调试时候用的
+        // This is used during debugging.
     }
     pub fn flush(&mut self, reason: i32) {
         // rros_flush_wait
@@ -89,7 +87,7 @@ impl RrosWaitQueue {
             // locked_thread
             // rewrap
             let waiter = unsafe { RrosThreadWithLock::transmute_to_original(waiter) };
-            unsafe { rros_wakeup_thread(waiter, T_PEND, reason); }
+            rros_wakeup_thread(waiter, T_PEND, reason);
         }
     }
 
@@ -133,7 +131,7 @@ impl RrosWaitQueue {
             "before adding the wait list length is {}",
             self.wchan.wait_list.len()
         );
-        if curr.state & T_WOLI != 0  && curr.inband_disable_count.atomic_read() > 0 {
+        if curr.state & T_WOLI != 0 && curr.inband_disable_count.atomic_read() > 0 {
             let _ret = rros_notify_thread(
                 curr as *const _ as *mut RrosThread,
                 RROS_HMDIAG_SYSDEMOTE as u32,
@@ -149,7 +147,7 @@ impl RrosWaitQueue {
                 let current = unsafe { RrosThreadWithLock::new_from_curr_thread() };
                 self.wchan.wait_list.push_back(current)
             } else {
-                // 按优先级加入，可以看下types_test.rs的add_by_prio
+                // To join according to priority, you can look at `add_by_prio` in types_test.rs.
                 let prio = curr.wprio;
                 let mut last = self.wchan.wait_list.cursor_back_mut();
                 let mut stop_flag = false;
@@ -178,7 +176,7 @@ impl RrosWaitQueue {
             timeout_mode,
             unsafe { &*self.clock },
             &mut self.wchan as *mut RrosWaitChannel,
-        ); // 必须保证wchan不会被释放
+        ); // It must be ensured that wchan will not be released.
     }
 
     pub fn wait_schedule(&mut self) -> i32 {
@@ -325,7 +323,9 @@ pub fn wait_test() {
         unsafe { (*flag_ptr).store(true, Relaxed) };
 
         unsafe { (*ptr_queue).flush_locked(0) }
-        unsafe { (*ptr_queue).lock.raw_spin_unlock_irqrestore(flags); }
+        unsafe {
+            (*ptr_queue).lock.raw_spin_unlock_irqrestore(flags);
+        }
         unsafe { rros_schedule() };
     }
     pr_debug!("wait test done")

@@ -1,12 +1,12 @@
 use core::ptr::NonNull;
 
-use kernel::types::*;
-use kernel::{initialize_lock_hashtable, hash_for_each_possible};
-use kernel::bindings;
-use kernel::pr_debug;
-
-use kernel::linked_list::{GetLinks, Links, List};
-use kernel::prelude::*;
+use kernel::{
+    hash_for_each_possible, initialize_lock_hashtable,
+    linked_list::{GetLinks, Links, List},
+    pr_debug,
+    prelude::*,
+    types::*,
+};
 
 #[allow(dead_code)]
 struct HashEntry {

@@ -48,7 +48,7 @@ impl<T> Node<T> {
                 let next = self.next.unwrap().as_ptr();
                 let prev = self.prev.unwrap().as_ptr();
                 if next == prev {
-                    //处理list中只有一个元素的情况
+                    // Handle the case where there is only one element in the list.
                     (*next).prev = None;
                     (*next).next = None;
                 } else {
@@ -78,12 +78,9 @@ pub struct List<T> {
 impl<T> List<T> {
     /// The `new` method is a constructor for `List`. It takes a value of type `T` and creates a new `List` with a head `Node` that holds the provided value.
     pub fn new(v: T) -> Self {
-        List {
-            head: Node::new(v), //头节点
-        }
+        List { head: Node::new(v) }
     }
 
-    // 从队头入队
     /// The `add_head` method adds a new node at the head of the list. It takes a value of type `T` for the new node. If the list is empty, it adds the new node after the head. Otherwise, it adds the new node after the node currently following the head.
     pub fn add_head(&mut self, v: T) {
         if self.is_empty() {
@@ -94,7 +91,6 @@ impl<T> List<T> {
         }
     }
 
-    //入队尾
     /// The `add_tail` method adds a new node at the tail of the list. It takes a value of type `T` for the new node. If the list is empty, it adds the new node after the head. Otherwise, it adds the new node after the last node in the list. After adding the new node, it prints the new length of the list.
     pub fn add_tail(&mut self, v: T) {
         if self.is_empty() {
@@ -109,7 +105,6 @@ impl<T> List<T> {
         // pr_info!("after add tail, the length is {}", self.len());
     }
 
-    //得到队头
     /// The `get_head` method returns a mutable reference to the first node in the list. If the list is empty, it returns `None`. Otherwise, it returns the node following the head.
     pub fn get_head<'a>(&self) -> Option<&'a mut Node<T>> {
         if self.is_empty() {
@@ -119,7 +114,6 @@ impl<T> List<T> {
         }
     }
 
-    //得到队尾
     /// The `get_tail` method returns a mutable reference to the last node in the list. If the list is empty, it returns `None`. Otherwise, it returns the node preceding the head.
     pub fn get_tail<'a>(&self) -> Option<&'a mut Node<T>> {
         if self.is_empty() {
@@ -129,7 +123,6 @@ impl<T> List<T> {
         }
     }
 
-    //按index取node
     /// The `get_by_index` method returns a mutable reference to the node at a specific index in the list. It takes an index of type `u32`. The implementation of this method is not shown in the provided code.
     pub fn get_by_index<'a>(&mut self, index: u32) -> Option<&'a mut Node<T>> {
         if index <= self.len() {
@@ -143,10 +136,8 @@ impl<T> List<T> {
         }
     }
 
-    //入到index之后 0表示队头
     /// The `enqueue_by_index` method inserts a new node at a specific index in the list. It takes an index of type `u32` and a value of type `T` for the new node. If the index is 0, it adds the new node at the head of the list. If the index is equal to the length of the list, it adds the new node at the tail of the list. Otherwise, it adds the new node after the node at the specified index.
     pub fn enqueue_by_index(&mut self, index: u32, v: T) {
-        //测试通过
         if index <= self.len() {
             if index == 0 {
                 self.add_head(v);
@@ -160,7 +151,6 @@ impl<T> List<T> {
         }
     }
 
-    //按index出队
     /// The `dequeue` method removes the node at a specific index from the list. It takes an index of type `u32`. If the list has only one node and the index is 1, it removes the head node. Otherwise, if the index is less than or equal to the length of the list, it removes the node at the specified index.
     pub fn dequeue(&mut self, index: u32) {
         if self.len() == 1 && index == 1 {
@@ -174,19 +164,16 @@ impl<T> List<T> {
         }
     }
 
-    //出队头
     /// The `de_head` method removes the head node from the list. It does this by calling the `dequeue` method with an index of 1.
     pub fn de_head(&mut self) {
         self.dequeue(1);
     }
 
-    //出队尾
     /// The `de_tail` method removes the tail node from the list. It does this by calling the `dequeue` method with an index equal to the length of the list.
     pub fn de_tail(&mut self) {
         self.dequeue(self.len());
     }
 
-    // 计算链表长度
     /// The `len` method calculates and returns the length of the list. If the list is not empty, it initializes a counter to 1 and then traverses the list, incrementing the counter for each node until it reaches the node preceding the head. If the list is empty, it returns 0.
     pub fn len(&self) -> u32 {
         let mut ans = 0;
@@ -203,14 +190,12 @@ impl<T> List<T> {
         ans
     }
 
-    //判空
     /// The `is_empty` method checks if the list is empty. It does this by checking if both the `next` and `prev` fields of the head node are `None`. If they are, the list is empty and the method returns `true`. Otherwise, it returns `false`.
     pub fn is_empty(&self) -> bool {
         self.head.next.is_none() && self.head.prev.is_none()
     }
 }
 
-//用于测试
 impl<T: core::fmt::Display> List<T> {
     /// The `traverse` method is used for testing. It traverses the list and prints each node. If the list is empty, it returns immediately. Otherwise, it starts from the node following the head and continues until it reaches the node preceding the head.
     pub fn traverse(&self) {

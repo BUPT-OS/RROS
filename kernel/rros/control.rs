@@ -12,7 +12,7 @@ use kernel::{
     mm::{remap_pfn_range, PAGE_SHARED},
     prelude::*,
     str::CStr,
-    sync::{Mutex, SpinLock},
+    sync::SpinLock,
 };
 
 pub const CONFIG_RROS_NR_CONTROL: usize = 0;
@@ -130,7 +130,7 @@ fn control_ioctl(file: &File, cmd: &mut IoctlCommand) -> Result<i32> {
             info.abi_base = RROS_ABI_BASE;
             info.abi_current = RROS_ABI_LEVEL;
             // in arch/arm64/include/asm/rros/fptest.h
-            // TODO There should be a function rros_detect_fpu() related to the arm64 architecture, the result of the function is 0.
+            // TODO: There should be a function rros_detect_fpu() related to the arm64 architecture, the result of the function is 0.
             info.fpu_features = 0;
             unsafe {
                 pr_debug!(

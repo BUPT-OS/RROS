@@ -152,12 +152,14 @@ impl<T: ?Sized> Lock for SpinLock<T> {
     }
 }
 
+/// A wrapper for [`hard_spinlock_t`].
 #[repr(transparent)]
 pub struct HardSpinlock {
     lock: bindings::hard_spinlock_t,
 }
 
 impl HardSpinlock {
+    /// Constructs a new struct.
     pub fn new() -> Self {
         HardSpinlock {
             lock: bindings::hard_spinlock_t {
@@ -176,6 +178,7 @@ impl HardSpinlock {
         }
     }
 
+    /// Initialize Self.
     pub fn init(&mut self) {
         self.lock = bindings::hard_spinlock_t::default();
         unsafe {
@@ -185,12 +188,14 @@ impl HardSpinlock {
         }
     }
 
+    /// Call `Linux` `raw_spin_lock_irqsave` to lock.
     pub fn raw_spin_lock_irqsave(&mut self) -> u64 {
         unsafe {
             rust_helper_raw_spin_lock_irqsave(&mut self.lock as *mut bindings::hard_spinlock_t)
         }
     }
 
+    /// Call `Linux` `raw_spin_unlock_irqrestore` to unlock.
     pub fn raw_spin_unlock_irqrestore(&mut self, flags: u64) {
         unsafe {
             rust_helper_raw_spin_unlock_irqrestore(
@@ -200,12 +205,14 @@ impl HardSpinlock {
         }
     }
 
+    /// Call `Linux` `raw_spin_lock` to lock.
     pub fn raw_spin_lock(&mut self) {
         unsafe {
             rust_helper_raw_spin_lock(&mut self.lock as *mut bindings::hard_spinlock_t);
         }
     }
 
+    /// Call `Linux` `raw_spin_unlock` to unlock.
     pub fn raw_spin_unlock(&mut self) {
         unsafe {
             rust_helper_raw_spin_unlock(&mut self.lock as *mut bindings::hard_spinlock_t);
@@ -213,8 +220,9 @@ impl HardSpinlock {
     }
 }
 
+/// A wrapper for [`raw_spinlock_t`].
 #[repr(transparent)]
 pub struct RawSpinLock {
     #[allow(dead_code)]
-    lock: bindings::raw_spinlock_t
+    lock: bindings::raw_spinlock_t,
 }

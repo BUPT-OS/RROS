@@ -1,19 +1,18 @@
 use core::mem::size_of;
 
 use kernel::{
-    bindings, c_types,
+    bindings,
     c_types::c_void,
     capability,
     io_buffer::IoBufferWriter,
     ktime,
     prelude::*,
     premmpt::running_inband,
+    ptrace::{IrqStage, PtRegs},
     sync::{Lock, SpinLock},
     task::Task,
     uapi::time_types::{KernelOldTimespec, KernelTimespec},
     user_ptr::UserSlicePtr,
-    ptrace::{IrqStage, PtRegs},
-    irqstage,
 };
 
 use crate::{
@@ -223,7 +222,7 @@ fn handle_vdso_fallback(nr: i32, regs: PtRegs) -> bool {
 
     clock_id = unsafe { oob_arg1!((regs.ptr)) as u32 };
     match clock_id {
-    	bindings::CLOCK_MONOTONIC => {
+        bindings::CLOCK_MONOTONIC => {
             clock = unsafe { &RROS_MONO_CLOCK };
         }
         bindings::CLOCK_REALTIME => {
@@ -242,8 +241,18 @@ fn handle_vdso_fallback(nr: i32, regs: PtRegs) -> bool {
         old_ts.spec.tv_sec = ts64.0.tv_sec;
         old_ts.spec.tv_nsec = ts64.0.tv_nsec;
         // [TODO: lack the size of u_old_rs]
-        u_old_ts = unsafe { UserSlicePtr::new(oob_arg2!((regs.ptr)) as *mut c_void, size_of::<KernelTimespec>()) }; 
-        let res = unsafe { u_old_ts.writer().write_raw(&mut old_ts as *mut KernelTimespec as *mut u8 as *const u8, size_of::<KernelTimespec>()) };        
+        u_old_ts = unsafe {
+            UserSlicePtr::new(
+                oob_arg2!((regs.ptr)) as *mut c_void,
+                size_of::<KernelTimespec>(),
+            )
+        };
+        let res = unsafe {
+            u_old_ts.writer().write_raw(
+                &mut old_ts as *mut KernelTimespec as *mut u8 as *const u8,
+                size_of::<KernelTimespec>(),
+            )
+        };
         ret = match res {
             Ok(()) => 0,
             Err(_e) => -(bindings::EFAULT as i64),
@@ -252,8 +261,18 @@ fn handle_vdso_fallback(nr: i32, regs: PtRegs) -> bool {
         uts.spec.tv_sec = ts64.0.tv_sec;
         uts.spec.tv_nsec = ts64.0.tv_nsec;
         // [TODO: lack the size of u_uts]
-        u_uts = unsafe { UserSlicePtr::new(oob_arg2!((regs.ptr)) as *mut c_void, size_of::<KernelOldTimespec>()) };
-        let res = unsafe { u_uts.writer().write_raw(&mut uts as *mut KernelOldTimespec as *mut u8 as *const u8, size_of::<KernelOldTimespec>()) };        
+        u_uts = unsafe {
+            UserSlicePtr::new(
+                oob_arg2!((regs.ptr)) as *mut c_void,
+                size_of::<KernelOldTimespec>(),
+            )
+        };
+        let res = unsafe {
+            u_uts.writer().write_raw(
+                &mut uts as *mut KernelOldTimespec as *mut u8 as *const u8,
+                size_of::<KernelOldTimespec>(),
+            )
+        };
         ret = match res {
             Ok(()) => 0,
             Err(_e) => -(bindings::EFAULT as i64),
@@ -315,20 +334,20 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
     }
 
     let curr = rros_current();
-    unsafe {
-        let res1 = 
-            !(capability::KernelCapStruct::cap_raised(capability::KernelCapStruct::current_cap(), bindings::CAP_SYS_NICE as i32) != 0);
-        pr_debug!("curr is {:p} res is {}", curr, res1);
-        if curr == 0 as *mut SpinLock<RrosThread> || res1 {
-            // [TODO: lack RROS_DEBUG]
-            pr_err!("ERROR: syscall denied");
-            // if (RROS_DEBUG(CORE))
-            // 	printk(RROS_WARNING
-            // 		"syscall <oob_%s> denied to %s[%d]\n",
-            // 		rros_sysnames[nr], current->comm, task_pid_nr(current));
-            set_oob_error(regs, -(bindings::EPERM as i32));
-            return SYSCALL_STOP;
-        }
+    let res1 = !(capability::KernelCapStruct::cap_raised(
+        capability::KernelCapStruct::current_cap(),
+        bindings::CAP_SYS_NICE as i32,
+    ) != 0);
+    pr_debug!("curr is {:p} res is {}", curr, res1);
+    if curr == 0 as *mut SpinLock<RrosThread> || res1 {
+        // [TODO: lack RROS_DEBUG]
+        pr_err!("ERROR: syscall denied");
+        // if (RROS_DEBUG(CORE))
+        // 	printk(RROS_WARNING
+        // 		"syscall <oob_%s> denied to %s[%d]\n",
+        // 		rros_sysnames[nr], current->comm, task_pid_nr(current));
+        set_oob_error(regs, -(bindings::EPERM as i32));
+        return SYSCALL_STOP;
     }
 
     /*
@@ -336,10 +355,8 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
      * over to handle_inband_syscall() where the caller would be
      * switched to OOB context prior to handling the request.
      */
-    unsafe {
-        if stage.ptr != IrqStage::get_oob_state().ptr {
-            return SYSCALL_PROPAGATE;
-        }
+    if stage.ptr != IrqStage::get_oob_state().ptr {
+        return SYSCALL_PROPAGATE;
     }
 
     // [TODO: lack the trace system]
@@ -354,7 +371,12 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
         let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
         let res3 = (Task::current().state() & T_WEAK) != 0;
         // [TODO: lack covert atomic in bindings to atomic in rfl]
-        let res4 = unsafe { (*(*curr).locked_data().get()).inband_disable_count.atomic_read() != 0 };
+        let res4 = unsafe {
+            (*(*curr).locked_data().get())
+                .inband_disable_count
+                .atomic_read()
+                != 0
+        };
         if res1 || res2 {
             prepare_for_signal(p, curr, regs);
         } else if res3 && !res4 {
@@ -376,7 +398,7 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
     return SYSCALL_STOP;
 }
 
-fn do_inband_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
+fn do_inband_syscall(_stage: IrqStage, regs: PtRegs) -> i32 {
     let curr = rros_current();
     // struct RrosThread *curr = rros_current(); /* Always valid. */
     let p;
@@ -457,7 +479,12 @@ fn do_inband_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
         let res1 = Task::current().signal_pending();
         let res2 = unsafe { (*(*curr).locked_data().get()).info & T_KICKED != 0 };
         let res3 = (Task::current().state() & T_WEAK) != 0;
-        let res4 = unsafe { (*(*curr).locked_data().get()).inband_disable_count.atomic_read() != 0 };
+        let res4 = unsafe {
+            (*(*curr).locked_data().get())
+                .inband_disable_count
+                .atomic_read()
+                != 0
+        };
         if res1 || res2 {
             prepare_for_signal(p, curr, regs);
         } else if res3 && res4 {

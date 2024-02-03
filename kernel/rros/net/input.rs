@@ -1,19 +1,19 @@
-use core::ptr::NonNull;
-
-use kernel::endian::be16;
-use kernel::sync::Lock;
-use kernel::{c_types::c_void, sync::SpinLock, vmalloc};
-
-use kernel::prelude::*;
-use kernel::types::HlistNode;
-use kernel::{bindings, spinlock_init};
-
-use crate::net::ethernet::input::rros_net_ether_accept;
-use crate::net::skb::RrosSkBuff;
-use crate::sched::rros_schedule;
-use crate::RROS_NET_CB;
-
 use super::device::NetDevice;
+use crate::{
+    net::{ethernet::input::rros_net_ether_accept, skb::RrosSkBuff},
+    sched::rros_schedule,
+};
+use core::ptr::NonNull;
+use kernel::{
+    bindings,
+    c_types::c_void,
+    endian::be16,
+    prelude::*,
+    spinlock_init,
+    sync::{Lock, SpinLock},
+    types::HlistNode,
+    vmalloc,
+};
 
 // pub struct RROSNetHandler{
 //     ingress : fn(skb : *mut bindings::sk_buff),

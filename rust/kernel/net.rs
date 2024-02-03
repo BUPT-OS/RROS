@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 //! Rros Net module.
-use crate::{bindings, str::CStr, ARef, AlwaysRefCounted, c_types};
+use crate::{bindings, c_types, str::CStr, ARef, AlwaysRefCounted};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 extern "C" {
@@ -64,10 +64,13 @@ pub fn init_ns() -> &'static Namespace {
     unsafe { &*core::ptr::addr_of!(bindings::init_net).cast() }
 }
 
+/// A trait to implement function for Namespace.
 pub trait CreateSocket {
+    /// A function to create socket customized.
     fn create_socket(net: *mut Namespace, sock: &mut Socket, protocol: i32, kern: i32) -> i32;
 }
 
+/// Callback function for trait `CreateSocket`.
 pub unsafe extern "C" fn create_socket_callback<T: CreateSocket>(
     net: *mut bindings::net,
     sock: *mut bindings::socket,
@@ -82,12 +85,15 @@ pub unsafe extern "C" fn create_socket_callback<T: CreateSocket>(
     )
 }
 
+/// The `sock_register` function is a wrapper around the `bindings::sock_register` function from the kernel bindings.
 pub fn sock_register(fam: *const bindings::net_proto_family) -> c_types::c_int {
     unsafe { bindings::sock_register(fam) }
 }
 
+/// The `NetProtoFamily` struct wraps a `bindings::net_proto_family` struct from the kernel bindings.
 pub struct NetProtoFamily(pub bindings::net_proto_family);
 
+/// Initialize a `NetProtoFamily` struct.
 #[macro_export]
 macro_rules! static_init_net_proto_family {
     ($($i: ident: $e: expr,)*) => {
@@ -98,10 +104,12 @@ macro_rules! static_init_net_proto_family {
 }
 
 impl NetProtoFamily {
+    /// Returns a pointer to inner struct.
     pub fn get_ptr(&self) -> *const bindings::net_proto_family {
         &self.0
     }
 
+    /// A wrapper around the `bindings::net_proto_family` function from the kernel bindings. Constructs a new struct.
     pub fn new(
         family: c_types::c_int,
         create: Option<
@@ -124,15 +132,18 @@ impl NetProtoFamily {
 
 unsafe impl Sync for NetProtoFamily {}
 
+/// The `Socket` struct wraps a pointer to a `bindings::socket` from the kernel bindings.
 pub struct Socket {
     ptr: *mut bindings::socket,
 }
 
 impl Socket {
+    /// Constructs a new struct with a pointer to `bindings::socket`.
     pub fn from_ptr(ptr: *mut bindings::socket) -> Self {
         Self { ptr }
     }
 
+    /// Returns self's ptr.
     pub fn get_ptr(&self) -> *mut bindings::socket {
         self.ptr
     }

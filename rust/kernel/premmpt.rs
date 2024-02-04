@@ -25,3 +25,11 @@ pub fn running_inband() -> Result<usize> {
     }
     Err(Error::EINVAL)
 }
+
+pub fn running_oob() -> Result<usize> {
+    let res = unsafe { rust_helper_running_inband() };
+    if res == 0 {
+        return Ok(0);
+    }
+    Err(Error::EINVAL)
+}

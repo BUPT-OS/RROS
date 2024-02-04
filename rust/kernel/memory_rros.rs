@@ -77,6 +77,38 @@ pub fn __rros_sys_heap_alloc_zerod(size: usize, _align: usize) -> *mut u8 {
     unsafe { RROS_SYSTEM_HEAP.rros_alloc_chunk_zeroed(size).unwrap() }
 }
 
+#[no_mangle]
+pub fn __rros_shared_heap_alloc(size: usize, align: usize) -> *mut u8 {
+    // pr_info!("__rros_sys_heap_alloc: begin");
+    unsafe { RROS_SHARED_HEAP.rros_alloc_chunk(size).unwrap() }
+}
+
+#[no_mangle]
+pub fn __rros_shared_heap_dealloc(ptr: *mut u8, size: usize, align: usize) {
+    unsafe {
+        RROS_SHARED_HEAP.rros_free_chunk(ptr);
+    }
+}
+
+#[no_mangle]
+pub fn __rros_shared_heap_realloc(
+    ptr: *mut u8,
+    old_size: usize,
+    align: usize,
+    new_size: usize,
+) -> *mut u8 {
+    unsafe {
+        RROS_SHARED_HEAP
+            .rros_realloc_chunk(ptr, old_size, new_size)
+            .unwrap()
+    }
+}
+
+#[no_mangle]
+pub fn __rros_shared_heap_alloc_zerod(size: usize, align: usize) -> *mut u8 {
+    unsafe { RROS_SHARED_HEAP.rros_alloc_chunk_zeroed(size).unwrap() }
+}
+
 /// `RrosUserWindow`: This struct represents a user window in the RROS system.
 #[allow(dead_code)]
 struct RrosUserWindow {
@@ -530,6 +562,14 @@ impl RrosHeap {
         }
     }
 
+    fn rros_get_heap_base(&self) -> *const c_types::c_void {
+        self.membase as *mut c_types::c_void
+    }
+
+    pub fn rros_shared_offset(&self, p: *mut c_types::c_void) -> isize {
+        unsafe { p.offset_from(self.rros_get_heap_base()) }
+    }
+
     /// Method `addr_to_pagenr` converts a memory address to a page number in the `RrosHeap`.
     /// It takes a pointer to a memory address as a parameter and returns an `i32`.
     /// It subtracts the base memory address from the given memory address, shifts the result right by `RROS_HEAP_PAGE_SHIFT`, and casts the result to an `i32`.
@@ -930,8 +970,9 @@ pub fn init_system_heap() -> Result<usize> {
 /// If the initialization fails, it frees the allocated memory and returns an error.
 /// If the allocation fails, it returns an error.
 pub fn init_shared_heap() -> Result<usize> {
+    // FIXME: The number 16 represents the size of the struct RrosMonitorState.
     let mut size: usize =
-        CONFIG_RROS_NR_THREADS * size_of::<RrosUserWindow>() + CONFIG_RROS_NR_MONITORS * 40;
+        CONFIG_RROS_NR_THREADS * size_of::<RrosUserWindow>() + CONFIG_RROS_NR_MONITORS * 16;
     size = mm::page_align(size)?;
     mm::page_aligned(size)?;
     let shared = vmalloc::c_kzalloc(size as u64);

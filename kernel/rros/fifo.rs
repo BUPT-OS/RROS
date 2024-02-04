@@ -1,4 +1,5 @@
 use crate::{sched, sched::RrosThread, thread::*};
+use core::ops::Deref;
 use kernel::{
     c_types,
     double_linked_list::Node,
@@ -161,7 +162,14 @@ fn __rros_get_fifo_schedparam(
     thread: Option<Arc<SpinLock<sched::RrosThread>>>,
     p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
 ) {
-    p.unwrap().lock().fifo.prio = thread.unwrap().lock().cprio;
+    // NOTE: use `lock()` casue deadlock here
+    // p.unwrap().lock().fifo.prio = thread.unwrap().lock().cprio;
+
+    // FIXME: temporary hack for deadlock
+    unsafe {
+        let p = p.unwrap().deref().locked_data().get();
+        (*p).fifo.prio = (*thread.unwrap().deref().locked_data().get()).cprio
+    }
 }
 
 // The logic is complete, but haven't been tested.
@@ -193,10 +201,13 @@ fn __rros_track_fifo_priority(
 ) {
     let thread_unwrap = thread.unwrap();
     if p.is_some() {
-        thread_unwrap.lock().cprio = p.unwrap().lock().fifo.prio;
+        // HACK: temporary hack
+        thread_unwrap.lock().cprio =
+            unsafe { (*(p.unwrap().deref().locked_data().get())).fifo.prio };
     } else {
-        thread_unwrap.lock().cprio = thread_unwrap.lock().bprio;
-        thread_unwrap.lock().state &= !T_WEAK;
+        let mut thread_guard = thread_unwrap.deref().lock();
+        thread_guard.cprio = thread_guard.bprio;
+        thread_guard.state &= !T_WEAK;
     }
 }
 

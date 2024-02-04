@@ -780,7 +780,7 @@ fn proxy_factory_build(
     uname: &'static CStr,
     u_attrs: Option<*mut u8>,
     mut clone_flags: i32,
-    _state_offp: &u32,
+    _state_offp: &mut u32,
 ) -> Rc<RefCell<RrosElement>> {
     pr_debug!("clone_flags = {}", clone_flags);
     if clone_flags & !RROS_PROXY_CLONE_FLAGS != 0 {

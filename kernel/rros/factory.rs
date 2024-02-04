@@ -1,16 +1,22 @@
 use core::{
-    cell::RefCell, clone::Clone, convert::TryInto, default::Default, mem::size_of, ptr,
+    cell::RefCell,
+    clone::Clone,
+    convert::TryInto,
+    default::Default,
+    mem::size_of,
+    ops::{Deref, DerefMut},
+    ptr,
     result::Result::Ok,
 };
 
-use crate::{clock, control, file::RrosFileBinding, poll, proxy, thread, xbuf};
+use crate::{clock, control, file::RrosFileBinding, monitor, poll, proxy, thread, xbuf};
 
 use alloc::rc::Rc;
-
+use bindings::{rb_erase, rb_insert_color};
 use kernel::{
     bindings,
     bitmap::{self, bitmap_zalloc},
-    c_str, c_types, chrdev, class, device,
+    c_str, c_types, chrdev, class, container_of, device,
     device::DeviceType,
     file::{self, fd_install, File},
     file_operations::FileOperations,
@@ -32,7 +38,7 @@ extern "C" {
     fn rust_helper_put_user(val: u32, ptr: *mut u32) -> c_types::c_int;
 }
 
-type FundleT = u32;
+pub type FundleT = u32;
 
 #[derive(Clone, Copy)]
 pub enum RrosFactoryType {
@@ -58,7 +64,7 @@ const RROS_CLONE_MASK: i32 = (-1 << 16) & !RROS_CLONE_COREDEV;
 
 #[allow(dead_code)]
 const RROS_DEVHASH_BITS: i32 = 8;
-pub const NR_FACTORIES: usize = 8;
+pub const NR_FACTORIES: usize = 16;
 #[allow(dead_code)]
 const NR_CLOCKNR: usize = 8;
 const RROS_NO_HANDLE: FundleT = 0x00000000;
@@ -73,11 +79,10 @@ const RROS_MUTEX_FLCEIL: FundleT = 0x40000000;
 const RROS_HANDLE_INDEX_MASK: FundleT = RROS_MUTEX_FLCEIL | RROS_MUTEX_FLCLAIM;
 
 pub struct RrosIndex {
-    #[allow(dead_code)]
-    rbroot: rbtree::RBTree<u32, u32>, // TODO: modify the u32.
-    lock: SpinLock<i32>,
-    #[allow(dead_code)]
-    generator: FundleT,
+    // rbroot: rbtree::RBTree<u32, u32>, // Todo: modify the u32.
+    pub root: bindings::rb_root,
+    pub lock: SpinLock<i32>,
+    pub generator: FundleT,
 }
 
 pub struct RrosFactoryInside {
@@ -158,7 +163,7 @@ pub struct RrosFactory {
             uname: &'static CStr,
             u_attrs: Option<*mut u8>,
             clone_flags: i32,
-            state_offp: &u32,
+            state_offp: &mut u32,
         ) -> Rc<RefCell<RrosElement>>,
     >,
     pub dispose: Option<fn(RrosElement)>,
@@ -223,6 +228,7 @@ pub struct RrosElement {
     pub fundle: FundleT,
     pub clone_flags: i32,
     // pub struct rb_node index_node;// TODO: in rfl rb_node is not embedded in the struct.
+    pub index_node: bindings::rb_node,
     pub irq_work: irq_work::IrqWork,
     pub work: workqueue::Work,
     pub hash: types::HlistNode,
@@ -244,6 +250,7 @@ impl RrosElement {
             ref_lock: unsafe { kernel::sync::SpinLock::<i32>::new(0) },
             fundle: 0,
             clone_flags: 0,
+            index_node: bindings::rb_node::default(),
             irq_work: irq_work::IrqWork::new(),
             work: unsafe { workqueue::Work::new() },
             hash: types::HlistNode::new(),
@@ -862,6 +869,18 @@ fn rros_create_factory(
                             .as_mut()
                             .register::<proxy::ProxyOps>()?;
                     }
+                    Ok("monitor") => {
+                        let ele_chrdev_reg: Pin<
+                            Box<chrdev::Registration<{ proxy::CONFIG_RROS_NR_PROXIES }>>,
+                        > = chrdev::Registration::new_pinned(name, 0, this_module)?;
+                        inside.register = Some(ele_chrdev_reg);
+                        inside
+                            .register
+                            .as_mut()
+                            .unwrap()
+                            .as_mut()
+                            .register::<monitor::MonitorOps>()?;
+                    }
                     Ok("observable") => {
                         unimplemented!();
                         // pr_info!("[observable] in function: rros_create_factory");
@@ -906,7 +925,7 @@ fn rros_create_factory(
             }
 
             let mut index = RrosIndex {
-                rbroot: rbtree::RBTree::new(),
+                root: bindings::rb_root::default(),
                 lock: unsafe { SpinLock::new(0) },
                 generator: RROS_NO_HANDLE,
             };
@@ -1039,7 +1058,7 @@ pub fn rros_early_init_factories(
     this_module: &'static ThisModule,
 ) -> Result<Pin<Box<chrdev::Registration<NR_FACTORIES>>>> {
     // TODO: move the number of factories to a variable
-    let mut early_factories: [&mut SpinLock<RrosFactory>; 6] = unsafe {
+    let mut early_factories: [&mut SpinLock<RrosFactory>; 7] = unsafe {
         [
             &mut clock::RROS_CLOCK_FACTORY,
             &mut thread::RROS_THREAD_FACTORY,
@@ -1047,6 +1066,7 @@ pub fn rros_early_init_factories(
             &mut proxy::RROS_PROXY_FACTORY,
             &mut control::RROS_CONTROL_FACTORY,
             &mut poll::RROS_POLL_FACTORY,
+            &mut monitor::RROS_MONITOR_FACTORY,
         ]
     };
     // static struct rros_factory *early_factories[] = {
@@ -1168,11 +1188,6 @@ impl FileOperations for RRosRustFile {
 //     }
 // }
 
-#[allow(dead_code)]
-pub fn rros_get_index(handle: FundleT) -> FundleT {
-    handle & !RROS_HANDLE_INDEX_MASK
-}
-
 #[repr(C)]
 struct RrosCloneReq {
     name: *const c_types::c_char,
@@ -1184,7 +1199,7 @@ struct RrosCloneReq {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct RrosElementIds {
+pub struct RrosElementIds {
     minor: c_types::c_uint,
     fundle: FundleT,
     state_offset: c_types::c_uint,
@@ -1197,6 +1212,34 @@ impl Default for RrosElementIds {
             fundle: 0,
             state_offset: 0,
         }
+    }
+}
+
+impl RrosElementIds {
+    pub fn get_minor(&self) -> c_types::c_uint {
+        self.minor
+    }
+    pub fn set_minor(&mut self, minor: u32) -> Result<i32> {
+        self.minor = minor as c_types::c_uint;
+        Ok(0)
+    }
+
+    pub fn get_fundle(&self) -> FundleT {
+        self.fundle
+    }
+
+    pub fn set_fundle(&mut self, fundle: u32) -> Result<i32> {
+        self.fundle = fundle;
+        Ok(0)
+    }
+
+    pub fn get_state_offset(&self) -> c_types::c_uint {
+        self.state_offset
+    }
+
+    pub fn set_state_offset(&mut self, state_offset: u32) -> Result<i32> {
+        self.state_offset = state_offset as c_types::c_uint;
+        Ok(0)
     }
 }
 
@@ -1223,8 +1266,143 @@ impl RrosCloneReq {
     }
 }
 
-#[allow(dead_code)]
-fn rros_index_factory_element() {}
+// FIXME: return *mut RrosElement may be unsafe.
+pub fn __rros_get_element_by_fundle(map: &mut RrosIndex, fundle: FundleT) -> *mut RrosElement {
+    let flags = map.lock.irq_lock_noguard();
+    let mut rb = map.root.rb_node;
+
+    while (rb as usize != 0) {
+        let mut e = container_of!(rb, RrosElement, index_node) as *mut RrosElement;
+        unsafe {
+            if (fundle < (*e).fundle) {
+                rb = (*rb).rb_left;
+            } else if (fundle > (*e).fundle) {
+                rb = (*rb).rb_right;
+            } else {
+                (*e).ref_lock.lock();
+                if ((*e).zombie) {
+                    e = core::ptr::null::<RrosElement>() as *mut RrosElement;
+                } else {
+                    (*e).refs = (*e).refs + 1;
+                }
+                (*e).ref_lock.unlock();
+                map.lock.irq_unlock_noguard(flags);
+                return e;
+            }
+        }
+    }
+    map.lock.irq_unlock_noguard(flags);
+    return core::ptr::null::<RrosElement>() as *mut RrosElement;
+}
+
+pub fn rros_get_index(handle: FundleT) -> FundleT {
+    return handle & !RROS_HANDLE_INDEX_MASK;
+}
+
+fn index_element_at(map: &mut RrosIndex, e: &mut RrosElement, fundle: FundleT) -> i32 {
+    extern "C" {
+        fn rust_helper_rb_link_node(
+            node: *mut bindings::rb_node,
+            parent: *const bindings::rb_node,
+            rb_link: *mut *mut bindings::rb_node,
+        );
+    }
+    let mut rbp = &mut map.root.rb_node;
+    let mut parent: *mut bindings::rb_node =
+        core::ptr::null::<bindings::rb_node>() as *mut bindings::rb_node;
+    while (*rbp as usize) != 0 {
+        let tmp = container_of!(*rbp, RrosElement, index_node) as *mut RrosElement;
+        parent = *rbp;
+        unsafe {
+            if (fundle < (*tmp).fundle) {
+                rbp = &mut (*(*rbp)).rb_left;
+            } else if (fundle > (*tmp).fundle) {
+                rbp = &mut (*(*rbp)).rb_right;
+            } else {
+                return -(bindings::EEXIST as i32);
+            }
+        }
+    }
+    e.fundle = fundle;
+    unsafe {
+        rust_helper_rb_link_node(
+            &mut e.index_node as *mut bindings::rb_node,
+            parent,
+            rbp as *mut *mut bindings::rb_node,
+        );
+        rb_insert_color(
+            &mut e.index_node as *mut bindings::rb_node,
+            &mut map.root as *mut bindings::rb_root,
+        );
+    }
+    return 0;
+}
+
+pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
+    let mut e_refmut = e.deref().borrow_mut();
+    let mut e_ref = e_refmut.deref_mut();
+    // TODO: sometimes panic here, maybe casued by the const `NR_FACTORIES`
+    let map = unsafe {
+        (*(e_ref.factory.locked_data().get()))
+            .inside
+            .as_mut()
+            .unwrap()
+            .index
+            .as_mut()
+            .unwrap()
+    };
+
+    let mut fundle: FundleT = 0;
+    let mut guard: FundleT = 0;
+    let mut ret = 0;
+    loop {
+        guard = guard + 1;
+        if (rros_get_index(guard) == 0) {
+            let mut fundle = e.deref().borrow_mut();
+            let mut fundle = &mut fundle.deref_mut().fundle;
+            *fundle = RROS_NO_HANDLE;
+            return;
+        }
+        let flags = map.lock.irq_lock_noguard();
+        map.generator = map.generator + 1;
+        fundle = rros_get_index(map.generator);
+        if (fundle == 0) {
+            map.generator = 1;
+            fundle = 1;
+        }
+
+        ret = index_element_at(map, e_ref, fundle);
+        map.lock.irq_unlock_noguard(flags);
+        if (ret == 0) {
+            break;
+        }
+    }
+}
+
+fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
+    let mut e_refmut = e.deref().borrow_mut();
+    let mut e_ref = e_refmut.deref_mut();
+    let map = unsafe {
+        (*(e_ref.factory.locked_data().get()))
+            .inside
+            .as_mut()
+            .unwrap()
+            .index
+            .as_mut()
+            .unwrap()
+    };
+
+    let flags = map.lock.irq_lock_noguard();
+    let mut e_mut = e.deref().borrow_mut();
+    let e_mut = e_mut.deref_mut();
+    unsafe {
+        rb_erase(
+            &mut e_mut.index_node as *mut bindings::rb_node,
+            &mut map.root as *mut bindings::rb_root,
+        );
+    }
+    map.lock.irq_unlock_noguard(flags);
+}
 
 extern "C" {
     pub fn rust_helper_copy_from_user(
@@ -1240,7 +1418,7 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     // {
     // struct rros_element *e = filp->private_data;
     // struct rros_clone_req req, __user *u_req;
-    let state_offset: u32 = u32::MAX;
+    let mut state_offset: u32 = u32::MAX;
     // __u32 val, state_offset = -1U;
     // const char __user *u_name;
     // struct rros_factory *fac;
@@ -1266,7 +1444,7 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     let res = unsafe {
         rust_helper_copy_from_user(
             &mut real_req as *mut RrosCloneReq as *mut c_types::c_void,
-            arg as *mut c_types::c_void,
+            arg as *const c_types::c_void,
             size_of::<RrosCloneReq>() as u64,
         )
     };
@@ -1317,7 +1495,7 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
                 cstr_u_name,
                 Some(u_attrs),
                 real_req.clone_flags.try_into().unwrap(),
-                &state_offset,
+                &mut state_offset,
             )
         }
     } else if fdname == "proxy" {
@@ -1330,7 +1508,20 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
                 cstr_u_name,
                 Some(u_attrs),
                 real_req.clone_flags.try_into().unwrap(),
-                &state_offset,
+                &mut state_offset,
+            )
+        }
+    } else if fdname == "monitor" {
+        pr_debug!("ioctl_clone_device: monitor clone");
+        unsafe {
+            (*monitor::RROS_MONITOR_FACTORY.locked_data().get())
+                .build
+                .unwrap()(
+                &mut monitor::RROS_MONITOR_FACTORY,
+                cstr_u_name,
+                Some(u_attrs),
+                0,
+                &mut state_offset,
             )
         }
     } else {
@@ -1343,7 +1534,7 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
                 cstr_u_name,
                 Some(u_attrs),
                 0,
-                &state_offset,
+                &mut state_offset,
             )
         }
     };
@@ -1367,6 +1558,9 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     } else if fdname == "proxy" {
         pr_debug!("ioctl_clone_device: proxy element create");
         create_element_device(e.clone(), unsafe { &mut proxy::RROS_PROXY_FACTORY })
+    } else if fdname == "monitor" {
+        pr_debug!("ioctl_clone_device: monitor element create");
+        create_element_device(e.clone(), unsafe { &mut monitor::RROS_MONITOR_FACTORY })
     } else {
         pr_debug!("maybe a thread");
         create_element_device(e.clone(), unsafe { &mut thread::RROS_THREAD_FACTORY })
@@ -1404,14 +1598,15 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
         // ret |= rust_helper_put_user(val as u32, &mut real_req.eids.minor as *mut u32);
         pr_debug!("the ret is {}", ret);
         // ret |= put_user(val, &u_req->eids.minor);
-        // let val = (*e).fundle;
-        // val = e->fundle;
-        // ret |= rust_helper_put_user(val, &mut real_req.eids.fundle as *mut u32);
-        // pr_debug!("the ret is {}", ret);
-        // ret |= put_user(val, &u_req->eids.fundle);
-        // ret |= rust_helper_put_user(state_offset, &mut real_req.eids.state_offset as *mut u32);
-        // pr_debug!("the ret is {}", ret);
-        // ret |= put_user(state_offset, &u_req->eids.state_offset);
+        let val = e_mut.fundle;
+        ret |= rust_helper_put_user(
+            val,
+            &mut (*(arg as *mut RrosCloneReq)).eids.fundle as *mut u32,
+        );
+        ret |= rust_helper_put_user(
+            state_offset,
+            &mut (*(arg as *mut RrosCloneReq)).eids.state_offset as *mut u32,
+        );
         let val = &mut e_mut.fpriv.efd;
         // let val = &mut e_mut.fpriv.efd.reserved_fd();
         pr_debug!("the val is {}", val.reserved_fd());

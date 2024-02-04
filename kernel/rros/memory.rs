@@ -88,12 +88,22 @@ struct RrosHeapRange {
     size: u32,
     page_size: usize,
 }
-
+#[repr(C)]
 #[allow(dead_code)]
 struct RrosUserWindow {
     state: u32,
     info: u32,
     pp_pending: u32,
+}
+
+impl RrosUserWindow {
+    fn new() -> Self {
+        Self {
+            state: 0,
+            info: 0,
+            pp_pending: 0,
+        }
+    }
 }
 
 #[allow(dead_code)]

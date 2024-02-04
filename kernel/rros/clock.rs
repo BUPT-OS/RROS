@@ -1164,3 +1164,15 @@ pub fn rros_read_clock(clock: &RrosClock) -> KtimeT {
 fn rros_ktime_monotonic() -> KtimeT {
     timekeeping::ktime_get_mono_fast_ns()
 }
+
+pub fn rros_get_clock_by_fd(efd: i32) -> Result<&'static mut RrosClock> {
+    match efd {
+        RROS_CLOCK_MONOTONIC => unsafe {
+            return Ok(&mut RROS_MONO_CLOCK);
+        },
+        RROS_CLOCK_REALTIME => {
+            unsafe { return Ok(&mut RROS_REALTIME_CLOCK) };
+        }
+        _ => Err(Error::EBADF),
+    }
+}

@@ -1,7 +1,7 @@
 use crate::{
     clock::{self, rros_read_clock},
-    factory,
-    fifo::{self, RROS_SCHED_FIFO},
+    factory::{self, rros_index_factory_element},
+    fifo::{self, RROS_FIFO_MAX_PRIO, RROS_FIFO_MIN_PRIO, RROS_SCHED_FIFO},
     file::RrosFileBinding,
     idle,
     lock::{self, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
@@ -12,12 +12,14 @@ use crate::{
     RROS_OOB_CPUS,
 };
 
+use alloc::alloc_rros_shared::*;
 use alloc::rc::Rc;
 
 use core::{
     cell::RefCell,
     clone::Clone,
-    ops::DerefMut,
+    mem::size_of,
+    ops::{Deref, DerefMut},
     result::Result::{Err, Ok},
 };
 
@@ -34,6 +36,7 @@ use kernel::{
     file_operations::FileOperations,
     fs,
     io_buffer::IoBufferWriter,
+    ioctl::{_IO, _IOR, _IOW, _IOWR},
     irq_work::IrqWork,
     kernelh, ktime,
     ktime::ktime_sub,
@@ -133,12 +136,33 @@ pub const RROS_HMDIAG_LKIMBALANCE: i32 = 6;
 #[allow(dead_code)]
 pub const RROS_HMDIAG_LKSLEEP: i32 = 7;
 
+pub const RROS_THREAD_IOCBASE: u32 = 'T' as u32;
 #[allow(dead_code)]
-pub const RROS_THRIOC_SET_SCHEDPARAM: u32 = 1;
+pub const RROS_THRIOC_SIGNAL: u32 = _IOW::<u32>(RROS_THREAD_IOCBASE, 0);
 #[allow(dead_code)]
-pub const RROS_THRIOC_GET_SCHEDPARAM: u32 = 2;
+pub const RROS_THRIOC_SET_SCHEDPARAM: u32 = _IOW::<RrosSchedAttrs>(RROS_THREAD_IOCBASE, 1);
 #[allow(dead_code)]
-pub const RROS_THRIOC_GET_STATE: u32 = 4;
+pub const RROS_THRIOC_GET_SCHEDPARAM: u32 = _IOW::<RrosSchedAttrs>(RROS_THREAD_IOCBASE, 2);
+#[allow(dead_code)]
+pub const RROS_THRIOC_JOIN: u32 = _IO(RROS_THREAD_IOCBASE, 3);
+#[allow(dead_code)]
+pub const RROS_THRIOC_GET_STATE: u32 = _IOR::<RrosThreadState>(RROS_THREAD_IOCBASE, 4);
+#[allow(dead_code)]
+pub const RROS_THRIOC_SWITCH_OOB: u32 = _IO(RROS_THREAD_IOCBASE, 5);
+#[allow(dead_code)]
+pub const RROS_THRIOC_SWITCH_INBAND: u32 = _IO(RROS_THREAD_IOCBASE, 6);
+#[allow(dead_code)]
+pub const RROS_THRIOC_DETACH_SELF: u32 = _IO(RROS_THREAD_IOCBASE, 7);
+#[allow(dead_code)]
+pub const RROS_THRIOC_SET_MODE: u32 = _IOWR::<u32>(RROS_THREAD_IOCBASE, 8);
+#[allow(dead_code)]
+pub const RROS_THRIOC_CLEAR_MODE: u32 = _IOWR::<u32>(RROS_THREAD_IOCBASE, 9);
+#[allow(dead_code)]
+pub const RROS_THRIOC_UNBLOCK: u32 = _IO(RROS_THREAD_IOCBASE, 10);
+#[allow(dead_code)]
+pub const RROS_THRIOC_DEMOTE: u32 = _IO(RROS_THREAD_IOCBASE, 11);
+#[allow(dead_code)]
+pub const RROS_THRIOC_YIELD: u32 = _IO(RROS_THREAD_IOCBASE, 12);
 
 // TODO: move this to the config file
 pub const CONFIG_RROS_NR_THREADS: usize = 16;
@@ -178,7 +202,7 @@ pub static mut RROS_THREAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
 pub struct ThreadOps;
 
 impl FileOperations for ThreadOps {
-    kernel::declare_file_operations!(read);
+    kernel::declare_file_operations!(read, ioctl, oob_ioctl);
 
     fn read<T: IoBufferWriter>(
         _this: &Self,
@@ -188,6 +212,96 @@ impl FileOperations for ThreadOps {
     ) -> Result<usize> {
         pr_debug!("I'm the read ops of the rros thread factory.");
         Ok(1)
+    }
+
+    fn ioctl(
+        _this: &<<Self::Wrapper as kernel::types::PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _cmd: &mut kernel::file_operations::IoctlCommand,
+    ) -> Result<i32> {
+        let thread = unsafe {
+            let __fbind = (*_file.get_ptr()).private_data as *mut RrosFileBinding;
+            Arc::increment_strong_count(
+                (*(*__fbind).element).pointer as *const SpinLock<RrosThread>,
+            );
+            Arc::from_raw((*(*__fbind).element).pointer as *mut SpinLock<RrosThread>)
+        };
+        let thread_ref = thread.clone();
+        let thread_ref = thread_ref.deref().locked_data().get();
+        let thread_ref = unsafe { &mut (*thread_ref) };
+        let curr = rros_current();
+        let mut ret: Result<i32> = Err(Error::ESTALE);
+        if ((thread_ref.state & T_ZOMBIE) != 0) {
+            return Err(Error::ESTALE);
+        }
+
+        match _cmd.cmd {
+            RROS_THRIOC_SWITCH_INBAND => {
+                // TODO:
+                return Ok(0);
+            }
+            RROS_THRIOC_DETACH_SELF => {
+                // TODO:
+                // ret = rros_detach_self()
+                return Ok(0);
+            }
+            RROS_THRIOC_JOIN => {
+                // TODO:
+                // ret = rros_join_thread()
+                return Ok(0);
+            }
+            _ => {
+                ret = thread_common_ioctl(thread.clone(), _cmd.cmd, _cmd.arg);
+            }
+        }
+        return ret;
+    }
+
+    fn oob_ioctl(
+        _this: &<<Self::Wrapper as kernel::types::PointerWrapper>::Borrowed as Deref>::Target,
+        _file: &File,
+        _cmd: &mut kernel::file_operations::IoctlCommand,
+    ) -> Result<i32> {
+        pr_info!("into thread oob_ioctl");
+        let thread = unsafe {
+            let __fbind = (*_file.get_ptr()).private_data as *mut RrosFileBinding;
+            Arc::increment_strong_count(
+                (*(*__fbind).element).pointer as *const SpinLock<RrosThread>,
+            );
+            Arc::from_raw((*(*__fbind).element).pointer as *mut SpinLock<RrosThread>)
+        };
+        let thread_ref = thread.clone();
+        let thread_ref = thread_ref.deref().locked_data().get();
+        let thread_ref = unsafe { &mut (*thread_ref) };
+        let curr = rros_current();
+        let mut ret: Result<i32> = Err(Error::ESTALE);
+
+        if ((thread_ref.state & T_ZOMBIE) != 0) {
+            return Err(Error::ESTALE);
+        }
+
+        pr_info!("before thread oob_ioctl");
+        match _cmd.cmd {
+            RROS_THRIOC_SWITCH_OOB => {
+                // TODO:
+                return Ok(0);
+            }
+            RROS_THRIOC_SWITCH_INBAND => {
+                // TODO:
+                return Ok(0);
+            }
+            RROS_THRIOC_SIGNAL => {
+                // TODO:
+                return Ok(0);
+            }
+            RROS_THRIOC_YIELD => {
+                // TODO:
+            }
+            _ => {
+                ret = thread_common_ioctl(thread.clone(), _cmd.cmd, _cmd.arg);
+            }
+        }
+        return ret;
     }
 }
 
@@ -242,6 +356,8 @@ impl SigIrqworkData {
 }
 
 #[allow(dead_code)]
+#[repr(C)]
+#[derive(Default)]
 pub struct RrosThreadState {
     pub eattrs: RrosSchedAttrs,
     pub cpu: u32,
@@ -250,21 +366,17 @@ pub struct RrosThreadState {
     pub csw: u32,
     pub sc: u32,
     pub rwa: u32,
-    pub xtime: u32,
+    pub xtime: u64,
 }
+
+unsafe impl ReadableFromBytes for RrosThreadState {}
+unsafe impl WritableToBytes for RrosThreadState {}
+
+// NOTE: copy_from_user and copy_to_user could perhaps appear as traits, with a default implementation provided. All upai-related structures can use this trait.
 impl RrosThreadState {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        RrosThreadState {
-            eattrs: RrosSchedAttrs::new(),
-            cpu: 0,
-            state: 0,
-            isw: 0,
-            csw: 0,
-            sc: 0,
-            rwa: 0,
-            xtime: 0,
-        }
+    pub fn copy_to_user(arg: *mut c_types::c_void, data: &Self) -> Result<()> {
+        let mut writer = unsafe { UserSlicePtr::new(arg, size_of::<Self>()).writer() };
+        writer.write::<Self>(data)
     }
 }
 
@@ -367,6 +479,11 @@ pub fn rros_init_thread(
         .init_irq_work(inband_task_wakeup)?;
     // pr_debug!("yinyongcishu is {}", Arc::strong_count(&thread.clone().unwrap()));
 
+    // TODO: add next, boosters and trackers to support monitor
+    thread_unwrap.lock().boosters = List::new();
+    thread_unwrap.lock().trackers = List::new();
+    // INIT_LIST_HEAD(&thread->next);
+
     //tp set gps
     // let mut gps = unsafe{RROS_SYSTEM_HEAP.rros_alloc_chunk((size_of::<RrosTpSchedule>() + 4 * size_of::<RrosTpWindow>()) as usize)};
     // if gps == None{
@@ -463,8 +580,11 @@ fn rros_wakeup_thread_locked(thread: Arc<SpinLock<RrosThread>>, mut mask: u32, i
             timer::rros_stop_timer(rtimer.unwrap());
         }
 
-        // if (mask & T_PEND & oldstate)
-        // 	thread.wchan = None;
+        if ((mask & T_PEND & oldstate) != 0) {
+            unsafe {
+                (*(thread.deref().locked_data().get())).wchan = core::ptr::null_mut();
+            }
+        }
 
         thread.lock().info |= info as u32;
 
@@ -565,7 +685,7 @@ fn __rros_run_kthread(kthread: &mut RrosKthread, _clone_flags: i32) -> Result<us
 
 const SCHED_NORMAL: i32 = 0;
 #[allow(dead_code)]
-const SCHED_FIFO: i32 = 0;
+const SCHED_FIFO: i32 = 1;
 const MAX_RT_PRIO: i32 = 100;
 
 unsafe extern "C" fn kthread_trampoline(arg: *mut c_types::c_void) -> c_types::c_int {
@@ -698,7 +818,7 @@ fn rros_cancel_thread(thread: Arc<SpinLock<RrosThread>>) {
     state = unsafe { (*thread.locked_data().get()).state };
     if state & T_USER != 0x0 {
         //rros_demote_thread(thread);
-        // rros_signal_thread(thread, SIGTERM, 0);
+        // TODO: rros_signal_thread(thread, SIGTERM, 0);
     } else {
         pr_debug!("rros_kick_thread: no");
         //rros_kick_thread(thread, 0);
@@ -848,7 +968,7 @@ pub fn rros_switch_oob() -> Result<usize> {
     // let prio = kthread.thread.as_mut().unwrap().lock().cprio;
 
     pr_debug!("rros_switch_oob: 1");
-    let _curr = unsafe { &mut *rros_current() };
+    let curr = unsafe { &mut *rros_current() };
     // pr_debug!("curr state {}" , curr.lock().state);
     // pr_debug!("kthread state {}" , kthread.thread.as_mut().unwrap().lock().state);
 
@@ -878,13 +998,13 @@ pub fn rros_switch_oob() -> Result<usize> {
     // trace_rros_switch_oob(curr);b kernel/rros/thread.rs:504
     //b kernel/rros/thread.rs:604
 
-    // rros_clear_sync_uwindow(curr, T_INBAND);
+    rros_clear_sync_uwindow(curr, T_INBAND);
 
     let ret = dovetail::dovetail_leave_inband();
     // pr_debug!("2dddddddddddddddddddddddddddddddddddddddddddeee ");
     if ret != 0x0 {
         rros_test_cancel();
-        // 	rros_set_sync_uwindow(curr, T_INBAND);
+        rros_set_sync_uwindow(curr, T_INBAND);
         return Err(kernel::Error::EINVAL);
     }
 
@@ -1147,15 +1267,28 @@ pub fn rros_set_thread_schedparam(
     Ok(0)
 }
 
+// FIXME: `sched_param` shouldn't be wrapped by Arc<SpinkLock<>>
 pub fn rros_set_thread_schedparam_locked(
     thread: Arc<SpinLock<RrosThread>>,
-    _sched_class: Option<&'static RrosSchedClass>,
-    _sched_param: Option<Arc<SpinLock<RrosSchedParam>>>,
+    sched_class: Option<&'static RrosSchedClass>,
+    sched_param: Option<Arc<SpinLock<RrosSchedParam>>>,
 ) -> Result<usize> {
     let old_wprio: i32;
     let new_wprio: i32;
 
     old_wprio = thread.lock().wprio;
+    let ret = rros_set_thread_policy_locked(
+        Some(thread.clone()),
+        sched_class.clone(),
+        sched_param.clone(),
+    );
+    match ret {
+        Ok(ok) => {}
+        Err(err) => {
+            return Err(err);
+        }
+    }
+
     new_wprio = thread.lock().wprio;
 
     let state = thread.lock().state;
@@ -1389,6 +1522,7 @@ fn put_current_thread() -> Result<usize> {
     cleanup_current_thread()?;
     // rros_put_element(&curr->element);
     // unsafe{pr_debug!("600 uninit_thread: x ref is {}", Arc::strong_count(UTHREAD.as_ref().unwrap()));}
+    // NOTE: may not need this `decrement_strong_count`
     unsafe {
         Arc::decrement_strong_count(curr);
     }
@@ -1431,9 +1565,9 @@ fn do_cleanup_current(curr: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // rros_flush_observable(curr->observable);
     // }
 
-    // rros_drop_tracking_mutexes(curr);
+    // TODO: rros_drop_tracking_mutexes(curr);
 
-    // rros_unindex_factory_element(&curr->element);
+    // TODO: rros_unindex_factory_element(&curr->element);
     let state = curr.lock().state;
     if state & T_USER != 0 {
         pr_debug!("000000000000000000000000000000000000000000000000000000");
@@ -1524,7 +1658,13 @@ fn uninit_thread(thread: Arc<SpinLock<RrosThread>>) {
 
 use crate::factory::{rros_init_element, RrosElement, RrosFactory};
 use core::ptr;
-use kernel::error::Error;
+use kernel::{
+    error::Error,
+    io_buffer::{IoBufferReader, ReadableFromBytes, WritableToBytes},
+    linked_list::List,
+    memory_rros::RROS_SHARED_HEAP,
+    user_ptr::UserSlicePtr,
+};
 
 pub static mut UTHREAD: Option<Arc<SpinLock<RrosThread>>> = None;
 
@@ -1534,7 +1674,7 @@ fn thread_factory_build(
     uname: &'static CStr,
     _u_attrs: Option<*mut u8>,
     clone_flags: i32,
-    _state_offp: &u32,
+    state_offp: &mut u32,
 ) -> Rc<RefCell<RrosElement>> {
     // static struct rros_element *
     // thread_factory_build(struct rros_factory *fac, const char __user *u_name,
@@ -1619,7 +1759,6 @@ fn thread_factory_build(
     // 	if (curr == NULL)
     // 		return ERR_PTR(-ENOMEM);
 
-    // TODO: add the rros_init_user_element
     let _ret = rros_init_user_element(curr.lock().element.clone(), fac, uname, clone_flags);
     // let mut ret = rros_init_element(e, fac, clone_flags);
     // 	ret = rros_init_user_element(&curr->element, &rros_thread_factory,
@@ -1711,11 +1850,17 @@ fn thread_factory_build(
     // 	if (ret)
     // 		goto fail_map;
 
-    // TODO: set u_window
-    // let state_offp = rros_shared_offset(curr.u_window);
-    // 	*state_offp = rros_shared_offset(curr->u_window);
-    // TODO: add the index `rros_index_factory_element` function
-    // 	rros_index_factory_element(&curr->element);
+    unsafe {
+        // take the ownership of the u_window and get the ptr.
+        let u_window_ptr =
+            { Box::into_raw((*curr.deref().locked_data().get()).u_window.take().unwrap()) };
+        *state_offp =
+            RROS_SHARED_HEAP.rros_shared_offset(u_window_ptr as *mut c_types::c_void) as u32;
+        // get back the ownership of the u_window.
+        let u_window = Box::from_raw_in(u_window_ptr, RrosMemShared);
+        (*curr.deref().locked_data().get()).u_window = Some(u_window);
+    }
+    rros_index_factory_element(unsafe { Rc::clone(&(*curr.deref().locked_data().get()).element) });
 
     // 	/*
     // 	 * Unlike most elements, a thread may exist in absence of any
@@ -1739,8 +1884,9 @@ fn thread_factory_build(
     // 	strncpy(tsk->comm, rros_element_name(&curr->element),
     // 		sizeof(tsk->comm));
     // 	tsk->comm[sizeof(tsk->comm) - 1] = '\0';
-    // `RrosElement.pointer` point to `rros_thread` struct.
-    let rros_thread_ptr: *mut RrosThread = curr.locked_data().get();
+    // `RrosElement.pointer` point to `RrosThread` struct.
+    let rros_thread_ptr =
+        Arc::as_ptr(&curr) as *const SpinLock<RrosThread> as *mut SpinLock<RrosThread>;
     (curr.lock().element.borrow_mut()).pointer = rros_thread_ptr as *mut u8;
 
     unsafe { (*curr.locked_data().get()).element.clone() }
@@ -1817,11 +1963,11 @@ fn map_uthread_self(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // 	if (!(mm->def_flags & VM_LOCKED))
     // 		return -EINVAL;
 
-    // TODO: add the u_window to support statistics
-    // let u_window = rros_alloc_zeroed(layout::size_of::<RrosUserWindow>()) as *mut RrosUserWindow;
-    // 	u_window = rros_zalloc_chunk(&RROS_SHARED_HEAP, sizeof(*u_window));
-    // 	if (u_window == NULL)
-    // 		return -ENOMEM;
+    let u_windows = unsafe {
+        Box::<RrosUserWindow, RrosMemShared>::try_new_uninit_in(RrosMemShared)
+            .unwrap()
+            .assume_init()
+    };
 
     // 	/*
     // 	 * Raise capababilities of user threads when attached to the
@@ -1857,8 +2003,9 @@ fn map_uthread_self(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // 	 * therefore there is no added capability to drop in
     // 	 * discard_unmapped_uthread().
     // 	 */
-    // TODO: add the support of u_window
-    // 	thread->u_window = u_window;
+    unsafe {
+        (*(thread.deref().locked_data().get())).u_window = Some(u_windows);
+    }
 
     // TODO: add the support of pin_to_initial_cpu. This can be omitted as shown in the map_kthread_self
     // 	pin_to_initial_cpu(thread);
@@ -1917,8 +2064,7 @@ fn map_uthread_self(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     rros_release_thread(thread.clone(), T_DORMANT, 0);
     // 	rros_release_thread(thread, T_DORMANT, 0);
 
-    // TODO: update the thread u_window
-    // 	rros_sync_uwindow(thread);
+    rros_sync_uwindow(Arc::as_ptr(&thread) as *mut SpinLock<RrosThread>);
 
     Ok(0)
     // 	return 0;
@@ -1963,6 +2109,7 @@ fn rros_signal_thread(thread: *mut RrosThread, sig: i32, arg: u32) -> Result<usi
     // return;
 
     if premmpt::running_inband() == Ok(0) {
+        // TODO: do_inband_signal
         // do_inband_signal(thread, sig, arg);
         return Ok(0);
     }
@@ -1982,6 +2129,7 @@ fn rros_signal_thread(thread: *mut RrosThread, sig: i32, arg: u32) -> Result<usi
 
 unsafe extern "C" fn sig_irqwork(_work: *mut IrqWork) {
     let _sigd = SigIrqworkData::new();
+    // TODO: do_inband_signal
     // unsafe{do_inband_signal(sigd.thread, sigd.signo, sigd.sigval)};
     // rros_put_element(&sigd->thread->element);
 }
@@ -2014,7 +2162,7 @@ pub fn rros_track_thread_policy(
     target: Arc<SpinLock<RrosThread>>,
 ) -> Result<usize> {
     unsafe {
-        let param = RrosSchedParam::new();
+        let mut param = Arc::try_new(SpinLock::new(RrosSchedParam::new()))?;
         // rros_double_rq_lock((*thread).rq, (*target).rq);
 
         let mut state = (*thread.locked_data().get()).state;
@@ -2022,24 +2170,19 @@ pub fn rros_track_thread_policy(
             rros_dequeue_thread(thread.clone())?;
         }
 
-        let thread_ptr =
-            Arc::into_raw(thread.clone()) as *mut SpinLock<RrosThread> as *mut RrosThread;
-        let target_ptr =
-            Arc::into_raw(target.clone()) as *mut SpinLock<RrosThread> as *mut RrosThread;
+        let thread_ptr = Arc::as_ptr(&thread) as *mut SpinLock<RrosThread>;
+        let target_ptr = Arc::as_ptr(&target) as *mut SpinLock<RrosThread>;
         if target_ptr == thread_ptr {
             (*thread.locked_data().get()).sched_class = (*thread.locked_data().get()).base_class;
-            rros_track_priority(
-                thread.clone(),
-                Arc::try_new(SpinLock::new(RrosSchedParam::new()))?,
-            )?;
+            rros_track_priority(thread.clone(), None)?;
             state = (*thread.locked_data().get()).state;
             if state & T_READY != 0 {
                 rros_requeue_thread(thread.clone())?;
             }
         } else {
-            rros_get_schedparam(target.clone(), Arc::try_new(SpinLock::new(param))?)?;
+            rros_get_schedparam(target.clone(), param.clone())?;
             (*thread.locked_data().get()).sched_class = (*target.locked_data().get()).sched_class;
-            rros_track_priority(thread.clone(), Arc::try_new(SpinLock::new(param))?)?;
+            rros_track_priority(thread.clone(), Some(param.clone()))?;
             state = (*thread.locked_data().get()).state;
             if state & T_READY != 0 {
                 rros_enqueue_thread(thread.clone())?;
@@ -2048,95 +2191,152 @@ pub fn rros_track_thread_policy(
 
         let rq = (*thread.locked_data().get()).rq;
         rros_set_resched(rq.clone());
+        // TODO: rros_double_rq_unlock
         // rros_double_rq_unlock(thread->rq, target->rq);
         Ok(0)
     }
 }
 
-#[allow(dead_code)]
-pub fn thread_oob_ioctl(filp: &File, cmd: u32, arg: u32) -> Result<usize> {
-    let __fbind = unsafe { (*filp.get_ptr()).private_data as *mut RrosFileBinding };
-    let thread = unsafe {
-        kernel::container_of!((*__fbind).element, RrosThread, element) as *mut RrosThread
-    };
+// NOTE: unused function
+// #[allow(dead_code)]
+// pub fn thread_oob_ioctl(filp: &File, cmd: u32, arg: u32) -> Result<usize> {
+//     let __fbind = unsafe { (*filp.get_ptr()).private_data as *mut RrosFileBinding };
+//     let thread = unsafe {
+//         let __fbind = (*_file.get_ptr()).private_data as *mut RrosFileBinding;
+//         Arc::increment_strong_count((*(*__fbind).element).pointer as *const SpinLock<RrosThread>);
+//         Arc::from_raw((*(*__fbind).element).pointer as *mut SpinLock<RrosThread>)
+//     };
 
-    // let curr = rros_current();
+//     // let curr = rros_current();
 
-    unsafe {
-        if (*thread).state & T_ZOMBIE != 0 {
-            return Err(kernel::Error::ESTALE);
+//     unsafe {
+//         if thread.lock().state & T_ZOMBIE != 0 {
+//             return Err(kernel::Error::ESTALE);
+//         }
+//     }
+
+//     // switch (cmd) {
+//     // case RROS_THRIOC_SWITCH_OOB:
+//     // 	if (thread == curr)
+//     // 		ret = 0;	/* Already there. */
+//     // 	break;
+//     // case RROS_THRIOC_SWITCH_INBAND:
+//     // 	if (thread == curr) {
+//     // 		rros_switch_inband(RROS_HMDIAG_NONE);
+//     // 		ret = 0;
+//     // 	}
+//     // 	break;
+//     // case RROS_THRIOC_SIGNAL:
+//     // 	ret = raw_get_user(monfd, (__u32 *)arg);
+//     // 	if (ret)
+//     // 		return -EFAULT;
+//     // 	ret = rros_signal_monitor_targeted(thread, monfd);
+//     // 	break;
+//     // case RROS_THRIOC_YIELD:
+//     // 	rros_release_thread(curr, 0, 0);
+//     // 	rros_schedule();
+//     // 	ret = 0;
+//     // 	break;
+//     // default:
+//     return thread_common_ioctl(thread, cmd, arg);
+//     // }
+// }
+
+fn update_mode(
+    thread: Arc<SpinLock<RrosThread>>,
+    mask: u32,
+    oldmask: &mut u32,
+    set: bool,
+) -> Result<usize> {
+    let mut mask = mask;
+    let mut flags = 0;
+    if ((mask & !RROS_THREAD_MODE_BITS) != 0) {
+        return Err(Error::EINVAL);
+    }
+
+    if (set) {
+        unsafe {
+            let thread = thread.deref().locked_data().get();
+            if ((mask & T_HMOBS) != 0 && (*thread).observable.is_none()) {
+                return Err(Error::EINVAL);
+            }
+            if ((!(mask & (T_HMSIG | T_HMOBS))) != 0) {
+                mask |= T_HMSIG;
+            }
         }
     }
 
-    // switch (cmd) {
-    // case RROS_THRIOC_SWITCH_OOB:
-    // 	if (thread == curr)
-    // 		ret = 0;	/* Already there. */
-    // 	break;
-    // case RROS_THRIOC_SWITCH_INBAND:
-    // 	if (thread == curr) {
-    // 		rros_switch_inband(RROS_HMDIAG_NONE);
-    // 		ret = 0;
-    // 	}
-    // 	break;
-    // case RROS_THRIOC_SIGNAL:
-    // 	ret = raw_get_user(monfd, (__u32 *)arg);
-    // 	if (ret)
-    // 		return -EFAULT;
-    // 	ret = rros_signal_monitor_targeted(thread, monfd);
-    // 	break;
-    // case RROS_THRIOC_YIELD:
-    // 	rros_release_thread(curr, 0, 0);
-    // 	rros_schedule();
-    // 	ret = 0;
-    // 	break;
-    // default:
-    return thread_common_ioctl(thread, cmd, arg);
-    // }
+    let rq = rros_get_thread_rq(Some(thread.clone()), &mut flags);
+    {
+        let thread = unsafe { &mut *thread.deref().locked_data().get() };
+        *oldmask = thread.state & RROS_THREAD_MODE_BITS;
+
+        if (mask != 0) {
+            if (set) {
+                thread.state |= mask;
+            } else {
+                thread.state &= !mask;
+                if (!(thread.state & (T_WOSS | T_WOLI | T_WOSX)) != 0) {
+                    thread.state &= !(T_HMSIG | T_HMOBS);
+                } else if (!(thread.state & (T_HMSIG | T_HMOBS)) != 0) {
+                    thread.state &= !(T_WOSS | T_WOLI | T_WOSX);
+                }
+            }
+        }
+    }
+    rros_put_thread_rq(Some(thread.clone()), rq.clone(), flags);
+    Ok(0)
 }
 
 #[allow(dead_code)]
-pub fn thread_common_ioctl(thread: *mut RrosThread, cmd: u32, _arg: u32) -> Result<usize> {
-    let mut statebuf = RrosThreadState::new();
-    let mut attrs = RrosSchedAttrs::new();
-    // __u32 mask, oldmask;
-    let mut ret: Result<usize> = Ok(0);
+pub fn thread_common_ioctl(thread: Arc<SpinLock<RrosThread>>, cmd: u32, arg: usize) -> Result<i32> {
+    let mut statebuf = RrosThreadState::default();
+    let mut attrs = RrosSchedAttrs::default();
+    let mut mask: u32 = 0;
+    let mut oldmask: u32 = 0;
+    let mut ret: Result<i32> = Ok(0);
 
     match cmd {
         RROS_THRIOC_SET_SCHEDPARAM => {
-            // ret = raw_copy_from_user(&attrs,
-            //         (struct rros_sched_attrs *)arg, sizeof(attrs));
-            // if (ret)
-            //     return -EFAULT;
-            ret = set_sched_attrs(thread, attrs);
+            attrs = RrosSchedAttrs::copy_from_user(arg as *mut c_types::c_void)?;
+            let res = set_sched_attrs(thread.clone(), attrs).unwrap() as i32;
+            ret = Ok(res);
         }
         RROS_THRIOC_GET_SCHEDPARAM => {
-            get_sched_attrs(thread, &mut attrs)?;
-            // ret = raw_copy_to_user((struct rros_sched_attrs *)arg,
-            //         &attrs, sizeof(attrs));
+            get_sched_attrs(thread.clone(), &mut attrs);
+            RrosSchedAttrs::copy_to_user(arg as *mut c_types::c_void, &attrs)?;
             // if (ret)
             //     return -EFAULT;
         }
         RROS_THRIOC_GET_STATE => {
-            rros_get_thread_state(thread, &mut statebuf)?;
+            rros_get_thread_state(thread.clone(), &mut statebuf);
+            RrosThreadState::copy_to_user(arg as *mut c_types::c_void, &statebuf)?;
             // ret = raw_copy_to_user((struct rros_thread_state *)arg,
             //         &statebuf, sizeof(statebuf));
             // if (ret)
             //     return -EFAULT;
         }
-        // case RROS_THRIOC_SET_MODE:
-        // case RROS_THRIOC_CLEAR_MODE:
-        // 	ret = raw_get_user(mask, (__u32 *)arg);
-        // 	if (ret)
-        // 		return -EFAULT;
-        // 	ret = update_mode(thread, mask, &oldmask,
-        // 			cmd == RROS_THRIOC_SET_MODE);
-        // 	if (ret)
-        // 		return ret;
-        // 	ret = raw_put_user(oldmask, (__u32 *)arg);
-        // 	if (ret)
-        // 		return -EFAULT;
-        // 	break;
+        RROS_THRIOC_SET_MODE | RROS_THRIOC_CLEAR_MODE => {
+            let mut reader = unsafe {
+                UserSlicePtr::new(arg as *mut u32 as *mut c_types::c_void, size_of::<u32>())
+                    .reader()
+            };
+            mask = reader.read::<u32>().unwrap();
+            let res = update_mode(
+                thread.clone(),
+                mask,
+                &mut oldmask,
+                cmd == RROS_THRIOC_SET_MODE,
+            )
+            .unwrap() as i32;
+            ret = Ok(res);
+
+            let mut writer = unsafe {
+                UserSlicePtr::new(arg as *mut u32 as *mut c_types::c_void, size_of::<u32>())
+                    .writer()
+            };
+            let res = writer.write::<u32>(&oldmask).unwrap();
+        }
         // case RROS_THRIOC_UNBLOCK:
         // 	rros_unblock_thread(thread, 0);
         // 	break;
@@ -2154,15 +2354,14 @@ pub fn thread_common_ioctl(thread: *mut RrosThread, cmd: u32, _arg: u32) -> Resu
 }
 
 #[allow(dead_code)]
-pub fn set_sched_attrs(thread: *mut RrosThread, attrs: RrosSchedAttrs) -> Result<usize> {
+pub fn set_sched_attrs(thread: Arc<SpinLock<RrosThread>>, attrs: RrosSchedAttrs) -> Result<usize> {
     let mut param = RrosSchedParam::new();
     let mut flags: c_types::c_ulong = 0;
-    let mut ret: Result<usize>;
-    let tslice = unsafe { (*thread).rrperiod };
-    let thread: Option<Arc<SpinLock<RrosThread>>> =
-        unsafe { Some(Arc::from_raw(thread as *mut SpinLock<RrosThread>)) };
-    let rq = rros_get_thread_rq(thread.clone(), &mut flags);
-    let sched_class = rros_find_sched_class(&mut param, attrs, tslice);
+    let mut ret: Result<usize> = Ok(0);
+    let mut tslice = unsafe { (*thread.deref().locked_data().get()).rrperiod };
+
+    let rq = rros_get_thread_rq(Some(thread.clone()), &mut flags);
+    let sched_class = rros_find_sched_class(&mut param, attrs, &mut tslice)?;
 
     // if (IS_ERR(sched_class)) {
     // 	ret = PTR_ERR(sched_class);
@@ -2170,21 +2369,21 @@ pub fn set_sched_attrs(thread: *mut RrosThread, attrs: RrosSchedAttrs) -> Result
     //     return ret;
     // }
 
-    ret = set_time_slice(thread.clone(), tslice);
+    ret = set_time_slice(Some(thread.clone()), tslice);
     if ret != Ok(0) {
-        rros_put_thread_rq(thread, rq, flags)?;
+        rros_put_thread_rq(Some(thread.clone()), rq, flags)?;
         return ret;
     }
 
     unsafe {
         ret = rros_set_thread_schedparam_locked(
-            thread.clone().unwrap(),
+            thread.clone(),
             Some(sched_class),
             Some(Arc::try_new(SpinLock::new(param))?),
         )
     };
 
-    rros_put_thread_rq(thread, rq, flags)?;
+    rros_put_thread_rq(Some(thread.clone()), rq, flags)?;
 
     return ret;
 }
@@ -2192,18 +2391,29 @@ pub fn set_sched_attrs(thread: *mut RrosThread, attrs: RrosSchedAttrs) -> Result
 #[allow(dead_code)]
 pub fn rros_find_sched_class(
     param: &mut RrosSchedParam,
-    _attrs: RrosSchedAttrs,
-    mut _tslice_r: ktime::KtimeT,
-) -> &'static RrosSchedClass {
-    let sched_class: &RrosSchedClass = unsafe { &RROS_SCHED_FIFO };
+    attrs: RrosSchedAttrs,
+    tslice_r: &mut ktime::KtimeT,
+) -> Result<&'static RrosSchedClass> {
     // int prio, policy;
     // KtimeT tslice;
 
-    // policy = attrs->sched_policy;
-    // prio = attrs->sched_priority;
-    // tslice = RROS_INFINITE;
-    // sched_class = &rros_sched_fifo;
-    param.fifo.prio = 47;
+    let mut policy = attrs.sched_policy;
+    let mut prio = attrs.sched_priority;
+    let mut tslice = RROS_INFINITE;
+    let mut sched_class = unsafe { &mut RROS_SCHED_FIFO };
+    param.fifo.prio = prio;
+
+    match policy {
+        SCHED_FIFO => {
+            if (prio < RROS_FIFO_MIN_PRIO || prio > RROS_FIFO_MAX_PRIO) {
+                return Err(Error::EINVAL);
+            }
+        }
+        _ => {
+            pr_info!("rros_find_sched_class: into unimplemented path");
+            unimplemented!();
+        }
+    }
 
     // TODO: Currently, only tp is written here in the policy.
     // switch (policy) {
@@ -2255,12 +2465,13 @@ pub fn rros_find_sched_class(
     // }
 
     // According to what librros wrote, prio + ptid should be 50, and part should be 3.
-    param.tp.prio = 47;
-    param.tp.ptid = 3;
+    // param.tp.prio = 47;
+    // param.tp.ptid = 3;
+    *tslice_r = tslice;
     //FIXME: tp haven't been implemented.
     // sched_class = unsafe{&RROS_SCHED_TP};
     // panic!();
-    sched_class
+    Ok(sched_class)
 }
 
 #[allow(dead_code)]
@@ -2313,23 +2524,23 @@ pub fn set_time_slice(
 }
 
 #[allow(dead_code)]
-pub fn get_sched_attrs(thread: *mut RrosThread, attrs: &mut RrosSchedAttrs) -> Result<usize> {
+pub fn get_sched_attrs(
+    thread: Arc<SpinLock<RrosThread>>,
+    attrs: &mut RrosSchedAttrs,
+) -> Result<usize> {
     let mut flags: c_types::c_ulong = 0;
-    let thread_ptr = thread;
-    let thread: Option<Arc<SpinLock<RrosThread>>> =
-        unsafe { Some(Arc::from_raw(thread as *mut SpinLock<RrosThread>)) };
-    let rq = rros_get_thread_rq(thread.clone(), &mut flags);
+    let rq = rros_get_thread_rq(Some(thread.clone()), &mut flags);
     /* Get the base scheduling attributes. */
-    attrs.sched_priority = unsafe { (*thread.clone().unwrap().locked_data().get()).bprio };
-    let base_class = unsafe { (*thread.clone().unwrap().locked_data().get()).base_class };
-    __get_sched_attrs(base_class.clone(), thread_ptr, attrs)?;
-    rros_put_thread_rq(thread.clone(), rq.clone(), flags)?;
+    attrs.sched_priority = unsafe { (*thread.clone().deref().locked_data().get()).bprio };
+    let base_class = unsafe { (*thread.clone().deref().locked_data().get()).base_class };
+    __get_sched_attrs(base_class.clone(), thread.clone(), attrs)?;
+    rros_put_thread_rq(Some(thread.clone()), rq.clone(), flags)?;
     Ok(0)
 }
 
 pub fn __get_sched_attrs(
     sched_class: Option<&'static RrosSchedClass>,
-    thread: *mut RrosThread,
+    thread: Arc<SpinLock<RrosThread>>,
     attrs: &mut RrosSchedAttrs,
 ) -> Result<usize> {
     let param = unsafe { Some(Arc::try_new(SpinLock::new(RrosSchedParam::new()))?) };
@@ -2337,8 +2548,7 @@ pub fn __get_sched_attrs(
 
     match sched_class.unwrap().sched_getparam {
         Some(f) => {
-            let thread_option = unsafe { Some(Arc::from_raw(thread as *mut SpinLock<RrosThread>)) };
-            f(thread_option.clone(), param.clone());
+            f(Some(thread.clone()), param.clone());
         }
         None => {
             pr_debug!("__get_sched_attrs sched_getparam is none");
@@ -2346,7 +2556,7 @@ pub fn __get_sched_attrs(
     }
     if sched_class.unwrap().flag == 3 {
         unsafe {
-            if (*thread).state & T_RRB != 0 {
+            if (*thread.clone().deref().locked_data().get()).state & T_RRB != 0 {
                 // attrs->sched_rr_quantum =
                 // 	ktime_to_u_timespec(thread->rrperiod);
                 attrs.sched_policy = SCHED_RR;
@@ -2363,7 +2573,16 @@ pub fn __get_sched_attrs(
 
     // #ifdef CONFIG_RROS_SCHED_TP
     if sched_class.unwrap().flag == 4 {
-        attrs.tp_partition = unsafe { (*param.unwrap().locked_data().get()).tp.ptid };
+        let param_ref = attrs.as_param_ref();
+        use uapi_rros_sched_param_ref::*;
+        match param_ref {
+            TP(tp) => {
+                tp.__sched_partition = unsafe { (*param.unwrap().locked_data().get()).tp.ptid };
+            }
+            _ => {
+                unimplemented!();
+            }
+        }
     }
     // #endif
 
@@ -2374,24 +2593,30 @@ pub fn __get_sched_attrs(
 
 #[allow(dead_code)]
 pub fn rros_get_thread_state(
-    thread: *mut RrosThread,
+    thread: Arc<SpinLock<RrosThread>>,
     statebuf: &mut RrosThreadState,
 ) -> Result<usize> {
     let mut flags: c_types::c_ulong = 0;
-    let thread_option = unsafe { Some(Arc::from_raw(thread as *mut SpinLock<RrosThread>)) };
-    let rq = rros_get_thread_rq(thread_option.clone(), &mut flags);
-    statebuf.eattrs.sched_priority = unsafe { (*thread).cprio };
-    unsafe { __get_sched_attrs((*thread).sched_class.clone(), thread, &mut statebuf.eattrs)? };
+    let rq = rros_get_thread_rq(Some(thread.clone()), &mut flags);
+    statebuf.eattrs.sched_priority = unsafe { (*thread.deref().locked_data().get()).cprio };
     unsafe {
+        __get_sched_attrs(
+            (*(thread.deref().locked_data().get())).sched_class.clone(),
+            thread.clone(),
+            &mut statebuf.eattrs,
+        )?
+    };
+    unsafe {
+        let thread = thread.deref().locked_data().get();
         statebuf.cpu = rros_rq_cpu((*thread).rq.unwrap()) as u32;
         statebuf.state = rros_rq_cpu((*thread).rq.unwrap()) as u32;
         statebuf.isw = (*thread).stat.isw.get_counter();
         statebuf.csw = (*thread).stat.csw.get_counter();
         statebuf.sc = (*thread).stat.sc.get_counter();
         statebuf.rwa = (*thread).stat.rwa.get_counter();
-        statebuf.xtime = (*thread).stat.account.get_account_total() as u32;
+        statebuf.xtime = (*thread).stat.account.get_account_total() as u64;
     }
-    rros_put_thread_rq(thread_option.clone(), rq.clone(), flags)?;
+    rros_put_thread_rq(Some(thread.clone()), rq.clone(), flags)?;
     Ok(0)
 }
 
@@ -2787,4 +3012,28 @@ fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32
     // 	return overruns;
     // }
     // EXPORT_SYMBOL_GPL(rros_get_timer_overruns);
+}
+
+pub fn rros_sync_uwindow(curr: *mut SpinLock<RrosThread>) {
+    let curr = unsafe { &mut *((*curr).locked_data().get()) };
+    if (curr.u_window.is_some()) {
+        curr.u_window.as_mut().unwrap().state = curr.state;
+        curr.u_window.as_mut().unwrap().info = curr.info;
+    }
+}
+
+pub fn rros_clear_sync_uwindow(curr: *mut SpinLock<RrosThread>, state_bits: u32) {
+    let curr = unsafe { &mut *((*curr).locked_data().get()) };
+    if (curr.u_window.is_some()) {
+        curr.u_window.as_mut().unwrap().state = curr.state | !state_bits;
+        curr.u_window.as_mut().unwrap().info = curr.info;
+    }
+}
+
+pub fn rros_set_sync_uwindow(curr: *mut SpinLock<RrosThread>, state_bits: u32) {
+    let curr = unsafe { &mut *((*curr).locked_data().get()) };
+    if (curr.u_window.is_some()) {
+        curr.u_window.as_mut().unwrap().state = curr.state | state_bits;
+        curr.u_window.as_mut().unwrap().info = curr.info;
+    }
 }

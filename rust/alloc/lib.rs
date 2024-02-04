@@ -162,6 +162,7 @@ mod macros;
 
 pub mod alloc;
 pub mod alloc_rros;
+pub mod alloc_rros_shared;
 // Primitive types using the heaps above
 
 // Need to conditionally define the mod from `boxed.rs` to avoid

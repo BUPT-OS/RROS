@@ -343,7 +343,7 @@ impl RrosSkBuff {
         list_add!(self.list_mut(), &mut rst.rstate.free_skb_pool);
         rst.rstate.pool_free += 1;
         if rst.rstate.pool_wait.is_active() {
-            rst.rstate.pool_wait.wake_up(core::ptr::null_mut(), 0);
+            rst.rstate.pool_wait.wake_up(None, 0);
         }
         rst.rstate.pool_wait.lock.raw_spin_unlock_irqrestore(flags);
         // // rros_signal_poll_events(&est->poll_head,	POLLOUT|POLLWRNORM); // rros poll

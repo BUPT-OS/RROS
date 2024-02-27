@@ -2,7 +2,7 @@ use core::{
     borrow::BorrowMut,
     cell::{RefCell, RefMut},
     mem::size_of,
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     ptr::NonNull,
     usize,
 };
@@ -379,7 +379,7 @@ pub fn __rros_signal_poll_events(head: &mut RrosPollHead, events: i32) -> () {
     flags = head.watchpoints.irq_lock_noguard();
     list_for_each_entry!(
         poco,
-        head.watchpoints.lock().deref(),
+        &*head.watchpoints.locked_data().get(),
         RrosPollConnector,
         {
             unsafe {

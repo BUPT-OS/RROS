@@ -1,5 +1,6 @@
 use crate::{
     clock::{RrosClock, RROS_MONO_CLOCK},
+    monitor::{rust_helper_raw_spin_lock, rust_helper_raw_spin_unlock},
     sched::{rros_schedule, RrosThread, RrosThreadWithLock, RrosValue},
     thread::{
         rros_current, rros_notify_thread, rros_sleep_on, rros_wakeup_thread, KthreadRunner,
@@ -11,10 +12,15 @@ use crate::{
 
 use alloc::sync::Arc;
 
-use core::{clone::Clone, ops::FnMut, ptr::NonNull, sync::atomic::AtomicBool};
+use core::{
+    clone::Clone,
+    ops::{Deref, FnMut},
+    ptr::NonNull,
+    sync::atomic::AtomicBool,
+};
 
 use kernel::{
-    bindings, delay,
+    bindings, container_of, delay,
     ktime::KtimeT,
     linked_list::List,
     prelude::*,
@@ -30,12 +36,28 @@ pub struct RrosWaitChannel {
     pub reorder_wait: Option<
         fn(waiter: Arc<SpinLock<RrosThread>>, originator: Arc<SpinLock<RrosThread>>) -> Result<i32>,
     >,
+    // pub follow_depend: Option<
+    //     fn(
+    //         wchan: Arc<SpinLock<RrosWaitChannel>>,
+    //         originator: Arc<SpinLock<RrosThread>>,
+    //     ) -> Result<i32>,
+    // >,
+    // TODO: `follow_depend` has a incooperate parameter
+    // `RrosWaitChannel` with the RrosMutex. We should modify it later.
     pub follow_depend: Option<
-        fn(
-            wchan: Arc<SpinLock<RrosWaitChannel>>,
-            originator: Arc<SpinLock<RrosThread>>,
-        ) -> Result<i32>,
+        fn(wchan: *mut RrosWaitChannel, originator: Arc<SpinLock<RrosThread>>) -> Result<i32>,
     >,
+}
+
+impl RrosWaitChannel {
+    pub fn new() -> Self {
+        RrosWaitChannel {
+            // name: name,
+            wait_list: List::new(),
+            reorder_wait: None,
+            follow_depend: None,
+        }
+    }
 }
 
 pub struct RrosWaitQueue {
@@ -52,8 +74,8 @@ impl RrosWaitQueue {
             clock,
             wchan: RrosWaitChannel {
                 wait_list: List::new(),
-                reorder_wait: None,
-                follow_depend: None,
+                reorder_wait: Some(rros_reorder_wait),
+                follow_depend: Some(rros_follow_wait_depend),
             },
             lock: HardSpinlock::new(),
         };
@@ -98,7 +120,7 @@ impl RrosWaitQueue {
 
     pub fn wake_up(
         &mut self,
-        waiter: *mut RrosThread,
+        waiter: Option<Arc<RrosThreadWithLock>>,
         reason: i32,
     ) -> Option<Arc<SpinLock<RrosThread>>> {
         // trace_rros_wake_up(wq);
@@ -106,18 +128,18 @@ impl RrosWaitQueue {
         if self.wchan.wait_list.is_empty() {
             return None;
         } else {
-            if waiter.is_null() {
+            if waiter.is_none() {
                 let list = &mut self.wchan.wait_list;
                 let waiter = list.pop_front().unwrap();
                 let waiter = unsafe { RrosThreadWithLock::transmute_to_original(waiter) };
                 rros_wakeup_thread(waiter.clone(), T_PEND, reason);
                 Some(waiter)
             } else {
-                unimplemented!()
-                // let mut list = self.wchan.wait_list;
-                // let thread = RrosThreadWithLock();
-                // unsafe{list.remove(&thread)};
-                // rros_wakeup_thread(thread, T_PEND, reason);
+                let list = &mut self.wchan.wait_list;
+                let thread = unsafe { list.remove(waiter.as_ref().unwrap()) };
+                let thread = unsafe { RrosThreadWithLock::transmute_to_original(thread.unwrap()) };
+                rros_wakeup_thread(thread.clone(), T_PEND, reason);
+                Some(thread)
             }
         }
     }
@@ -262,7 +284,7 @@ impl RrosWaitQueue {
     }
 
     pub fn wake_up_head(&mut self) -> Option<Arc<SpinLock<RrosThread>>> {
-        self.wake_up(core::ptr::null_mut(), 0)
+        self.wake_up(None, 0)
     }
 
     // pub fn add_wait_queue(&mut self,timeout:KtimeT,timeout_mode:timeout::RrosTmode){
@@ -282,6 +304,59 @@ impl RrosWaitQueue {
     //         list_add
     //     }
     // }
+}
+
+pub fn rros_reorder_wait(
+    waiter: Arc<SpinLock<RrosThread>>,
+    originator: Arc<SpinLock<RrosThread>>,
+) -> Result<i32> {
+    let wchan = unsafe { (*(waiter.deref().locked_data().get())).wchan };
+    let wq = unsafe {
+        let wq = container_of!(wchan, RrosWaitQueue, wchan) as *mut RrosWaitQueue;
+        &mut *wq
+    };
+    //assert_hard_lock(&waiter->lock);
+    //assert_hard_lock(&originator->lock);
+    wq.lock.raw_spin_lock();
+
+    if ((wq.flags & RROS_WAIT_PRIO as i32) != 0) {
+        let mut wait_list = &mut wq.wchan.wait_list;
+        unsafe {
+            wait_list.remove(&RrosThreadWithLock::transmute_to_self(waiter.clone()));
+        }
+        let prio = waiter.deref().lock().wprio;
+        let mut last = wq.wchan.wait_list.cursor_back_mut();
+        let mut stop_flag = false;
+        while let Some(cur) = last.current() {
+            if prio <= unsafe { (*cur).get_wprio() } {
+                let cur = NonNull::new(cur as *const _ as *mut RrosThreadWithLock).unwrap();
+                unsafe {
+                    wq.wchan.wait_list.insert_after(cur, unsafe {
+                        RrosThreadWithLock::transmute_to_self(waiter.clone())
+                    })
+                };
+                stop_flag = true;
+                break;
+            }
+            last.move_prev();
+        }
+        if !stop_flag {
+            let item = unsafe { RrosThreadWithLock::new_from_curr_thread() };
+            wq.wchan
+                .wait_list
+                .push_front(unsafe { RrosThreadWithLock::transmute_to_self(waiter.clone()) });
+        }
+    }
+    wq.lock.raw_spin_unlock();
+
+    Ok(0)
+}
+
+pub fn rros_follow_wait_depend(
+    wchan: *mut RrosWaitChannel,
+    originator: Arc<SpinLock<RrosThread>>,
+) -> Result<i32> {
+    Ok(0)
 }
 
 #[allow(dead_code)]

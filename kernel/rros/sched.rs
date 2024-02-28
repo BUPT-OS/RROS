@@ -1,9 +1,14 @@
+use alloc::alloc_rros_shared::*;
 use alloc::rc::Rc;
+use kernel::{
+    io_buffer::{IoBufferReader, IoBufferWriter, ReadableFromBytes, WritableToBytes},
+    user_ptr::UserSlicePtr,
+};
 
 use core::{
     cell::RefCell,
     mem::{align_of, size_of, transmute},
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     ptr::{null, null_mut, NonNull},
 };
 
@@ -16,7 +21,7 @@ use kernel::{
     irq_pipeline,
     irq_work::IrqWork,
     ktime::Timespec64,
-    linked_list::{GetLinks, Links},
+    linked_list::{GetLinks, Links, List as LinkedList},
     percpu::alloc_per_cpu,
     percpu_defs,
     prelude::*,
@@ -33,6 +38,8 @@ use crate::{
     fifo, idle,
     list::ListHead,
     lock,
+    monitor::rros_commit_monitor_ceiling,
+    mutex::{RrosMutexWithBoosters, RrosMutexWithTrackers},
     poll::RrosPollWatchpoint,
     sched, stat,
     thread::*,
@@ -71,7 +78,7 @@ static mut RROS_SCHED_TOPMOS: *mut RrosSchedClass = 0 as *mut RrosSchedClass;
 static mut RROS_SCHED_LOWER: *mut RrosSchedClass = 0 as *mut RrosSchedClass;
 
 // static mut rros_thread_list: List<Arc<SpinLock<RrosThread>>> = ;
-
+static mut RROS_THREAD_LIST: LinkedList<Arc<RrosThreadWithLock>> = LinkedList::new();
 // pub static mut RROS_SCHED_TOPMOS:*mut RrosSchedClass = 0 as *mut RrosSchedClass;
 // pub static mut RROS_SCHED_LOWER:*mut RrosSchedClass = 0 as *mut RrosSchedClass;
 
@@ -212,7 +219,7 @@ pub fn rros_rq_cpu(rq: *mut rros_rq) -> i32 {
 #[allow(dead_code)]
 pub fn rros_protect_thread_priority(thread: Arc<SpinLock<RrosThread>>, prio: i32) -> Result<usize> {
     unsafe {
-        // raw_spin_lock(&thread->rq->lock);
+        // TODO: raw_spin_lock(&thread->rq->lock);
         let mut state = (*thread.locked_data().get()).state;
         if state & T_READY != 0 {
             rros_dequeue_thread(thread.clone())?;
@@ -229,7 +236,7 @@ pub fn rros_protect_thread_priority(thread: Arc<SpinLock<RrosThread>>, prio: i32
         let rq = (*thread.locked_data().get()).rq;
         rros_set_resched(rq.clone());
 
-        // raw_spin_unlock(&thread->rq->lock);
+        // TODO: raw_spin_unlock(&thread->rq->lock);
         Ok(0)
     }
 }
@@ -792,6 +799,13 @@ impl RrosThreadWithLock {
         }
     }
 
+    pub unsafe fn transmute_to_self(ptr: Arc<SpinLock<RrosThread>>) -> Arc<Self> {
+        unsafe {
+            let ptr = Arc::into_raw(ptr) as *mut RrosThreadWithLock;
+            Arc::from_raw(ptr)
+        }
+    }
+
     pub unsafe fn new_from_curr_thread() -> Arc<Self> {
         unsafe {
             let ptr = transmute(NonNull::new_unchecked(rros_current()).as_ptr());
@@ -800,8 +814,34 @@ impl RrosThreadWithLock {
             ret
         }
     }
+
     pub fn get_wprio(&self) -> i32 {
         unsafe { (*(*self.0.locked_data()).get()).wprio }
+    }
+
+    pub fn get_info(&self) -> u32 {
+        unsafe { (*(*self.0.locked_data()).get()).info }
+    }
+
+    pub fn get_ptr_unlocked(&mut self) -> *mut RrosThread {
+        unsafe { self.0.locked_data().get() }
+    }
+
+    pub fn get_const_unlocked(&self) -> *const RrosThread {
+        unsafe { self.0.locked_data().get() as *const RrosThread }
+    }
+}
+
+impl Deref for RrosThreadWithLock {
+    type Target = SpinLock<RrosThread>;
+    fn deref(&self) -> &Self::Target {
+        return &self.0;
+    }
+}
+
+impl DerefMut for RrosThreadWithLock {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        return &mut self.0;
     }
 }
 
@@ -823,7 +863,7 @@ pub struct RrosThread {
     pub cprio: i32,
     pub wprio: i32,
 
-    // pub boosters: *mut List<Arc<SpinLock<RrosMutex>>>,
+    pub boosters: LinkedList<Arc<RrosMutexWithBoosters>>,
     pub wchan: *mut RrosWaitChannel,
     pub wait_next: Links<RrosThreadWithLock>,
     pub wwake: *mut RrosWaitChannel,
@@ -834,6 +874,8 @@ pub struct RrosThread {
     pub info: u32,
 
     // pub rq_next: Option<List<Arc<SpinLock<RrosThread>>>>,
+    // NOTE: `next` and `wait_next` may cause conflicts due to the `GetLinks` trait.
+    // pub next: Links<RrosThreadWithLock>,
     pub next: *mut Node<Arc<SpinLock<RrosThread>>>,
 
     pub rq_next: Option<NonNull<Node<Arc<SpinLock<RrosThread>>>>>,
@@ -846,9 +888,9 @@ pub struct RrosThread {
     pub inband_disable_count: Atomic,
     pub inband_work: IrqWork,
     pub stat: RrosStat,
-    pub u_window: Option<Rc<RefCell<RrosUserWindow>>>,
+    pub u_window: Option<Box<RrosUserWindow, RrosMemShared>>,
 
-    // pub trackers: *mut List<Arc<SpinLock<RrosMutex>>>,
+    pub trackers: LinkedList<Arc<RrosMutexWithTrackers>>,
     pub tracking_lock: HardSpinlock,
     pub element: Rc<RefCell<RrosElement>>,
     pub affinity: cpumask::CpumaskT,
@@ -873,7 +915,7 @@ impl RrosThread {
             bprio: 0,
             cprio: 0,
             wprio: 0,
-            // boosters: 0 as *mut List<Arc<SpinLock<RrosMutex>>>,
+            boosters: LinkedList::new(),
             wchan: core::ptr::null_mut(),
             wait_next: Links::new(),
             wwake: core::ptr::null_mut(),
@@ -897,7 +939,7 @@ impl RrosThread {
             inband_work: IrqWork::new(),
             stat: RrosStat::new(),
             u_window: None,
-            // trackers: 0 as *mut List<Arc<SpinLock<RrosMutex>>>,
+            trackers: LinkedList::new(),
             tracking_lock: HardSpinlock::new(),
             element: Rc::try_new(RefCell::new(RrosElement::new()?))?,
             affinity: cpumask::CpumaskT::from_int(0 as u64),
@@ -1030,6 +1072,8 @@ impl RrosPollNode {
         }
     }
 }
+
+#[repr(C)]
 pub struct RrosUserWindow {
     pub state: u32,
     pub info: u32,
@@ -1178,6 +1222,9 @@ fn init_rtimer(rq_ptr: *mut rros_rq) -> Result<usize> {
         let pinned_r = Pin::new_unchecked(&mut r);
         spinlock_init!(pinned_r, "rtimer");
         (*rq_ptr).root_thread.as_ref().unwrap().lock().rtimer = Some(Arc::try_new(r)?);
+        let mut root_thread = (*rq_ptr).root_thread.as_ref().unwrap().deref().lock();
+        let rtimer = root_thread.rtimer.as_mut().unwrap().clone();
+        rtimer.deref().lock().deref_mut().thread = (*rq_ptr).root_thread.clone();
     }
     Ok(0)
 }
@@ -1188,6 +1235,9 @@ fn init_ptimer(rq_ptr: *mut rros_rq) -> Result<usize> {
         let pinned_p = Pin::new_unchecked(&mut p);
         spinlock_init!(pinned_p, "ptimer");
         (*rq_ptr).root_thread.as_ref().unwrap().lock().ptimer = Some(Arc::try_new(p)?);
+        let mut root_thread = (*rq_ptr).root_thread.as_ref().unwrap().deref().lock();
+        let ptimer = root_thread.ptimer.as_mut().unwrap().clone();
+        ptimer.deref().lock().deref_mut().thread = (*rq_ptr).root_thread.clone();
     }
     Ok(0)
 }
@@ -1287,25 +1337,100 @@ fn init_rq_ptr_inband_timer(rq_ptr: *mut rros_rq) -> Result<usize> {
     Ok(0)
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct __rros_timespec {
+    pub tv_sec: __rros_time64_t,
+    pub tv_nsec: c_types::c_longlong,
+}
+
+unsafe impl ReadableFromBytes for __rros_timespec {}
+unsafe impl WritableToBytes for __rros_timespec {}
+
+impl __rros_timespec {
+    pub fn new() -> Self {
+        __rros_timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        }
+    }
+}
+pub type __rros_time64_t = c_types::c_longlong;
+
+#[repr(C)]
+pub union uapi_rros_sched_param {
+    pub rr: uapi_rros_rr_param,
+    pub quota: uapi_quota_param,
+    pub tp: uapi_tp_param,
+}
+
+impl Default for uapi_rros_sched_param {
+    fn default() -> Self {
+        Self {
+            tp: uapi_tp_param {
+                __sched_partition: 0,
+            },
+        }
+    }
+}
+
+pub enum uapi_rros_sched_param_ref<'a> {
+    RR(&'a mut uapi_rros_rr_param),
+    QUOTA(&'a mut uapi_quota_param),
+    TP(&'a mut uapi_tp_param),
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct uapi_rros_rr_param {
+    pub __sched_rr_quantum: __rros_timespec,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct uapi_quota_param {
+    pub __sched_group: i32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct uapi_tp_param {
+    pub __sched_partition: i32,
+}
+
 #[allow(dead_code)]
+#[repr(C)]
+#[derive(Default)]
 pub struct RrosSchedAttrs {
     pub sched_policy: i32,
     pub sched_priority: i32,
-    // union {
-    // 	struct __rros_rr_param rr;
-    // 	struct __rros_quota_param quota;
-    // 	struct __rros_tp_param tp;
-    // } sched_u;
-    pub tp_partition: i32,
+    pub sched_u: uapi_rros_sched_param, // pub tp_partition: i32,
 }
+
+unsafe impl ReadableFromBytes for RrosSchedAttrs {}
+unsafe impl WritableToBytes for RrosSchedAttrs {}
+
 impl RrosSchedAttrs {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        RrosSchedAttrs {
-            sched_policy: 0,
-            sched_priority: 0,
-            tp_partition: 0,
+    pub fn as_param_ref(&mut self) -> uapi_rros_sched_param_ref<'_> {
+        use uapi_rros_sched_param_ref::*;
+        unsafe {
+            match self.sched_policy {
+                SCHED_RR => RR(&mut self.sched_u.rr),
+                SCHED_QUOTA => QUOTA(&mut self.sched_u.quota),
+                SCHED_TP => TP(&mut self.sched_u.tp),
+                _ => core::hint::unreachable_unchecked(),
+            }
         }
+    }
+
+    pub fn copy_from_user(arg: *mut c_types::c_void) -> Result<Self> {
+        let mut reader = unsafe { UserSlicePtr::new(arg, size_of::<Self>()).reader() };
+        reader.read::<Self>()
+    }
+
+    pub fn copy_to_user(arg: *mut c_types::c_void, data: &Self) -> Result<()> {
+        let mut writer = unsafe { UserSlicePtr::new(arg, size_of::<Self>()).writer() };
+        writer.write::<Self>(data)
     }
 }
 
@@ -1387,7 +1512,6 @@ pub fn rros_init_sched() -> Result<usize> {
     }
 
     // for_each_online_cpu()
-    #[cfg(CONFIG_SMP)]
     for cpu in online_cpus() {
         unsafe {
             if RROS_SCHED_TOPMOS == 0 as *mut RrosSchedClass {
@@ -1405,6 +1529,8 @@ pub fn rros_init_sched() -> Result<usize> {
             }
         }
     }
+    // TODO: #[cfg(CONFIG_SMP)]
+
     // ret = bindings::__request_percpu_irq();
     pr_info!("sched init success!");
     Ok(0)
@@ -1718,7 +1844,7 @@ pub fn rros_set_effective_thread_priority(
 #[allow(dead_code)]
 pub fn rros_track_priority(
     thread: Arc<SpinLock<RrosThread>>,
-    p: Arc<SpinLock<RrosSchedParam>>,
+    p: Option<Arc<SpinLock<RrosSchedParam>>>,
 ) -> Result<usize> {
     unsafe {
         let func;
@@ -1733,7 +1859,7 @@ pub fn rros_track_priority(
                 return Err(kernel::Error::EINVAL);
             }
         };
-        func(Some(thread.clone()), Some(p.clone()));
+        func(Some(thread.clone()), p.clone());
 
         let sched_class = (*thread.locked_data().get()).sched_class.unwrap();
         let prio = (*thread.locked_data().get()).cprio;
@@ -1933,7 +2059,7 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
 
         let curr_state = { (*curr.locked_data().get()).state };
         if curr_state & T_USER != 0x0 {
-            //rros_commit_monitor_ceiling();
+            rros_commit_monitor_ceiling()
         }
 
         // There is no need for a spin lock here because there is only one CPU, so in theory there is no problem.
@@ -2516,7 +2642,7 @@ pub fn rros_switch_inband(cause: i32) {
         // TODO:
     }
 
-    //rros_sync_uwindow(curr); todo
+    rros_sync_uwindow(curr)
 }
 
 #[inline]

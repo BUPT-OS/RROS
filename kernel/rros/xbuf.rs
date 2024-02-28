@@ -922,7 +922,7 @@ fn xbuf_factory_build(
     uname: &'static CStr,
     u_attrs: Option<*mut u8>,
     clone_flags: i32,
-    _state_offp: &u32,
+    _state_offp: &mut u32,
 ) -> Rc<RefCell<RrosElement>> {
     let attrs = RrosXbufAttrs::from_ptr(u_attrs.unwrap() as *mut RrosXbufAttrs);
     if (clone_flags & !RROS_CLONE_PUBLIC) != 0 {

@@ -45,7 +45,7 @@ mod lock;
 mod memory;
 mod memory_test;
 mod monitor;
-// mod mutex;
+mod mutex;
 mod sched_test;
 mod syscall;
 mod thread_test;

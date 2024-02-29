@@ -3,7 +3,7 @@ use core::{
     result::Result::Ok,
 };
 
-use crate::{clock, control, file::RrosFileBinding, poll, proxy, thread, xbuf};
+use crate::{clock, control, file::RrosFileBinding, poll, proxy, thread, xbuf, observable};
 
 use alloc::rc::Rc;
 
@@ -39,6 +39,8 @@ pub enum RrosFactoryType {
     CLONE = 1,
     SINGLE = 2,
 }
+pub const RROS_OBSERVABLE_CLONE_FLAGS: i32 = 
+    RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
 pub const RROS_THREAD_CLONE_FLAGS: i32 =
     RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
 pub const RROS_CLONE_PUBLIC: i32 = 1 << 16;
@@ -374,6 +376,13 @@ fn rros_element_is_public(e: Rc<RefCell<RrosElement>>) -> bool {
     let e_borrow = e_clone.borrow();
 
     (e_borrow.clone_flags & RROS_CLONE_PUBLIC) == RROS_CLONE_PUBLIC
+}
+
+pub fn rros_element_is_observable(e: Rc<RefCell<RrosElement>>) -> bool {
+    let e_clone = e.clone();
+    let e_borrow = e_clone.borrow();
+
+    (e_borrow.clone_flags & RROS_CLONE_OBSERVABLE) == RROS_CLONE_OBSERVABLE
 }
 
 #[allow(dead_code)]
@@ -862,20 +871,20 @@ fn rros_create_factory(
                             .register::<proxy::ProxyOps>()?;
                     }
                     Ok("observable") => {
-                        unimplemented!();
-                        // pr_info!("[observable] in function: rros_create_factory");
-                        // let mut ele_chrdev_reg: Pin<
-                        //     Box<
-                        //         chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>,
-                        //     >,
-                        // > = chrdev::Registration::new_pinned(name, 0, this_module)?;
-                        // inside.register = Some(ele_chrdev_reg);
-                        // inside
-                        //     .register
-                        //     .as_mut()
-                        //     .unwrap()
-                        //     .as_mut()
-                        //     .register::<observable::ObservableOps>()?;
+                        // unimplemented!();
+                        pr_info!("[observable] in function: rros_create_factory");
+                        let ele_chrdev_reg: Pin<
+                            Box<
+                                chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>,
+                            >,
+                        > = chrdev::Registration::new_pinned(name, 0, this_module)?;
+                        inside.register = Some(ele_chrdev_reg);
+                        inside
+                            .register
+                            .as_mut()
+                            .unwrap()
+                            .as_mut()
+                            .register::<observable::ObservableOps>()?;
                     }
                     Ok(_) => {
                         pr_info!("not yet implemented");
@@ -1037,7 +1046,7 @@ pub fn rros_early_init_factories(
     this_module: &'static ThisModule,
 ) -> Result<Pin<Box<chrdev::Registration<NR_FACTORIES>>>> {
     // TODO: move the number of factories to a variable
-    let mut early_factories: [&mut SpinLock<RrosFactory>; 6] = unsafe {
+    let mut early_factories: [&mut SpinLock<RrosFactory>; 7] = unsafe {
         [
             &mut clock::RROS_CLOCK_FACTORY,
             &mut thread::RROS_THREAD_FACTORY,
@@ -1045,6 +1054,7 @@ pub fn rros_early_init_factories(
             &mut proxy::RROS_PROXY_FACTORY,
             &mut control::RROS_CONTROL_FACTORY,
             &mut poll::RROS_POLL_FACTORY,
+            &mut observable::RROS_OBSERVABLE_FACTORY,
         ]
     };
     // static struct rros_factory *early_factories[] = {
@@ -1328,6 +1338,19 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
                 &state_offset,
             )
         }
+    } else if fdname == "observable" {
+        pr_debug!("ioctl_clone_device: observable clone");
+        unsafe {
+            (*observable::RROS_OBSERVABLE_FACTORY.locked_data().get())
+                .build
+                .unwrap()(
+                &mut observable::RROS_OBSERVABLE_FACTORY,
+                cstr_u_name,
+                Some(u_attrs),
+                real_req.clone_flags.try_into().unwrap(),
+                &state_offset,
+            )
+        }
     } else {
         pr_debug!("maybe a thread");
         unsafe {
@@ -1362,6 +1385,9 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     } else if fdname == "proxy" {
         pr_debug!("ioctl_clone_device: proxy element create");
         create_element_device(e.clone(), unsafe { &mut proxy::RROS_PROXY_FACTORY })
+    } else if fdname == "observable" {
+        pr_debug!("ioctl_clone_device: observable element create");
+        create_element_device(e.clone(), unsafe { &mut observable::RROS_OBSERVABLE_FACTORY })
     } else {
         pr_debug!("maybe a thread");
         create_element_device(e.clone(), unsafe { &mut thread::RROS_THREAD_FACTORY })

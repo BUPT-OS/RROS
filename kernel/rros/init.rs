@@ -26,6 +26,7 @@ mod sched;
 use sched::rros_init_sched;
 mod rros;
 mod thread;
+mod observable;
 // mod weak;
 mod fifo;
 mod tick;

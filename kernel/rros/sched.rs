@@ -24,15 +24,15 @@ use kernel::{
     str::{kstrdup, CStr},
     sync::{HardSpinlock, Lock, SpinLock},
     types::Atomic,
-    waitqueue,
 };
 
 use crate::{
-    clock::{self, RrosClock},
+    clock::{self},
     factory::RrosElement,
     fifo, idle,
     list::ListHead,
     lock,
+    observable::RrosObservable,
     poll::RrosPollWatchpoint,
     sched, stat,
     thread::*,
@@ -40,7 +40,7 @@ use crate::{
     timeout::RROS_INFINITE,
     timer::*,
     tp,
-    wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO},
+    wait::RrosWaitChannel,
 };
 
 extern "C" {
@@ -698,7 +698,7 @@ impl RrosSchedTpWindow {
 }
 use crate::timer::RrosTimer as rros_timer;
 type KtimeT = i64;
-use crate::clock::{RrosClock as rros_clock, RROS_MONO_CLOCK};
+use crate::clock::RrosClock as rros_clock;
 
 #[allow(dead_code)]
 pub struct RrosTqueue {
@@ -1046,47 +1046,48 @@ impl RrosUserWindow {
     }
 }
 
-pub struct RrosObservable {
-    // pub element:rros_element,
-    pub observers: ListHead,
-    pub flush_list: ListHead,
-    pub oob_wait: RrosWaitQueue,
-    pub inband_wait: waitqueue::WaitQueueHead,
-    pub poll_head: RrosPollHead,
-    pub wake_irqwork: IrqWork,
-    pub flush_irqwork: IrqWork,
-    pub lock: HardSpinlock,
-    pub serial_counter: u32,
-    pub writable_observers: i32,
-}
-impl RrosObservable {
-    #[allow(dead_code)]
-    fn new() -> Self {
-        RrosObservable {
-            observers: ListHead {
-                next: 0 as *mut ListHead,
-                prev: 0 as *mut ListHead,
-            },
-            flush_list: ListHead {
-                next: 0 as *mut ListHead,
-                prev: 0 as *mut ListHead,
-            },
-            oob_wait: unsafe {
-                RrosWaitQueue::new(
-                    &mut RROS_MONO_CLOCK as *mut RrosClock,
-                    RROS_WAIT_PRIO as i32,
-                )
-            },
-            inband_wait: waitqueue::WaitQueueHead::new(),
-            poll_head: RrosPollHead::new(),
-            wake_irqwork: IrqWork::new(),
-            flush_irqwork: IrqWork::new(),
-            lock: HardSpinlock::new(),
-            serial_counter: 0,
-            writable_observers: 0,
-        }
-    }
-}
+// pub struct RrosObservable {
+//     pub element: Rc<RefCell<RrosElement>>,
+//     pub observers: ListHead,
+//     pub flush_list: ListHead,
+//     pub oob_wait: RrosWaitQueue,
+//     pub inband_wait: waitqueue::WaitQueueHead,
+//     pub poll_head: RrosPollHead,
+//     pub wake_irqwork: IrqWork,
+//     pub flush_irqwork: IrqWork,
+//     pub lock: HardSpinlock,
+//     pub serial_counter: u32,
+//     pub writable_observers: i32,
+// }
+// impl RrosObservable {
+//     #[allow(dead_code)]
+//     pub fn new() -> Self {
+//         RrosObservable {
+//             element: Rc::try_new(RefCell::new(RrosElement::new().unwrap())).unwrap(), // TODO: 未对RrosElement初始化进行处理
+//             observers: ListHead {
+//                 next: 0 as *mut ListHead,
+//                 prev: 0 as *mut ListHead,
+//             },
+//             flush_list: ListHead {
+//                 next: 0 as *mut ListHead,
+//                 prev: 0 as *mut ListHead,
+//             },
+//             oob_wait: unsafe {
+//                 RrosWaitQueue::new(
+//                     &mut RROS_MONO_CLOCK as *mut RrosClock,
+//                     RROS_WAIT_PRIO as i32,
+//                 )
+//             },
+//             inband_wait: waitqueue::WaitQueueHead::new(),
+//             poll_head: RrosPollHead::new(),
+//             wake_irqwork: IrqWork::new(),
+//             flush_irqwork: IrqWork::new(),
+//             lock: HardSpinlock::new(),
+//             serial_counter: 0,
+//             writable_observers: 0,
+//         }
+//     }
+// }
 
 pub struct RrosPollHead {
     pub watchpoints: ListHead,

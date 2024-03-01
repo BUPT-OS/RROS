@@ -1139,7 +1139,7 @@ void* rust_helper_kthread_run_on_cpu(int (*threadfn)(void *data), void *data, in
 }
 EXPORT_SYMBOL_GPL(rust_helper_kthread_run_on_cpu);
 
-int rust_helper_pa(unsigned long x) {
+unsigned long rust_helper_pa(unsigned long x) {
 	return __virt_to_phys(x);
 }
 EXPORT_SYMBOL_GPL(rust_helper_pa);

@@ -1,44 +1,40 @@
 use alloc::{rc::Rc, sync::Arc};
 
-use core::{
-    cell::RefCell, 
-    default::Default, 
-    mem::size_of,
-};
-use kernel::{
-    c_types::{self}, 
-    device, 
-    dovetail, 
-    file::File, 
-    file_operations::{FileOpener, FileOperations, IoctlCommand}, 
-    io_buffer::{IoBufferReader, IoBufferWriter},
-    irq_work::IrqWork, 
-    ktime::{self, KtimeT}, 
-    linked_list::{GetLinks, Links, List, Wrapper}, 
-    prelude::*, 
-    premmpt::running_inband, 
-    rbtree,
-    spinlock_init, 
-    str::CStr, 
-    sync::{HardSpinlock, Lock, SpinLock}, 
-    task, 
-    uidgid::{KgidT, KuidT}, 
-    waitqueue
-};
 use crate::{
-    clock::{rros_ktime_monotonic, RrosClock, RROS_MONO_CLOCK}, 
+    clock::{rros_ktime_monotonic, RrosClock, RROS_MONO_CLOCK},
     factory::{
-        self, rros_element_is_observable, CloneData, RrosElement, RrosFactory, RrosFactoryInside, RROS_CLONE_MASTER, RROS_CLONE_OBSERVABLE, RROS_OBSERVABLE_CLONE_FLAGS
-    }, 
-    file::RrosFileBinding, 
-    sched::{rros_schedule, RrosPollHead}, 
-    thread::{rros_init_user_element, CONFIG_RROS_NR_THREADS}, 
+        self, rros_element_is_observable, CloneData, RrosElement, RrosFactory, RrosFactoryInside,
+        RROS_CLONE_MASTER, RROS_CLONE_OBSERVABLE, RROS_OBSERVABLE_CLONE_FLAGS,
+    },
+    file::RrosFileBinding,
+    sched::{rros_schedule, RrosPollHead},
+    thread::{rros_init_user_element, CONFIG_RROS_NR_THREADS},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
+};
+use core::{cell::RefCell, default::Default, mem::size_of};
+use kernel::{
+    c_types::{self},
+    device, dovetail,
+    file::File,
+    file_operations::{FileOpener, FileOperations, IoctlCommand},
+    io_buffer::{IoBufferReader, IoBufferWriter},
+    irq_work::IrqWork,
+    ktime::{self, KtimeT},
+    linked_list::{GetLinks, Links, List, Wrapper},
+    prelude::*,
+    premmpt::running_inband,
+    rbtree, spinlock_init,
+    str::CStr,
+    sync::{HardSpinlock, Lock, SpinLock},
+    task,
+    uidgid::{KgidT, KuidT},
+    waitqueue,
 };
 
 pub const CONFIG_RROS_NR_OBSERVABLE: usize = 16;
 pub const RROS_OBSERVABLE_IOCBASE: char = 'o';
-pub const RROS_OBSIOC_SUBSCRIBE: u32 = kernel::ioctl::_IOW::<RrosSubscription>(RROS_OBSERVABLE_IOCBASE as u32, 0);
+pub const RROS_OBSIOC_SUBSCRIBE: u32 =
+    kernel::ioctl::_IOW::<RrosSubscription>(RROS_OBSERVABLE_IOCBASE as u32, 0);
 // pub const RROS_OBSIOC_UNSUBSCRIBE: u32 = kernel::ioctl::_IO(RROS_OBSERVABLE_IOCBASE as u32, 1);
 pub const RROS_NOTIFY_ONCHANGE: i32 = 1 << 0;
 pub const RROS_NOTIFY_MASK: i32 = RROS_NOTIFY_ONCHANGE;
@@ -58,9 +54,7 @@ pub union ObservableValue {
 
 impl ObservableValue {
     fn new() -> Self {
-        Self{
-            lval: 0,
-        }
+        Self { lval: 0 }
     }
 }
 
@@ -86,15 +80,16 @@ pub struct RrosSubscriber {
 
 impl RrosSubscriber {
     pub fn new() -> Self {
-        Self{
+        Self {
             subscriptions: unsafe { SpinLock::new(rbtree::RBTree::new()) },
         }
     }
 
     pub fn init(&mut self) {
         spinlock_init!(
-            unsafe { Pin::new_unchecked(&mut self.subscriptions) }, 
-            "RrosSubscriber");
+            unsafe { Pin::new_unchecked(&mut self.subscriptions) },
+            "RrosSubscriber"
+        );
     }
 }
 
@@ -105,7 +100,7 @@ pub struct RrosSubscription {
 
 impl RrosSubscription {
     fn new() -> Self {
-        Self{
+        Self {
             backlog_count: 0,
             flags: 0,
         }
@@ -169,7 +164,7 @@ pub struct RrosNotificationRecord {
 
 impl RrosNotificationRecord {
     pub fn new() -> Self {
-        Self{
+        Self {
             tag: 0,
             serial: 0,
             issuer: 0,
@@ -203,7 +198,7 @@ pub struct RrosObserver {
 
 impl RrosObserver {
     pub fn new() -> Self {
-        Self{
+        Self {
             backlog_size: 0,
             free_list: List::default(),
             pending_list: List::default(),
@@ -225,10 +220,14 @@ impl GetLinks for RrosObserver {
 }
 
 extern "C" {
-    fn rust_helper_raw_copy_from_user(dst:*mut u8,src:*const u8,size:usize) -> usize;
+    fn rust_helper_raw_copy_from_user(dst: *mut u8, src: *const u8, size: usize) -> usize;
 }
 
-fn add_subscription(observable: &mut RrosObservable, backlog_count: u32, op_flags: i32) -> Result<i32> {
+fn add_subscription(
+    observable: &mut RrosObservable,
+    backlog_count: u32,
+    op_flags: i32,
+) -> Result<i32> {
     let mut sbr = dovetail::dovetail_current_state().subscriber() as *mut RrosSubscriber;
     if backlog_count == 0 {
         return Err(kernel::Error::EINVAL);
@@ -242,7 +241,7 @@ fn add_subscription(observable: &mut RrosObservable, backlog_count: u32, op_flag
             Err(_) => return Err(kernel::Error::ENOMEM),
         }
 
-        let mut a= unsafe { Box::from_raw(sbr) };
+        let mut a = unsafe { Box::from_raw(sbr) };
         a.as_mut().init();
         sbr = Box::into_raw(a);
 
@@ -260,8 +259,8 @@ fn add_subscription(observable: &mut RrosObservable, backlog_count: u32, op_flag
         Err(_) => {
             // TODO:
             // evl_put_element(&observable->element);
-            return Err(kernel::Error::ENOMEM)
-        },
+            return Err(kernel::Error::ENOMEM);
+        }
     };
 
     // initialize
@@ -286,12 +285,12 @@ fn add_subscription(observable: &mut RrosObservable, backlog_count: u32, op_flag
     match ret {
         Ok(None) => {
             // everything is right
-        },
+        }
         Ok(Some(_)) => {
             // allocate a Node, but RBTree has a node with the same key
             // node will be free automatically
             return Err(kernel::Error::EEXIST);
-        },
+        }
         Err(info) => {
             // can't allocate a Node
             // observer will be free automatically
@@ -310,7 +309,9 @@ fn add_subscription(observable: &mut RrosObservable, backlog_count: u32, op_flag
             }
         };
         unsafe {
-            Arc::get_mut_unchecked(&mut observer).free_list.push_back(nf);
+            Arc::get_mut_unchecked(&mut observer)
+                .free_list
+                .push_back(nf);
         }
     }
 
@@ -350,10 +351,17 @@ fn wake_oob_threads(observable: &mut RrosObservable) {
 
     observable.oob_wait.lock.raw_spin_unlock_irqrestore(flags);
 
-    unsafe { rros_schedule(); }
+    unsafe {
+        rros_schedule();
+    }
 }
 
-fn notify_one_observer(oob_wait: &mut RrosWaitQueue, writable_observers: &mut i32, observer: &mut RrosObserver, tmpl_nfr: &mut RrosNotificationRecord) -> bool {
+fn notify_one_observer(
+    oob_wait: &mut RrosWaitQueue,
+    writable_observers: &mut i32,
+    observer: &mut RrosObserver,
+    tmpl_nfr: &mut RrosNotificationRecord,
+) -> bool {
     let last_notice;
     let mut nfr;
 
@@ -365,7 +373,9 @@ fn notify_one_observer(oob_wait: &mut RrosWaitQueue, writable_observers: &mut i3
 
         if observer.flags & RROS_NOTIFY_INITIAL != 0 {
             observer.flags &= !RROS_NOTIFY_INITIAL;
-        } else if last_notice.tag == tmpl_nfr.tag && unsafe { last_notice.event.lval == tmpl_nfr.event.lval } {
+        } else if last_notice.tag == tmpl_nfr.tag
+            && unsafe { last_notice.event.lval == tmpl_nfr.event.lval }
+        {
             oob_wait.lock.raw_spin_unlock_irqrestore(flags);
             return true;
         }
@@ -393,12 +403,20 @@ fn notify_one_observer(oob_wait: &mut RrosWaitQueue, writable_observers: &mut i3
     true
 }
 
-fn notify_single(_observable: &mut RrosObservable, _nfr: &mut RrosNotificationRecord, _len_r: &mut usize) -> bool {
+fn notify_single(
+    _observable: &mut RrosObservable,
+    _nfr: &mut RrosNotificationRecord,
+    _len_r: &mut usize,
+) -> bool {
     // TODO:
     unimplemented!();
 }
 
-fn notify_all(observable: &mut RrosObservable, nfr: &mut RrosNotificationRecord, len_r: &mut usize) -> bool {
+fn notify_all(
+    observable: &mut RrosObservable,
+    nfr: &mut RrosNotificationRecord,
+    len_r: &mut usize,
+) -> bool {
     let do_flush: bool;
     let mut cursor;
     let mut observer;
@@ -427,7 +445,12 @@ fn notify_all(observable: &mut RrosObservable, nfr: &mut RrosNotificationRecord,
 
         observable.lock.raw_spin_unlock_irqrestore(flags);
 
-        if notify_one_observer(&mut observable.oob_wait, &mut observable.writable_observers, observer, nfr) {
+        if notify_one_observer(
+            &mut observable.oob_wait,
+            &mut observable.writable_observers,
+            observer,
+            nfr,
+        ) {
             *len_r += size_of::<RrosNotice>();
         }
 
@@ -437,11 +460,15 @@ fn notify_all(observable: &mut RrosObservable, nfr: &mut RrosNotificationRecord,
             arc_observer = cursor.remove_current().unwrap();
 
             observable.oob_wait.lock.raw_spin_lock();
-            if Arc::get_mut(&mut arc_observer).unwrap().free_list.is_empty() {
+            if Arc::get_mut(&mut arc_observer)
+                .unwrap()
+                .free_list
+                .is_empty()
+            {
                 decrease_writability(&mut observable.writable_observers)
             }
             observable.oob_wait.lock.raw_spin_unlock();
-            
+
             observable.flush_list.push_front(arc_observer);
         }
 
@@ -504,11 +531,15 @@ fn wake_up_observers(observable: &mut RrosObservable) {
     wake_oob_threads(observable);
 }
 
-fn rros_write_observable<T: IoBufferReader>(observable: &mut RrosObservable, data: &mut T, count: usize) -> Result<usize> {
+fn rros_write_observable<T: IoBufferReader>(
+    observable: &mut RrosObservable,
+    data: &mut T,
+    count: usize,
+) -> Result<usize> {
     if !rros_element_is_observable(observable.element.clone()) {
         return Err(kernel::Error::EBADF);
     }
-    if count == 0{
+    if count == 0 {
         return Ok(0);
     }
     if count % size_of::<RrosNotice>() != 0 {
@@ -522,7 +553,10 @@ fn rros_write_observable<T: IoBufferReader>(observable: &mut RrosObservable, dat
     let now: KtimeT = rros_ktime_monotonic();
 
     while xlen < count {
-        if unsafe{ data.read_raw(&mut ntc as *mut _ as *mut u8, size_of::<RrosNotice>()).is_err() } {
+        if unsafe {
+            data.read_raw(&mut ntc as *mut _ as *mut u8, size_of::<RrosNotice>())
+                .is_err()
+        } {
             ret = Err(kernel::Error::EFAULT);
             break;
         }
@@ -538,7 +572,7 @@ fn rros_write_observable<T: IoBufferReader>(observable: &mut RrosObservable, dat
 
         xlen += size_of::<RrosNotice>();
     }
-    
+
     if len > 0 {
         wake_up_observers(observable);
     }
@@ -573,10 +607,10 @@ fn pull_from_oob(
     loop {
         // TODO: how to judge a observer is unsubscribed?
         // if (list_empty(&observer->next)) {
-		// 	/* Unsubscribed by observable_release(). */
-		// 	nfr = ERR_PTR(-EBADF);
-		// 	goto out;
-		// }
+        // 	/* Unsubscribed by observable_release(). */
+        // 	nfr = ERR_PTR(-EBADF);
+        // 	goto out;
+        // }
 
         if !observer.as_ref().pending_list.is_empty() {
             break;
@@ -591,7 +625,10 @@ fn pull_from_oob(
     // TODO: is safe?
     pr_debug!("observer.strong_count: {}", Arc::strong_count(observer));
     nfr = unsafe {
-        Arc::get_mut_unchecked(observer).pending_list.pop_front().unwrap()
+        Arc::get_mut_unchecked(observer)
+            .pending_list
+            .pop_front()
+            .unwrap()
     };
     pr_debug!("observer.strong_count: {}", Arc::strong_count(observer));
 
@@ -633,7 +670,10 @@ fn pull_notification<T: IoBufferWriter>(
     };
 
     let ret = unsafe {
-        data.write_raw(&nf as *const _ as *const u8, size_of::<__RrosNotification>())
+        data.write_raw(
+            &nf as *const _ as *const u8,
+            size_of::<__RrosNotification>(),
+        )
     };
 
     flags = observable.oob_wait.lock.raw_spin_lock_irqsave();
@@ -654,7 +694,9 @@ fn pull_notification<T: IoBufferWriter>(
         }
         Err(error) => {
             unsafe {
-                Arc::get_mut_unchecked(observer).pending_list.push_front(nfr);
+                Arc::get_mut_unchecked(observer)
+                    .pending_list
+                    .push_front(nfr);
             }
             Err(error)
         }
@@ -663,14 +705,19 @@ fn pull_notification<T: IoBufferWriter>(
     observable.oob_wait.lock.raw_spin_unlock_irqrestore(flags);
 
     // TODO:
-	// if (unlikely(sigpoll))
-	// 	evl_signal_poll_events(&observable->poll_head,
-	// 			POLLOUT|POLLWRNORM);
+    // if (unlikely(sigpoll))
+    // 	evl_signal_poll_events(&observable->poll_head,
+    // 			POLLOUT|POLLWRNORM);
 
     ret
 }
 
-pub fn rros_read_observable<T: IoBufferWriter>(observable: &mut RrosObservable, data: &mut T, count: usize, wait: bool) -> Result<usize> {
+pub fn rros_read_observable<T: IoBufferWriter>(
+    observable: &mut RrosObservable,
+    data: &mut T,
+    count: usize,
+    wait: bool,
+) -> Result<usize> {
     let sbr = dovetail::dovetail_current_state().subscriber() as *mut RrosSubscriber;
     if sbr == 0 as *mut _ {
         return Err(kernel::Error::ENXIO);
@@ -681,9 +728,7 @@ pub fn rros_read_observable<T: IoBufferWriter>(observable: &mut RrosObservable, 
 
     let target = observable.element.clone().borrow().fundle;
 
-    let observer = unsafe {
-        (*(*sbr).subscriptions.locked_data().get()).get_mut(&target)
-    };
+    let observer = unsafe { (*(*sbr).subscriptions.locked_data().get()).get_mut(&target) };
 
     if observer.is_none() {
         return Err(kernel::Error::ENXIO);
@@ -710,7 +755,7 @@ pub fn rros_read_observable<T: IoBufferWriter>(observable: &mut RrosObservable, 
     }
 
     if len == 0_usize {
-        return ret
+        return ret;
     }
     Ok(len)
 }
@@ -724,12 +769,18 @@ pub fn rros_ioctl_observable(observable: &mut RrosObservable, cmd: u32, arg: usi
         RROS_OBSIOC_SUBSCRIBE => {
             // arg is a pointer
             u_sub = arg as *mut RrosSubscription;
-            let copy_ret = unsafe{rust_helper_raw_copy_from_user(&mut sub as *const _ as *mut u8, u_sub as *const _, size_of::<RrosSubscription>())};
+            let copy_ret = unsafe {
+                rust_helper_raw_copy_from_user(
+                    &mut sub as *const _ as *mut u8,
+                    u_sub as *const _,
+                    size_of::<RrosSubscription>(),
+                )
+            };
             if copy_ret != 0 {
                 return Err(kernel::Error::EFAULT);
             }
             ret = add_subscription(observable, sub.backlog_count, sub.flags as i32);
-        },
+        }
         // RROS_OBSIOC_UNSUBSCRIBE => {
 
         // },
@@ -748,14 +799,22 @@ pub struct ObservableOps;
 impl FileOpener<u8> for ObservableOps {
     fn open(shared: &u8, _fileref: &File) -> Result<Self::Wrapper> {
         let mut data = CloneData::default();
-        unsafe{
+        unsafe {
             data.ptr = shared as *const u8 as *mut u8;
             let a = KuidT::from_inode_ptr(shared as *const u8);
             let b = KgidT::from_inode_ptr(shared as *const u8);
             // let a = KuidT((*(shared as *const u8 as *const bindings::inode)).i_uid);
             // let b = KgidT((*(shared as *const u8 as *const bindings::inode)).i_gid);
-            (*RROS_OBSERVABLE_FACTORY.locked_data().get()).inside.as_mut().unwrap().kuid = Some(a);
-            (*RROS_OBSERVABLE_FACTORY.locked_data().get()).inside.as_mut().unwrap().kgid = Some(b);
+            (*RROS_OBSERVABLE_FACTORY.locked_data().get())
+                .inside
+                .as_mut()
+                .unwrap()
+                .kuid = Some(a);
+            (*RROS_OBSERVABLE_FACTORY.locked_data().get())
+                .inside
+                .as_mut()
+                .unwrap()
+                .kgid = Some(b);
         }
         // bindings::stream_open();
         Ok(Box::try_new(data)?)
@@ -768,16 +827,13 @@ impl FileOperations for ObservableOps {
 
     type Wrapper = Box<CloneData>;
 
-    fn ioctl(
-        _this: &CloneData,
-        file: &File,
-        cmd: &mut IoctlCommand,
-    ) -> Result<i32> {
+    fn ioctl(_this: &CloneData, file: &File, cmd: &mut IoctlCommand) -> Result<i32> {
         // log for debug
         pr_info!("I'm the ioctl ops of the observable factory.");
-        let fbind: *const RrosFileBinding = unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
+        let fbind: *const RrosFileBinding =
+            unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
         let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
-        rros_ioctl_observable(unsafe{observable.as_mut().unwrap()}, cmd.cmd, cmd.arg)
+        rros_ioctl_observable(unsafe { observable.as_mut().unwrap() }, cmd.cmd, cmd.arg)
     }
 
     fn read<T: IoBufferWriter>(
@@ -787,88 +843,111 @@ impl FileOperations for ObservableOps {
         _offset: u64,
     ) -> Result<usize> {
         pr_info!("I'm the read ops of the observable factory.");
-        let fbind: *const RrosFileBinding = unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
+        let fbind: *const RrosFileBinding =
+            unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
         let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
         // `data` is initialized with a length,
         // this length is the length which the caller want to read.
-        rros_read_observable(unsafe{observable.as_mut().unwrap()}, data, data.len(), file.is_blocking())
+        rros_read_observable(
+            unsafe { observable.as_mut().unwrap() },
+            data,
+            data.len(),
+            file.is_blocking(),
+        )
     }
 
-    fn oob_read<T: IoBufferWriter>(
+    fn oob_read<T: IoBufferWriter>(_this: &CloneData, file: &File, data: &mut T) -> Result<usize> {
+        pr_info!("I'm the oob_read ops of the observable factory.");
+        let fbind: *const RrosFileBinding =
+            unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
+        let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
+        // `data` is initialized with a length,
+        // this length is the length which the caller want to read.
+        rros_read_observable(
+            unsafe { observable.as_mut().unwrap() },
+            data,
+            data.len(),
+            file.is_blocking(),
+        )
+    }
+
+    fn write<T: kernel::io_buffer::IoBufferReader>(
+        _this: &CloneData,
+        file: &File,
+        data: &mut T,
+        _offset: u64,
+    ) -> Result<usize> {
+        pr_info!("I'm the write ops of the observable factory.");
+        let fbind: *const RrosFileBinding =
+            unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
+        let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
+
+        rros_write_observable(unsafe { observable.as_mut().unwrap() }, data, data.len())
+    }
+
+    fn oob_write<T: kernel::io_buffer::IoBufferReader>(
         _this: &CloneData,
         file: &File,
         data: &mut T,
     ) -> Result<usize> {
-        pr_info!("I'm the oob_read ops of the observable factory.");
-        let fbind: *const RrosFileBinding = unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
-        let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
-        // `data` is initialized with a length, 
-        // this length is the length which the caller want to read.
-        rros_read_observable(unsafe{observable.as_mut().unwrap()}, data, data.len(), file.is_blocking())
-    }
-
-    fn write<T: kernel::io_buffer::IoBufferReader>(
-            _this: &CloneData,
-            file: &File,
-            data: &mut T,
-            _offset: u64,
-        ) -> Result<usize> {
-        pr_info!("I'm the write ops of the observable factory.");
-        let fbind: *const RrosFileBinding = unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
-        let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
-        
-        rros_write_observable(unsafe{observable.as_mut().unwrap()}, data, data.len())
-    }
-
-    fn oob_write<T: kernel::io_buffer::IoBufferReader>(
-            _this: &CloneData,
-            file: &File,
-            data: &mut T,
-        ) -> Result<usize> {
         pr_info!("I'm the oob_write ops of the observable factory.");
-        let fbind: *const RrosFileBinding = unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
+        let fbind: *const RrosFileBinding =
+            unsafe { (*(file.get_ptr())).private_data as *const RrosFileBinding };
         let observable = unsafe { (*(*fbind).element).pointer as *mut RrosObservable };
         // let observer_next = unsafe { &mut (*(*observable).observers.next).next as *mut _ as *mut RrosObserver };
         // test_pending_list(unsafe { (*(observer_next)).pending_list });
 
-        rros_write_observable(unsafe{observable.as_mut().unwrap()}, data, data.len())
+        rros_write_observable(unsafe { observable.as_mut().unwrap() }, data, data.len())
     }
 
-    fn release(
-        _this: Box<CloneData>,
-        _file: &File,
-    ) {
+    fn release(_this: Box<CloneData>, _file: &File) {
         pr_info!("I'm the release ops of the observable factory.");
     }
 }
 
-pub fn observable_factory_build(fac: &'static mut SpinLock<RrosFactory>, uname: &'static CStr, _u_attrs: Option<*mut u8>, clone_flags: i32, _state_offp: &u32) -> Rc<RefCell<RrosElement>>{
+pub fn observable_factory_build(
+    fac: &'static mut SpinLock<RrosFactory>,
+    uname: &'static CStr,
+    _u_attrs: Option<*mut u8>,
+    clone_flags: i32,
+    _state_offp: &u32,
+) -> Rc<RefCell<RrosElement>> {
     pr_info!("[observable] observable_factory_build: start");
     // in case failed
     if (clone_flags & !RROS_OBSERVABLE_CLONE_FLAGS) != 0 {
         pr_info!("[observable] this is a wrong value");
         // return Err(Error::EINVAL)
     }
-    
+
     let observable = RrosObservable::new();
     // alloc on the heap
     let boxed_observable = Box::try_new(observable).unwrap();
     let observable_ptr = Box::into_raw(boxed_observable);
     // init
-    let ret = rros_init_user_element(unsafe { (*observable_ptr).element.clone() }, fac, uname, clone_flags | RROS_CLONE_OBSERVABLE);
+    let ret = rros_init_user_element(
+        unsafe { (*observable_ptr).element.clone() },
+        fac,
+        uname,
+        clone_flags | RROS_CLONE_OBSERVABLE,
+    );
     if let Err(_e) = ret {
         pr_info!("[observable] observable_factory_build: init user element failed");
     }
-    
+
     unsafe {
         // rust_helper_INIT_LIST_HEAD(&mut (*observable_ptr).observers as *const _ as *mut _);
         // rust_helper_INIT_LIST_HEAD(&mut (*observable_ptr).flush_list as *const _ as *mut _);
-        (*observable_ptr).oob_wait.init(&mut RROS_MONO_CLOCK as *mut RrosClock, RROS_WAIT_PRIO as i32);
-        
+        (*observable_ptr).oob_wait.init(
+            &mut RROS_MONO_CLOCK as *mut RrosClock,
+            RROS_WAIT_PRIO as i32,
+        );
+
         let mut key = waitqueue::LockClassKey::default();
-        (*observable_ptr).inband_wait.init_waitqueue_head(uname.as_ptr() as *const i8, &mut key);
+        (*observable_ptr)
+            .inband_wait
+            .init_waitqueue_head(uname.as_ptr() as *const i8, &mut key);
         // TODO: init_irq_work(&observable->wake_irqwork, inband_wake_irqwork);
-	    // TODO: init_irq_work(&observable->flush_irqwork, inband_flush_irqwork);
+        // TODO: init_irq_work(&observable->flush_irqwork, inband_flush_irqwork);
         // TODO: evl_init_poll_head(&observable->poll_head);
         // TODO: evl_index_factory_element(&observable->element);
         (*observable_ptr).lock.init();

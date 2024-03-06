@@ -18,6 +18,9 @@ use kernel::{
 use core::str;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+#[allow(dead_code)]
+mod trace;
+
 mod control;
 mod idle;
 mod poll;

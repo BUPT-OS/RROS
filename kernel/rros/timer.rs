@@ -170,6 +170,10 @@ impl RrosTimer {
         self.base
     }
 
+    pub fn get_name(&self) -> &CStr {
+        self.name
+    }
+
     #[cfg(CONFIG_RROS_RUNSTATS)]
     pub fn get_scheduled<'a>(&mut self) -> &'a mut RrosAccount {
         self.scheduled

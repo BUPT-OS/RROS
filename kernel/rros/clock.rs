@@ -285,6 +285,10 @@ impl RrosClock {
     pub fn get_master(&self) -> *mut RrosClock {
         self.master
     }
+
+    pub fn get_name(&self) -> &'static CStr {
+        self.name
+    }
 }
 
 pub fn adjust_timer(

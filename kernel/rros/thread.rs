@@ -2000,7 +2000,7 @@ unsafe extern "C" fn sig_irqwork(_work: *mut IrqWork) {
 // }
 
 #[allow(dead_code)]
-fn rros_get_inband_pid(thread: *mut RrosThread) -> i32 {
+pub fn rros_get_inband_pid(thread: *const RrosThread) -> i32 {
     unsafe {
         if (*thread).state & (T_ROOT | T_DORMANT | T_ZOMBIE) != 0 {
             return 0;

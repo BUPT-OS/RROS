@@ -1,1 +1,2 @@
-﻿obj-y				+= init.o
+﻿obj-y				+= c_trace.o
+obj-y				+= init.o

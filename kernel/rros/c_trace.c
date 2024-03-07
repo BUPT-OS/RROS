@@ -1,5 +1,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/rros.h>
+#include <uapi/linux/uio.h>
 
 #define copy_on_stack(dst,src) \
 char dst[src.iov_len+1]; \

@@ -2,72 +2,78 @@
 // TODO: 更易用的API
 
 use kernel::bindings;
-use kernel::ktime;
 use kernel::c_types::c_void;
-
+use kernel::ktime;
 
 use crate::clock::RrosClock;
 use crate::timer::RrosTimer;
 use crate::wait::RrosWaitChannel;
-use crate::{sched::{rros_rq, RrosThread, RrosInitThreadAttr}, thread::rros_get_inband_pid};
+use crate::{
+    sched::{rros_rq, RrosInitThreadAttr, RrosThread},
+    thread::rros_get_inband_pid,
+};
 
-
-fn slice_to_iovec(array: &[u8]) -> bindings::iovec{
-    bindings::iovec{
+fn slice_to_iovec(array: &[u8]) -> bindings::iovec {
+    bindings::iovec {
         iov_base: array.as_ptr() as *const _ as *mut c_void,
-        iov_len: array.len() as u64
+        iov_len: array.len() as u64,
     }
 }
 
-
-pub fn trace_rros_schedule(rq:&rros_rq){
-    extern "C"{
-        fn rust_helper_trace_rros_schedule(flags:u64,local_flags:u64);
+pub fn trace_rros_schedule(rq: &rros_rq) {
+    extern "C" {
+        fn rust_helper_trace_rros_schedule(flags: u64, local_flags: u64);
     }
     let flags = rq.flags;
     let _local_flags = rq.flags;
-    unsafe{
-        rust_helper_trace_rros_schedule(flags,rq.flags);
+    unsafe {
+        rust_helper_trace_rros_schedule(flags, rq.flags);
     }
 }
-pub fn trace_rros_reschedule_ipi(rq:&rros_rq){
-    extern "C"{
-        fn rust_helper_trace_rros_reschedule_ipi(flags:u64,local_flags:u64);
+pub fn trace_rros_reschedule_ipi(rq: &rros_rq) {
+    extern "C" {
+        fn rust_helper_trace_rros_reschedule_ipi(flags: u64, local_flags: u64);
     }
     let flags = rq.flags;
     let local_flags = rq.flags;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_reschedule_ipi(flags, local_flags);
     }
 }
-pub fn trace_rros_pick_thread(next:&RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_pick_thread(name:bindings::iovec,next_pid:i32);
+pub fn trace_rros_pick_thread(next: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_pick_thread(name: bindings::iovec, next_pid: i32);
     }
-    let _thread_name = [0u8;32];
+    let _thread_name = [0u8; 32];
     let next_pid = rros_get_inband_pid(next as *const RrosThread);
-    unsafe{
+    unsafe {
         let array = next.name.as_bytes();
         let iov = slice_to_iovec(array);
-        rust_helper_trace_rros_pick_thread(iov,next_pid);
+        rust_helper_trace_rros_pick_thread(iov, next_pid);
     }
 }
 
 // TODO: prepare_rq_switch is not impl.
-pub fn trace_rros_switch_context(prev: &RrosThread, next: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_switch_context(prev_name:bindings::iovec,next_name:bindings::iovec,prev_pid:u32,prev_prio:i32,prev_state:u32,next_pid:u32,next_prio:i32);
+pub fn trace_rros_switch_context(prev: &RrosThread, next: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_switch_context(
+            prev_name: bindings::iovec,
+            next_name: bindings::iovec,
+            prev_pid: u32,
+            prev_prio: i32,
+            prev_state: u32,
+            next_pid: u32,
+            next_prio: i32,
+        );
     }
 
-    let _prev_thread_name = [0u8;32];
-    let _next_thread_name = [0u8;32];
-    
-    
+    let _prev_thread_name = [0u8; 32];
+    let _next_thread_name = [0u8; 32];
+
     let prev_array = prev.name.as_bytes();
     let next_array = next.name.as_bytes();
     let prev_iov = slice_to_iovec(prev_array);
     let next_iov = slice_to_iovec(next_array);
-    
 
     let prev_pid = rros_get_inband_pid(prev as *const RrosThread);
     let next_pid = rros_get_inband_pid(next as *const RrosThread);
@@ -77,27 +83,42 @@ pub fn trace_rros_switch_context(prev: &RrosThread, next: &RrosThread){
 
     let prev_state = prev.state;
 
-    unsafe{
-        rust_helper_trace_rros_switch_context(prev_iov,next_iov,prev_pid as u32,prev_prio,prev_state,next_pid as u32,next_prio);
+    unsafe {
+        rust_helper_trace_rros_switch_context(
+            prev_iov,
+            next_iov,
+            prev_pid as u32,
+            prev_prio,
+            prev_state,
+            next_pid as u32,
+            next_prio,
+        );
     }
 }
 
 // TODO: finish_rq_switch is not impl.
-pub fn trace_rros_switch_tail(curr: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_switch_tail(curr_name:bindings::iovec,curr_pid:u32);
+pub fn trace_rros_switch_tail(curr: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_switch_tail(curr_name: bindings::iovec, curr_pid: u32);
     }
     let curr_pid = rros_get_inband_pid(curr);
     let curr_array = curr.name.as_bytes();
     let curr_iov = slice_to_iovec(curr_array);
 
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_switch_tail(curr_iov, curr_pid as u32);
     }
 }
-pub fn trace_rros_init_thread(thread: &RrosThread, iattr: &RrosInitThreadAttr, status: i32){
-    extern "C"{
-        fn rust_helper_trace_rros_init_thread(thread:*mut c_void,thread_name:bindings::iovec,class_name:bindings::iovec,flags:u64,cprio:i32,status:i32);
+pub fn trace_rros_init_thread(thread: &RrosThread, iattr: &RrosInitThreadAttr, status: i32) {
+    extern "C" {
+        fn rust_helper_trace_rros_init_thread(
+            thread: *mut c_void,
+            thread_name: bindings::iovec,
+            class_name: bindings::iovec,
+            flags: u64,
+            cprio: i32,
+            status: i32,
+        );
     }
 
     let _thread_name = [0u8; 32];
@@ -107,19 +128,38 @@ pub fn trace_rros_init_thread(thread: &RrosThread, iattr: &RrosInitThreadAttr, s
     let class_name_array = iattr.sched_class.unwrap().name.as_bytes();
     let thread_iov = slice_to_iovec(thread_name_array);
     let class_iov = slice_to_iovec(class_name_array);
-    
 
     let flags = iattr.flags;
     let cprio = thread.cprio;
-    unsafe{
-        rust_helper_trace_rros_init_thread(thread as *const _ as *mut c_void,thread_iov,class_iov,flags as u64,cprio,status as i32);
+    unsafe {
+        rust_helper_trace_rros_init_thread(
+            thread as *const _ as *mut c_void,
+            thread_iov,
+            class_iov,
+            flags as u64,
+            cprio,
+            status as i32,
+        );
     }
 }
 // NOTE: RrosClock.name is private, so add `get_name()` for RrosClock.
 // TODO: rros_sleep_on_locked is not impl. We use the unsafe code `evl_delay`.
-pub fn trace_rros_sleep_on(thread: &RrosThread, timeout: ktime::KtimeT, timeout_mode: i32, wchan: *mut RrosWaitChannel, clock: &RrosClock){
-    extern "C"{
-        fn rust_helper_trace_rros_sleep_on(pid:u32,timeout:bindings::ktime_t,timeout_mode:i32,wchan:*mut c_void,clock_name:bindings::iovec,wchan_name:bindings::iovec);
+pub fn trace_rros_sleep_on(
+    thread: &RrosThread,
+    timeout: ktime::KtimeT,
+    timeout_mode: i32,
+    wchan: *mut RrosWaitChannel,
+    clock: &RrosClock,
+) {
+    extern "C" {
+        fn rust_helper_trace_rros_sleep_on(
+            pid: u32,
+            timeout: bindings::ktime_t,
+            timeout_mode: i32,
+            wchan: *mut c_void,
+            clock_name: bindings::iovec,
+            wchan_name: bindings::iovec,
+        );
     }
     let clock_name = clock.get_name();
     let clock_array = clock_name.as_bytes();
@@ -127,209 +167,234 @@ pub fn trace_rros_sleep_on(thread: &RrosThread, timeout: ktime::KtimeT, timeout_
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     // TODO: unknown fileds `wchan_name`
     let wchan_name = slice_to_iovec("unknown fileds".as_bytes());
-    unsafe{
-        rust_helper_trace_rros_sleep_on(pid as u32,timeout,timeout_mode,wchan as *mut _ as *mut  c_void,clock_iov,wchan_name);
+    unsafe {
+        rust_helper_trace_rros_sleep_on(
+            pid as u32,
+            timeout,
+            timeout_mode,
+            wchan as *mut _ as *mut c_void,
+            clock_iov,
+            wchan_name,
+        );
     }
 }
-pub fn trace_rros_wakeup_thread(thread: &RrosThread, mask: u32, _info: i32){
-    extern "C"{
-        fn rust_helper_trace_rros_wakeup_thread(thread_name:bindings::iovec,pid:u32,mask:i32,info:i32);
+pub fn trace_rros_wakeup_thread(thread: &RrosThread, mask: u32, _info: i32) {
+    extern "C" {
+        fn rust_helper_trace_rros_wakeup_thread(
+            thread_name: bindings::iovec,
+            pid: u32,
+            mask: i32,
+            info: i32,
+        );
     }
     let thread_array = thread.name.as_bytes();
     let thread_iov = slice_to_iovec(thread_array);
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let info = thread.info;
 
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_wakeup_thread(thread_iov, pid as u32, mask as i32, info as i32);
     }
 }
-pub fn trace_rros_hold_thread(thread: &RrosThread, mask: u32){
-    extern "C"{
-        fn rust_helper_trace_rros_hold_thread(thread_name:bindings::iovec,pid:u32,mask:u64);
+pub fn trace_rros_hold_thread(thread: &RrosThread, mask: u32) {
+    extern "C" {
+        fn rust_helper_trace_rros_hold_thread(thread_name: bindings::iovec, pid: u32, mask: u64);
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let thread_array = thread.name.as_bytes();
     let thread_iovec = slice_to_iovec(thread_array);
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_hold_thread(thread_iovec, pid as u32, mask as u64);
     }
 }
-pub fn trace_rros_release_thread(thread: &RrosThread, mask: u32, info: u32){
-    extern "C"{
-        fn rust_helper_trace_rros_release_thread(thread_name:bindings::iovec,pid:u32,mask:i32,info:i32);
+pub fn trace_rros_release_thread(thread: &RrosThread, mask: u32, info: u32) {
+    extern "C" {
+        fn rust_helper_trace_rros_release_thread(
+            thread_name: bindings::iovec,
+            pid: u32,
+            mask: i32,
+            info: i32,
+        );
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let thread_array = thread.name.as_bytes();
     let thread_iovec = slice_to_iovec(thread_array);
-    unsafe{
-        rust_helper_trace_rros_release_thread(thread_iovec,pid as u32, mask as i32, info as i32);
+    unsafe {
+        rust_helper_trace_rros_release_thread(thread_iovec, pid as u32, mask as i32, info as i32);
     }
 }
-pub fn trace_rros_thread_set_current_prio(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_set_current_prio(thread:*mut c_void,pid:u32,cprio:i32);
+pub fn trace_rros_thread_set_current_prio(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_set_current_prio(
+            thread: *mut c_void,
+            pid: u32,
+            cprio: i32,
+        );
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let cprio = thread.cprio;
-    unsafe{
-        rust_helper_trace_rros_thread_set_current_prio(thread as *const _ as *mut c_void, pid as u32, cprio);
+    unsafe {
+        rust_helper_trace_rros_thread_set_current_prio(
+            thread as *const _ as *mut c_void,
+            pid as u32,
+            cprio,
+        );
     }
 }
-pub fn trace_rros_thread_cancel(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_cancel(pid:u32,state:u32,info:u32);
+pub fn trace_rros_thread_cancel(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_cancel(pid: u32, state: u32, info: u32);
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_thread_cancel(pid as u32, state, info);
     }
 }
 //TODO: rros_join_thread is not impl.
-pub fn trace_rros_thread_join(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_join(pid:i32, state:u32, info:u32);
+pub fn trace_rros_thread_join(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_join(pid: i32, state: u32, info: u32);
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_thread_join(pid, state, info);
     }
 }
 //TODO: rros_unblock_thread is not impl.
-pub fn trace_rros_unblock_thread(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_unblock_thread(pid:i32, state:u32, info:u32);
+pub fn trace_rros_unblock_thread(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_unblock_thread(pid: i32, state: u32, info: u32);
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_unblock_thread(pid, state, info);
     }
 }
-pub fn trace_rros_thread_wait_period(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_wait_period(state:u32,info:u32);
+pub fn trace_rros_thread_wait_period(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_wait_period(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_thread_wait_period(state, info);
     }
 }
-pub fn trace_rros_thread_missed_period(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_missed_period(state:u32,info:u32);
+pub fn trace_rros_thread_missed_period(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_missed_period(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_thread_missed_period(state, info);
     }
 }
 // TODO: func rros_migrate_thread is not impl.
-pub fn trace_rros_thread_migrate(thread: &RrosThread, cpu: u32){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_migrate(thread:*mut c_void,pid:u32,cpu:u32);
+pub fn trace_rros_thread_migrate(thread: &RrosThread, cpu: u32) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_migrate(thread: *mut c_void, pid: u32, cpu: u32);
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
-    unsafe{
-        rust_helper_trace_rros_thread_migrate(thread as *const _ as *mut c_void,pid as u32,cpu);
+    unsafe {
+        rust_helper_trace_rros_thread_migrate(thread as *const _ as *mut c_void, pid as u32, cpu);
     }
 }
-pub fn trace_rros_watchdog_signal(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_watchdog_signal(state:u32,info:u32);
+pub fn trace_rros_watchdog_signal(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_watchdog_signal(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_watchdog_signal(state, info);
     }
 }
-pub fn trace_rros_switch_oob(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_switch_oob(state:u32,info:u32);
+pub fn trace_rros_switch_oob(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_switch_oob(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_switch_oob(state, info);
     }
 }
-pub fn trace_rros_switched_oob(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_switched_oob(state:u32,info:u32);
+pub fn trace_rros_switched_oob(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_switched_oob(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_switched_oob(state, info);
     }
 }
-pub fn trace_rros_switch_inband(cause: i32){
-    extern "C"{
-        fn rust_helper_trace_rros_switch_inband(cause:i32);
+pub fn trace_rros_switch_inband(cause: i32) {
+    extern "C" {
+        fn rust_helper_trace_rros_switch_inband(cause: i32);
     }
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_switch_inband(cause);
     }
 }
-pub fn trace_rros_switched_inband(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_switched_inband(state:u32,info:u32);
+pub fn trace_rros_switched_inband(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_switched_inband(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_switched_inband(state, info);
     }
 }
-pub fn trace_rros_kthread_entry(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_kthread_entry(state:u32,info:u32);
+pub fn trace_rros_kthread_entry(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_kthread_entry(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_kthread_entry(state, info);
     }
 }
-pub fn trace_rros_thread_map(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_map(thread:*mut c_void,pid:u32,prio:i32);
+pub fn trace_rros_thread_map(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_map(thread: *mut c_void, pid: u32, prio: i32);
     }
     let pid = rros_get_inband_pid(thread as *const RrosThread);
     let prio = thread.bprio;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_thread_map(thread as *const _ as *mut c_void, pid as u32, prio);
     }
 }
-pub fn trace_rros_thread_unmap(thread: &RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_thread_unmap(state:u32,info:u32);
+pub fn trace_rros_thread_unmap(thread: &RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_unmap(state: u32, info: u32);
     }
     let state = thread.state;
     let info = thread.info;
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_thread_unmap(state, info);
     }
 }
-pub fn trace_rros_inband_wakeup(thread: *const RrosThread){
-    extern "C"{
-        fn rust_helper_trace_rros_inband_wakeup(pid:u32,comm:bindings::iovec);
+pub fn trace_rros_inband_wakeup(thread: *const RrosThread) {
+    extern "C" {
+        fn rust_helper_trace_rros_inband_wakeup(pid: u32, comm: bindings::iovec);
     }
-    unsafe{
+    unsafe {
         let task = (*thread).altsched.0.task;
         let pid = (*task).pid;
         let comm_array = (*task).comm;
         let comm = bindings::iovec {
             iov_base: comm_array.as_ptr() as *const _ as *mut c_void,
-            iov_len: comm_array.len() as u64
+            iov_len: comm_array.len() as u64,
         };
         rust_helper_trace_rros_inband_wakeup(pid as u32, comm);
     }
@@ -344,33 +409,37 @@ pub fn trace_rros_inband_wakeup(thread: *const RrosThread){
 //     }
 // }
 // NOTE: `__rros_stop_timer` seems incorrect.
-pub fn trace_rros_timer_stop(timer: &RrosTimer){
-    extern "C"{
-        fn rust_helper_trace_rros_timer_stop(name:bindings::iovec);
+pub fn trace_rros_timer_stop(timer: &RrosTimer) {
+    extern "C" {
+        fn rust_helper_trace_rros_timer_stop(name: bindings::iovec);
     }
     let name_array = timer.get_name().as_bytes();
     let name_iov = slice_to_iovec(name_array);
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_timer_stop(name_iov);
     }
 }
-pub fn trace_rros_timer_expire(timer: &RrosTimer){
-    extern "C"{
-        fn rust_helper_trace_rros_timer_expire(name:bindings::iovec);
+pub fn trace_rros_timer_expire(timer: &RrosTimer) {
+    extern "C" {
+        fn rust_helper_trace_rros_timer_expire(name: bindings::iovec);
     }
     let name_array = timer.get_name().as_bytes();
     let name_iov = slice_to_iovec(name_array);
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_timer_expire(name_iov);
     }
 }
-pub fn trace_rros_timer_start(timer: &RrosTimer, value: ktime::KtimeT, interval: ktime::KtimeT){
-    extern "C"{
-        fn rust_helper_trace_rros_timer_start(timer_name:bindings::iovec,value:bindings::ktime_t,interval:bindings::ktime_t);
+pub fn trace_rros_timer_start(timer: &RrosTimer, value: ktime::KtimeT, interval: ktime::KtimeT) {
+    extern "C" {
+        fn rust_helper_trace_rros_timer_start(
+            timer_name: bindings::iovec,
+            value: bindings::ktime_t,
+            interval: bindings::ktime_t,
+        );
     }
     let name_array = timer.get_name().as_bytes();
     let name_iov = slice_to_iovec(name_array);
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_timer_start(name_iov, value, interval);
     }
 }
@@ -383,13 +452,13 @@ pub fn trace_rros_timer_start(timer: &RrosTimer, value: ktime::KtimeT, interval:
 //         rust_helper_trace_rros_timer_move(timer_name,clock_name,cpu);
 //     }
 // }
-pub fn trace_rros_timer_shot(timer: &RrosTimer, delta: i64, cycles: i64){
-    extern "C"{
-        fn rust_helper_trace_rros_timer_shot(timer_name:bindings::iovec,delta:i64,cycles:u64);
+pub fn trace_rros_timer_shot(timer: &RrosTimer, delta: i64, cycles: i64) {
+    extern "C" {
+        fn rust_helper_trace_rros_timer_shot(timer_name: bindings::iovec, delta: i64, cycles: u64);
     }
     let name_array = timer.get_name().as_bytes();
     let name_iov = slice_to_iovec(name_array);
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_timer_shot(name_iov, delta, cycles as u64);
     }
 }
@@ -433,35 +502,35 @@ pub fn trace_rros_timer_shot(timer: &RrosTimer, delta: i64, cycles: i64){
 //         rust_helper_trace_rros_finish_wait(name);
 //     }
 // }
-pub fn trace_rros_oob_sysentry(nr: u32){
-    extern "C"{
-        fn rust_helper_trace_rros_oob_sysentry(nr:u32);
+pub fn trace_rros_oob_sysentry(nr: u32) {
+    extern "C" {
+        fn rust_helper_trace_rros_oob_sysentry(nr: u32);
     }
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_oob_sysentry(nr);
     }
 }
-pub fn trace_rros_oob_sysexit(result: i64){
-    extern "C"{
-        fn rust_helper_trace_rros_oob_sysexit(result:i64);
+pub fn trace_rros_oob_sysexit(result: i64) {
+    extern "C" {
+        fn rust_helper_trace_rros_oob_sysexit(result: i64);
     }
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_oob_sysexit(result);
     }
 }
-pub fn trace_rros_inband_sysentry(nr: u32){
-    extern "C"{
-        fn rust_helper_trace_rros_inband_sysentry(nr:u32);
+pub fn trace_rros_inband_sysentry(nr: u32) {
+    extern "C" {
+        fn rust_helper_trace_rros_inband_sysentry(nr: u32);
     }
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_inband_sysentry(nr);
     }
 }
-pub fn trace_rros_inband_sysexit(result: i64){
-    extern "C"{
-        fn rust_helper_trace_rros_inband_sysexit(result:i64);
+pub fn trace_rros_inband_sysexit(result: i64) {
+    extern "C" {
+        fn rust_helper_trace_rros_inband_sysexit(result: i64);
     }
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_inband_sysexit(result);
     }
 }
@@ -527,12 +596,12 @@ pub fn trace_rros_inband_sysexit(result: i64){
 //         rust_helper_trace_rros_unregister_clock(name);
 //     }
 // }
-pub fn trace_rros_trace(msg: &[u8]){
-    extern "C"{
-        fn rust_helper_trace_rros_trace(msg:bindings::iovec);
+pub fn trace_rros_trace(msg: &[u8]) {
+    extern "C" {
+        fn rust_helper_trace_rros_trace(msg: bindings::iovec);
     }
     let msg_iov = slice_to_iovec(msg);
-    unsafe{
+    unsafe {
         rust_helper_trace_rros_trace(msg_iov);
     }
 }

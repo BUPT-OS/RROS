@@ -872,8 +872,6 @@ fn rros_create_factory(
                             .register::<proxy::ProxyOps>()?;
                     }
                     Ok("observable") => {
-                        // unimplemented!();
-                        pr_info!("[observable] in function: rros_create_factory");
                         let ele_chrdev_reg: Pin<
                             Box<chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>>,
                         > = chrdev::Registration::new_pinned(name, 0, this_module)?;

@@ -912,10 +912,10 @@ pub fn observable_factory_build(
     clone_flags: i32,
     _state_offp: &u32,
 ) -> Rc<RefCell<RrosElement>> {
-    pr_info!("[observable] observable_factory_build: start");
+    pr_debug!("[observable] observable_factory_build: start");
     // in case failed
     if (clone_flags & !RROS_OBSERVABLE_CLONE_FLAGS) != 0 {
-        pr_info!("[observable] this is a wrong value");
+        pr_warn!("[observable] this is a wrong value");
         // return Err(Error::EINVAL)
     }
 
@@ -931,7 +931,7 @@ pub fn observable_factory_build(
         clone_flags | RROS_CLONE_OBSERVABLE,
     );
     if let Err(_e) = ret {
-        pr_info!("[observable] observable_factory_build: init user element failed");
+        pr_warn!("[observable] observable_factory_build: init user element failed");
     }
 
     unsafe {
@@ -956,12 +956,12 @@ pub fn observable_factory_build(
     unsafe { ((*observable_ptr).element.borrow_mut()).pointer = observable_ptr as *mut u8 };
 
     // return
-    pr_info!("[observable] observable_factory_build: success");
+    pr_debug!("[observable] observable_factory_build: success");
     unsafe { (*observable_ptr).element.clone() }
 }
 
 pub fn observable_factory_dispose(_ele: RrosElement) {
-    pr_info!("[observable] observable_factory_dispose");
+    pr_debug!("[observable] observable_factory_dispose");
 }
 
 pub static mut RROS_OBSERVABLE_FACTORY: SpinLock<factory::RrosFactory> = unsafe {

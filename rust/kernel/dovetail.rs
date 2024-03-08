@@ -55,6 +55,19 @@ impl OobThreadState {
             (*(self.ptr)).thread = curr;
         }
     }
+
+    /// `subscriber`: A method that returns a pointer to a `c_void`. It dereferences the `OobThreadState`'s pointer and returns the `subscriber` field.
+    pub fn subscriber(&self) -> *mut c_void {
+        unsafe { (*(self.ptr)).subscriber }
+    }
+
+    /// `set_subscriber`: A method that set the `subscriber` field to the `sbr` parameter.
+    pub fn set_subscriber(&self, sbr: *mut c_void) {
+        // FIXME: need a SpinLock?
+        unsafe {
+            (*(self.ptr)).subscriber = sbr;
+        }
+    }
 }
 
 /// Constructs a new struct from current's state.

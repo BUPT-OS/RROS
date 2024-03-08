@@ -24,6 +24,7 @@ mod poll;
 mod queue;
 mod sched;
 use sched::rros_init_sched;
+mod observable;
 mod rros;
 mod thread;
 // mod weak;

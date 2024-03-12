@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
-// TODO: 更易用的API
+// TODO: more flexible to use `trace!` macro.
+
+use core::ops::Deref;
 
 use kernel::bindings;
 use kernel::c_types::c_void;
 use kernel::ktime;
+use kernel::str::CStr;
 
 use crate::clock::RrosClock;
 use crate::timer::RrosTimer;
@@ -17,6 +20,13 @@ fn slice_to_iovec(array: &[u8]) -> bindings::iovec {
     bindings::iovec {
         iov_base: array.as_ptr() as *const _ as *mut c_void,
         iov_len: array.len() as u64,
+    }
+}
+
+fn empty_iovec() -> bindings::iovec {
+    bindings::iovec {
+        iov_base: core::ptr::null_mut(),
+        iov_len: 0,
     }
 }
 
@@ -53,7 +63,6 @@ pub fn trace_rros_pick_thread(next: &RrosThread) {
     }
 }
 
-// TODO: prepare_rq_switch is not impl.
 pub fn trace_rros_switch_context(prev: &RrosThread, next: &RrosThread) {
     extern "C" {
         fn rust_helper_trace_rros_switch_context(
@@ -399,15 +408,33 @@ pub fn trace_rros_inband_wakeup(thread: *const RrosThread) {
         rust_helper_trace_rros_inband_wakeup(pid as u32, comm);
     }
 }
-// TODO: func do_inband_signal is not impl.
-// pub fn trace_rros_inband_signal(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_inband_signal(element_name:bindings::iovec,pid:u32,sig:i32,sigval:i32);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_inband_signal(element_name,pid,sig,sigval);
-//     }
-// }
+
+pub fn trace_rros_inband_signal(thread: &RrosThread, sig: i32, sigval: i32) {
+    extern "C" {
+        fn rust_helper_trace_rros_inband_signal(
+            element_name: bindings::iovec,
+            pid: u32,
+            sig: i32,
+            sigval: i32,
+        );
+    }
+    let element = thread.element.clone();
+    let devname = element.deref().borrow();
+    let devname = devname.deref().devname.as_ref();
+    let element_name_iovec;
+    if devname.is_none() {
+        element_name_iovec = empty_iovec();
+    } else {
+        let element_name_array =
+            unsafe { CStr::from_char_ptr(devname.unwrap().get_name()).as_bytes() };
+        element_name_iovec = slice_to_iovec(element_name_array);
+    }
+    let pid = rros_get_inband_pid(thread as *const RrosThread);
+    unsafe {
+        rust_helper_trace_rros_inband_signal(element_name_iovec, pid as u32, sig, sigval);
+    }
+}
+
 // NOTE: `__rros_stop_timer` seems incorrect.
 pub fn trace_rros_timer_stop(timer: &RrosTimer) {
     extern "C" {
@@ -419,6 +446,7 @@ pub fn trace_rros_timer_stop(timer: &RrosTimer) {
         rust_helper_trace_rros_timer_stop(name_iov);
     }
 }
+
 pub fn trace_rros_timer_expire(timer: &RrosTimer) {
     extern "C" {
         fn rust_helper_trace_rros_timer_expire(name: bindings::iovec);
@@ -443,15 +471,23 @@ pub fn trace_rros_timer_start(timer: &RrosTimer, value: ktime::KtimeT, interval:
         rust_helper_trace_rros_timer_start(name_iov, value, interval);
     }
 }
-// TODO: func rros_move_tiemr is not impl.
-// pub fn trace_rros_timer_move(timer: &RrosTimer, ){
-//     extern "C"{
-//         fn rust_helper_trace_rros_timer_move(timer_name:bindings::iovec,clock_name:bindings::iovec,cpu:u32);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_timer_move(timer_name,clock_name,cpu);
-//     }
-// }
+
+pub fn trace_rros_timer_move(timer: &RrosTimer, clock: &RrosClock, cpu: u32) {
+    extern "C" {
+        fn rust_helper_trace_rros_timer_move(
+            timer_name: bindings::iovec,
+            clock_name: bindings::iovec,
+            cpu: u32,
+        );
+    }
+    let timer_name_array = timer.get_name().as_bytes();
+    let timer_name_iov = slice_to_iovec(timer_name_array);
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_timer_move(timer_name_iov, clock_name_iov, cpu);
+    }
+}
 pub fn trace_rros_timer_shot(timer: &RrosTimer, delta: i64, cycles: i64) {
     extern "C" {
         fn rust_helper_trace_rros_timer_shot(timer_name: bindings::iovec, delta: i64, cycles: u64);
@@ -534,68 +570,108 @@ pub fn trace_rros_inband_sysexit(result: i64) {
         rust_helper_trace_rros_inband_sysexit(result);
     }
 }
-// TODO: func update_mode is not impl
-// pub fn trace_rros_thread_update_mode(thread: &RrosThread, mode: i32, set: bool){
-//     extern "C"{
-//         fn rust_helper_trace_rros_thread_update_mode(element_name:bindings::iovec,mode:i32,set:bool);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_thread_update_mode(element_name,mode,set);
-//     }
-// }
-// TODO: func get_clock_resoition is not impl.
-// pub fn trace_rros_clock_getres(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_clock_getres(clock_name:bindings::iovec,val:*const bindings::timespec64);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_clock_getres(clock_name,val);
-//     }
-// }
-// TODO: func get_clock_time is not impl.
-// pub fn trace_rros_clock_gettime(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_clock_gettime(clock_name:bindings::iovec,val:*const bindings::timespec64);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_clock_gettime(clock_name,val);
-//     }
-// }
-// TODO: func set_clock_time is not impl.
-// pub fn trace_rros_clock_settime(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_clock_settime(clock_name:bindings::iovec,val:*const bindings::timespec64);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_clock_settime(clock_name,val);
-//     }
-// }
-// pub fn trace_rros_clock_adjtime(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_clock_adjtime(clock_name:bindings::iovec,tx:TODO:struct __kernel_timex *);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_clock_adjtime(clock_name,tx);
-//     }
-// }
-// TODO: func rros_register_clock is not impl.
-// pub fn trace_rros_register_clock(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_register_clock(name:bindings::iovec);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_register_clock(name);
-//     }
-// }
-// TODO: func rros_unregister_clock is not impl.
-// pub fn trace_rros_unregister_clock(){
-//     extern "C"{
-//         fn rust_helper_trace_rros_unregister_clock(name:bindings::iovec);
-//     }
-//     unsafe{
-//         rust_helper_trace_rros_unregister_clock(name);
-//     }
-// }
+
+pub fn trace_rros_thread_update_mode(thread: &RrosThread, mode: i32, set: bool) {
+    extern "C" {
+        fn rust_helper_trace_rros_thread_update_mode(
+            element_name: bindings::iovec,
+            mode: i32,
+            set: bool,
+        );
+    }
+    let element = thread.element.clone();
+    let devname = element.deref().borrow();
+    let devname = devname.deref().devname.as_ref();
+    let element_name_iovec;
+    if devname.is_none() {
+        element_name_iovec = empty_iovec();
+    } else {
+        let element_name_array =
+            unsafe { CStr::from_char_ptr(devname.unwrap().get_name()).as_bytes() };
+        element_name_iovec = slice_to_iovec(element_name_array);
+    }
+    unsafe {
+        rust_helper_trace_rros_thread_update_mode(element_name_iovec, mode, set);
+    }
+}
+
+pub fn trace_rros_clock_getres(clock: &RrosClock, val: *const bindings::timespec64) {
+    extern "C" {
+        fn rust_helper_trace_rros_clock_getres(
+            clock_name: bindings::iovec,
+            val: *const bindings::timespec64,
+        );
+    }
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_clock_getres(clock_name_iov, val);
+    }
+}
+
+pub fn trace_rros_clock_gettime(clock: &RrosClock, val: *const bindings::timespec64) {
+    extern "C" {
+        fn rust_helper_trace_rros_clock_gettime(
+            clock_name: bindings::iovec,
+            val: *const bindings::timespec64,
+        );
+    }
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_clock_gettime(clock_name_iov, val);
+    }
+}
+
+pub fn trace_rros_clock_settime(clock: &RrosClock, val: *const bindings::timespec64) {
+    extern "C" {
+        fn rust_helper_trace_rros_clock_settime(
+            clock_name: bindings::iovec,
+            val: *const bindings::timespec64,
+        );
+    }
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_clock_settime(clock_name_iov, val);
+    }
+}
+pub fn trace_rros_clock_adjtime(clock: &RrosClock, tx: *mut bindings::__kernel_timex) {
+    extern "C" {
+        fn rust_helper_trace_rros_clock_adjtime(
+            clock_name: bindings::iovec,
+            tx: *mut bindings::__kernel_timex,
+        );
+    }
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_clock_adjtime(clock_name_iov, tx);
+    }
+}
+
+pub fn trace_rros_register_clock(clock: &RrosClock) {
+    extern "C" {
+        fn rust_helper_trace_rros_register_clock(name: bindings::iovec);
+    }
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_register_clock(clock_name_iov);
+    }
+}
+
+pub fn trace_rros_unregister_clock(clock: &RrosClock) {
+    extern "C" {
+        fn rust_helper_trace_rros_unregister_clock(name: bindings::iovec);
+    }
+    let clock_name_array = clock.get_name().as_bytes();
+    let clock_name_iov = slice_to_iovec(clock_name_array);
+    unsafe {
+        rust_helper_trace_rros_unregister_clock(clock_name_iov);
+    }
+}
+
 pub fn trace_rros_trace(msg: &[u8]) {
     extern "C" {
         fn rust_helper_trace_rros_trace(msg: bindings::iovec);

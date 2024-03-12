@@ -1,6 +1,5 @@
 use crate::{
     clock::{RrosClock, RROS_MONO_CLOCK},
-    monitor::{rust_helper_raw_spin_lock, rust_helper_raw_spin_unlock},
     sched::{rros_schedule, RrosThread, RrosThreadWithLock, RrosValue},
     thread::{
         rros_current, rros_notify_thread, rros_sleep_on, rros_wakeup_thread, KthreadRunner,
@@ -308,7 +307,7 @@ impl RrosWaitQueue {
 
 pub fn rros_reorder_wait(
     waiter: Arc<SpinLock<RrosThread>>,
-    originator: Arc<SpinLock<RrosThread>>,
+    _originator: Arc<SpinLock<RrosThread>>,
 ) -> Result<i32> {
     let wchan = unsafe { (*(waiter.deref().locked_data().get())).wchan };
     let wq = unsafe {
@@ -319,8 +318,8 @@ pub fn rros_reorder_wait(
     //assert_hard_lock(&originator->lock);
     wq.lock.raw_spin_lock();
 
-    if ((wq.flags & RROS_WAIT_PRIO as i32) != 0) {
-        let mut wait_list = &mut wq.wchan.wait_list;
+    if (wq.flags & RROS_WAIT_PRIO as i32) != 0 {
+        let wait_list = &mut wq.wchan.wait_list;
         unsafe {
             wait_list.remove(&RrosThreadWithLock::transmute_to_self(waiter.clone()));
         }
@@ -328,12 +327,12 @@ pub fn rros_reorder_wait(
         let mut last = wq.wchan.wait_list.cursor_back_mut();
         let mut stop_flag = false;
         while let Some(cur) = last.current() {
-            if prio <= unsafe { (*cur).get_wprio() } {
+            if prio <= (*cur).get_wprio() {
                 let cur = NonNull::new(cur as *const _ as *mut RrosThreadWithLock).unwrap();
                 unsafe {
-                    wq.wchan.wait_list.insert_after(cur, unsafe {
+                    wq.wchan.wait_list.insert_after(cur, 
                         RrosThreadWithLock::transmute_to_self(waiter.clone())
-                    })
+                    )
                 };
                 stop_flag = true;
                 break;
@@ -341,7 +340,7 @@ pub fn rros_reorder_wait(
             last.move_prev();
         }
         if !stop_flag {
-            let item = unsafe { RrosThreadWithLock::new_from_curr_thread() };
+            let _item = unsafe { RrosThreadWithLock::new_from_curr_thread() };
             wq.wchan
                 .wait_list
                 .push_front(unsafe { RrosThreadWithLock::transmute_to_self(waiter.clone()) });
@@ -353,8 +352,8 @@ pub fn rros_reorder_wait(
 }
 
 pub fn rros_follow_wait_depend(
-    wchan: *mut RrosWaitChannel,
-    originator: Arc<SpinLock<RrosThread>>,
+    _wchan: *mut RrosWaitChannel,
+    _originator: Arc<SpinLock<RrosThread>>,
 ) -> Result<i32> {
     Ok(0)
 }

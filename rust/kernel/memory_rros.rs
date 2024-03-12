@@ -77,24 +77,28 @@ pub fn __rros_sys_heap_alloc_zerod(size: usize, _align: usize) -> *mut u8 {
     unsafe { RROS_SYSTEM_HEAP.rros_alloc_chunk_zeroed(size).unwrap() }
 }
 
+/// `__rros_shared_heap_alloc`: This function allocates a chunk of memory used for the shared heap.
 #[no_mangle]
-pub fn __rros_shared_heap_alloc(size: usize, align: usize) -> *mut u8 {
+pub fn __rros_shared_heap_alloc(size: usize, _align: usize) -> *mut u8 {
     // pr_info!("__rros_sys_heap_alloc: begin");
     unsafe { RROS_SHARED_HEAP.rros_alloc_chunk(size).unwrap() }
 }
 
+
+/// `__rros_shared_heap_dealloc`: This function deallocates a chunk of memory used for the shared heap.
 #[no_mangle]
-pub fn __rros_shared_heap_dealloc(ptr: *mut u8, size: usize, align: usize) {
+pub fn __rros_shared_heap_dealloc(ptr: *mut u8, _size: usize, _align: usize) {
     unsafe {
         RROS_SHARED_HEAP.rros_free_chunk(ptr);
     }
 }
 
+/// `__rros_shared_heap_realloc`: This function reallocates a chunk of memory used for the shared heap.
 #[no_mangle]
 pub fn __rros_shared_heap_realloc(
     ptr: *mut u8,
     old_size: usize,
-    align: usize,
+    _align: usize,
     new_size: usize,
 ) -> *mut u8 {
     unsafe {
@@ -104,8 +108,9 @@ pub fn __rros_shared_heap_realloc(
     }
 }
 
+/// `__rros_shared_heap_alloc_zerod`: This function allocates a zero-initialized chunk of memory used for the shared heap.
 #[no_mangle]
-pub fn __rros_shared_heap_alloc_zerod(size: usize, align: usize) -> *mut u8 {
+pub fn __rros_shared_heap_alloc_zerod(size: usize, _align: usize) -> *mut u8 {
     unsafe { RROS_SHARED_HEAP.rros_alloc_chunk_zeroed(size).unwrap() }
 }
 
@@ -562,10 +567,12 @@ impl RrosHeap {
         }
     }
 
+    /// Method `rros_get_heap_base` returns the raw pointer of `self.membase`
     fn rros_get_heap_base(&self) -> *const c_types::c_void {
         self.membase as *mut c_types::c_void
     }
 
+    /// Method `rros_shared_offset` calculates the offset of `p` from `self.membase`
     pub fn rros_shared_offset(&self, p: *mut c_types::c_void) -> isize {
         unsafe { p.offset_from(self.rros_get_heap_base()) }
     }

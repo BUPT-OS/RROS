@@ -6,9 +6,7 @@
 
 #[cfg(not(test))]
 use core::intrinsics;
-use core::intrinsics::{min_align_of_val, size_of_val};
 
-use core::ptr::Unique;
 #[cfg(not(test))]
 use core::ptr::{self, NonNull};
 
@@ -30,6 +28,8 @@ extern "Rust" {
     #[rustc_allocator_nounwind]
     fn __rros_shared_heap_alloc_zerod(size: usize, align: usize) -> *mut u8;
 }
+
+/// The `RrosMemShared` struct is a memory allocator that interfaces with the RROS shared heap memory management used for user space.
 #[unstable(feature = "allocator_api", issue = "32838")]
 #[derive(Copy, Clone, Default, Debug)]
 #[cfg(not(test))]
@@ -37,24 +37,28 @@ pub struct RrosMemShared;
 
 #[stable(feature = "rros_alloc_shared", since = "1.28.0")]
 #[inline]
+/// The `rros_alloc` function is an unsafe function that allocates a block of memory on the heap of the given layout. It returns a raw pointer to the start of the allocated block.
 pub unsafe fn rros_alloc(layout: Layout) -> *mut u8 {
     unsafe { __rros_shared_heap_alloc(layout.size(), layout.align()) }
 }
 
 #[stable(feature = "rros_alloc_shared", since = "1.28.0")]
 #[inline]
+/// The `rros_dealloc` function is an unsafe function that deallocates a block of memory on the heap. The block must have been previously allocated by `rros_alloc` and not yet deallocated.
 pub unsafe fn rros_dealloc(ptr: *mut u8, layout: Layout) {
     unsafe { __rros_shared_heap_dealloc(ptr, layout.size(), layout.align()) }
 }
 
 #[stable(feature = "rros_alloc_shared", since = "1.28.0")]
 #[inline]
+/// The `rros_realloc` function is an unsafe function that changes the size of the memory block pointed to by `ptr` to `new_size`. It may move the memory block to a new location, in which case the new location is returned.
 pub unsafe fn rros_realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
     unsafe { __rros_shared_heap_realloc(ptr, layout.size(), layout.align(), new_size) }
 }
 
 #[stable(feature = "rros_alloc_shared", since = "1.28.0")]
 #[inline]
+/// The `rros_alloc_zeroed` function is an unsafe function that allocates a block of memory on the heap of the given layout and then fills it with zeroes. It returns a raw pointer to the start of the allocated block.
 pub unsafe fn rros_alloc_zeroed(layout: Layout) -> *mut u8 {
     unsafe { __rros_shared_heap_alloc_zerod(layout.size(), layout.align()) }
 }

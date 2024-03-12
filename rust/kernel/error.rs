@@ -64,7 +64,7 @@ impl Error {
     /// Bad file number.
     pub const EBADF: Self = Error(-(bindings::EBADF as i32));
 
-    // Bad file descriptor
+    /// Bad file descriptor
     pub const EBADFD: Self = Error(-(bindings::EBADFD as i32));
 
     /// Resource deadlock would occur

@@ -26,6 +26,10 @@ pub fn running_inband() -> Result<usize> {
     Err(Error::EINVAL)
 }
 
+/// Function `running_oob` checks if the current task is running out-of-band.
+/// It calls `rust_helper_running_inband` to perform the check.
+/// If the current task is running in-band, it returns an error.
+/// If the current task is not running in-band, it returns 0.
 pub fn running_oob() -> Result<usize> {
     let res = unsafe { rust_helper_running_inband() };
     if res == 0 {

@@ -25,7 +25,7 @@ use kernel::{
     io_buffer::IoBufferWriter,
     irq_work, kernelh,
     prelude::*,
-    rbtree, spinlock_init,
+    spinlock_init,
     str::CStr,
     sync::{Lock, SpinLock},
     sysfs, types, uidgid,
@@ -1216,6 +1216,7 @@ impl Default for RrosElementIds {
 }
 
 impl RrosElementIds {
+    #[allow(dead_code)]
     pub fn get_minor(&self) -> c_types::c_uint {
         self.minor
     }
@@ -1224,6 +1225,7 @@ impl RrosElementIds {
         Ok(0)
     }
 
+    #[allow(dead_code)]
     pub fn get_fundle(&self) -> FundleT {
         self.fundle
     }
@@ -1233,10 +1235,12 @@ impl RrosElementIds {
         Ok(0)
     }
 
+    #[allow(dead_code)]
     pub fn get_state_offset(&self) -> c_types::c_uint {
         self.state_offset
     }
 
+    #[allow(dead_code)]
     pub fn set_state_offset(&mut self, state_offset: u32) -> Result<i32> {
         self.state_offset = state_offset as c_types::c_uint;
         Ok(0)
@@ -1271,16 +1275,16 @@ pub fn __rros_get_element_by_fundle(map: &mut RrosIndex, fundle: FundleT) -> *mu
     let flags = map.lock.irq_lock_noguard();
     let mut rb = map.root.rb_node;
 
-    while (rb as usize != 0) {
+    while rb as usize != 0 {
         let mut e = container_of!(rb, RrosElement, index_node) as *mut RrosElement;
         unsafe {
-            if (fundle < (*e).fundle) {
+            if fundle < (*e).fundle {
                 rb = (*rb).rb_left;
-            } else if (fundle > (*e).fundle) {
+            } else if fundle > (*e).fundle {
                 rb = (*rb).rb_right;
             } else {
-                (*e).ref_lock.lock();
-                if ((*e).zombie) {
+                (*e).ref_lock.lock_noguard();
+                if (*e).zombie {
                     e = core::ptr::null::<RrosElement>() as *mut RrosElement;
                 } else {
                     (*e).refs = (*e).refs + 1;
@@ -1314,9 +1318,9 @@ fn index_element_at(map: &mut RrosIndex, e: &mut RrosElement, fundle: FundleT) -
         let tmp = container_of!(*rbp, RrosElement, index_node) as *mut RrosElement;
         parent = *rbp;
         unsafe {
-            if (fundle < (*tmp).fundle) {
+            if fundle < (*tmp).fundle {
                 rbp = &mut (*(*rbp)).rb_left;
-            } else if (fundle > (*tmp).fundle) {
+            } else if fundle > (*tmp).fundle {
                 rbp = &mut (*(*rbp)).rb_right;
             } else {
                 return -(bindings::EEXIST as i32);
@@ -1340,8 +1344,8 @@ fn index_element_at(map: &mut RrosIndex, e: &mut RrosElement, fundle: FundleT) -
 
 pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
     let mut e_refmut = e.deref().borrow_mut();
-    let mut e_ref = e_refmut.deref_mut();
-    // TODO: sometimes panic here, maybe casued by the const `NR_FACTORIES`
+    let e_ref = e_refmut.deref_mut();
+    // TODO: sometimes panic here, casued by the const `NR_FACTORIES`
     let map = unsafe {
         (*(e_ref.factory.locked_data().get()))
             .inside
@@ -1352,36 +1356,37 @@ pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
             .unwrap()
     };
 
-    let mut fundle: FundleT = 0;
+    let mut fundle: FundleT;
     let mut guard: FundleT = 0;
-    let mut ret = 0;
+    let mut ret;
     loop {
         guard = guard + 1;
-        if (rros_get_index(guard) == 0) {
+        if rros_get_index(guard) == 0 {
             let mut fundle = e.deref().borrow_mut();
-            let mut fundle = &mut fundle.deref_mut().fundle;
+            let fundle = &mut fundle.deref_mut().fundle;
             *fundle = RROS_NO_HANDLE;
             return;
         }
         let flags = map.lock.irq_lock_noguard();
         map.generator = map.generator + 1;
         fundle = rros_get_index(map.generator);
-        if (fundle == 0) {
+        if fundle == 0 {
             map.generator = 1;
             fundle = 1;
         }
 
         ret = index_element_at(map, e_ref, fundle);
         map.lock.irq_unlock_noguard(flags);
-        if (ret == 0) {
+        if ret == 0 {
             break;
         }
     }
 }
 
+#[allow(dead_code)]
 fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     let mut e_refmut = e.deref().borrow_mut();
-    let mut e_ref = e_refmut.deref_mut();
+    let e_ref = e_refmut.deref_mut();
     let map = unsafe {
         (*(e_ref.factory.locked_data().get()))
             .inside

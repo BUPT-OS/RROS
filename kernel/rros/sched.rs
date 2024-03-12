@@ -70,6 +70,7 @@ pub const SCHED_IDLE: i32 = 5;
 pub const SCHED_FIFO: i32 = 1;
 #[allow(dead_code)]
 pub const SCHED_RR: i32 = 2;
+pub const SCHED_QUOTA: i32 = 44;
 pub const SCHED_TP: i32 = 45;
 pub const RROS_CLASS_WEIGHT_FACTOR: i32 = 1024;
 pub const RROS_MM_PTSYNC_BIT: i32 = 0;
@@ -78,6 +79,7 @@ static mut RROS_SCHED_TOPMOS: *mut RrosSchedClass = 0 as *mut RrosSchedClass;
 static mut RROS_SCHED_LOWER: *mut RrosSchedClass = 0 as *mut RrosSchedClass;
 
 // static mut rros_thread_list: List<Arc<SpinLock<RrosThread>>> = ;
+#[allow(dead_code)]
 static mut RROS_THREAD_LIST: LinkedList<Arc<RrosThreadWithLock>> = LinkedList::new();
 // pub static mut RROS_SCHED_TOPMOS:*mut RrosSchedClass = 0 as *mut RrosSchedClass;
 // pub static mut RROS_SCHED_LOWER:*mut RrosSchedClass = 0 as *mut RrosSchedClass;
@@ -824,11 +826,12 @@ impl RrosThreadWithLock {
     }
 
     pub fn get_ptr_unlocked(&mut self) -> *mut RrosThread {
-        unsafe { self.0.locked_data().get() }
+        self.0.locked_data().get()
     }
 
+    #[allow(dead_code)]
     pub fn get_const_unlocked(&self) -> *const RrosThread {
-        unsafe { self.0.locked_data().get() as *const RrosThread }
+        self.0.locked_data().get() as *const RrosThread
     }
 }
 
@@ -1339,62 +1342,66 @@ fn init_rq_ptr_inband_timer(rq_ptr: *mut rros_rq) -> Result<usize> {
 
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
-pub struct __rros_timespec {
-    pub tv_sec: __rros_time64_t,
+pub struct RrosTimeSpec {
+    pub tv_sec: RrosTime64T,
     pub tv_nsec: c_types::c_longlong,
 }
 
-unsafe impl ReadableFromBytes for __rros_timespec {}
-unsafe impl WritableToBytes for __rros_timespec {}
+unsafe impl ReadableFromBytes for RrosTimeSpec {}
+unsafe impl WritableToBytes for RrosTimeSpec {}
 
-impl __rros_timespec {
+impl RrosTimeSpec {
+    #[allow(dead_code)]
     pub fn new() -> Self {
-        __rros_timespec {
+        RrosTimeSpec {
             tv_sec: 0,
             tv_nsec: 0,
         }
     }
 }
-pub type __rros_time64_t = c_types::c_longlong;
+
+pub type RrosTime64T = c_types::c_longlong;
 
 #[repr(C)]
-pub union uapi_rros_sched_param {
-    pub rr: uapi_rros_rr_param,
-    pub quota: uapi_quota_param,
-    pub tp: uapi_tp_param,
+pub union UAPIRrosSchedParam {
+    pub rr: UAPIRrosRRParam,
+    pub quota: UAPIQuotaParam,
+    pub tp: UAPITPParam,
 }
 
-impl Default for uapi_rros_sched_param {
+
+impl Default for UAPIRrosSchedParam {
     fn default() -> Self {
         Self {
-            tp: uapi_tp_param {
+            tp: UAPITPParam {
                 __sched_partition: 0,
             },
         }
     }
 }
 
-pub enum uapi_rros_sched_param_ref<'a> {
-    RR(&'a mut uapi_rros_rr_param),
-    QUOTA(&'a mut uapi_quota_param),
-    TP(&'a mut uapi_tp_param),
+pub enum UAPIRrosSchedParamRef<'a> {
+    RR(&'a mut UAPIRrosRRParam),
+    QUOTA(&'a mut UAPIQuotaParam),
+    TP(&'a mut UAPITPParam),
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
-pub struct uapi_rros_rr_param {
-    pub __sched_rr_quantum: __rros_timespec,
+pub struct UAPIRrosRRParam {
+    pub __sched_rr_quantum: RrosTimeSpec,
 }
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
-pub struct uapi_quota_param {
+pub struct UAPIQuotaParam {
     pub __sched_group: i32,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
-pub struct uapi_tp_param {
+pub struct UAPITPParam {
     pub __sched_partition: i32,
 }
 
@@ -1404,15 +1411,15 @@ pub struct uapi_tp_param {
 pub struct RrosSchedAttrs {
     pub sched_policy: i32,
     pub sched_priority: i32,
-    pub sched_u: uapi_rros_sched_param, // pub tp_partition: i32,
+    pub sched_u: UAPIRrosSchedParam, // pub tp_partition: i32,
 }
 
 unsafe impl ReadableFromBytes for RrosSchedAttrs {}
 unsafe impl WritableToBytes for RrosSchedAttrs {}
 
 impl RrosSchedAttrs {
-    pub fn as_param_ref(&mut self) -> uapi_rros_sched_param_ref<'_> {
-        use uapi_rros_sched_param_ref::*;
+    pub fn as_param_ref(&mut self) -> UAPIRrosSchedParamRef<'_> {
+        use UAPIRrosSchedParamRef::*;
         unsafe {
             match self.sched_policy {
                 SCHED_RR => RR(&mut self.sched_u.rr),

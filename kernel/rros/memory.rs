@@ -97,6 +97,7 @@ struct RrosUserWindow {
 }
 
 impl RrosUserWindow {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
             state: 0,

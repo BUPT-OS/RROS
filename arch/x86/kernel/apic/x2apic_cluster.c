@@ -45,7 +45,7 @@ __x2apic_send_IPI_mask(const struct cpumask *mask, int vector, int apic_dest)
 
 	/* x2apic MSRs are special and need a special fence: */
 	weak_wrmsr_fence();
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	tmpmsk = this_cpu_cpumask_var_ptr(ipi_mask);
 	cpumask_copy(tmpmsk, mask);
@@ -69,7 +69,7 @@ __x2apic_send_IPI_mask(const struct cpumask *mask, int vector, int apic_dest)
 		cpumask_andnot(tmpmsk, tmpmsk, cmsk);
 	}
 
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static void x2apic_send_IPI_mask(const struct cpumask *mask, int vector)

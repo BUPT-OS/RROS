@@ -1990,24 +1990,11 @@ static void imx_uart_console_putchar(struct uart_port *port, unsigned char ch)
 	imx_uart_writel(sport, ch, URTX0);
 }
 
-/*
- * Interrupts are disabled on entering
- */
 static void
-imx_uart_console_write(struct console *co, const char *s, unsigned int count)
+__imx_uart_console_write(struct imx_port *sport, const char *s, unsigned int count)
 {
-	struct imx_port *sport = imx_uart_ports[co->index];
 	struct imx_port_ucrs old_ucr;
-	unsigned long flags;
 	unsigned int ucr1;
-	int locked = 1;
-
-	if (sport->port.sysrq)
-		locked = 0;
-	else if (oops_in_progress)
-		locked = spin_trylock_irqsave(&sport->port.lock, flags);
-	else
-		spin_lock_irqsave(&sport->port.lock, flags);
 
 	/*
 	 *	First, save UCR1/2/3 and then disable interrupts
@@ -2033,10 +2020,40 @@ imx_uart_console_write(struct console *co, const char *s, unsigned int count)
 	while (!(imx_uart_readl(sport, USR2) & USR2_TXDC));
 
 	imx_uart_ucrs_restore(sport, &old_ucr);
+}
+
+/*
+ * Interrupts are disabled on entering
+ */
+static void
+imx_uart_console_write(struct console *co, const char *s, unsigned int count)
+{
+	struct imx_port *sport = imx_uart_ports[co->index];
+	unsigned long flags;
+	int locked = 1;
+
+	if (sport->port.sysrq)
+		locked = 0;
+	else if (oops_in_progress)
+		locked = spin_trylock_irqsave(&sport->port.lock, flags);
+	else
+		spin_lock_irqsave(&sport->port.lock, flags);
+
+	__imx_uart_console_write(sport, s, count);
 
 	if (locked)
 		spin_unlock_irqrestore(&sport->port.lock, flags);
 }
+
+#ifdef CONFIG_RAW_PRINTK
+static void
+imx_uart_console_write_raw(struct console *co, const char *s, unsigned int count)
+{
+	struct imx_port *sport = imx_uart_ports[co->index];
+
+	return __imx_uart_console_write(sport, s, count);
+}
+#endif
 
 /*
  * If the port was already initialised (eg, by a boot loader),
@@ -2164,6 +2181,9 @@ static struct uart_driver imx_uart_uart_driver;
 static struct console imx_uart_console = {
 	.name		= DEV_NAME,
 	.write		= imx_uart_console_write,
+#ifdef CONFIG_RAW_PRINTK
+	.write_raw	= imx_uart_console_write_raw,
+#endif
 	.device		= uart_console_device,
 	.setup		= imx_uart_console_setup,
 	.exit		= imx_uart_console_exit,

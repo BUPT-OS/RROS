@@ -23,7 +23,7 @@ static inline unsigned long __generic_cmpxchg_local(volatile void *ptr,
 	if (size == 8 && sizeof(unsigned long) != 8)
 		wrong_size_cmpxchg(ptr);
 
-	raw_local_irq_save(flags);
+	flags = hard_local_irq_save();
 	switch (size) {
 	case 1: prev = *(u8 *)ptr;
 		if (prev == (old & 0xffu))
@@ -44,7 +44,7 @@ static inline unsigned long __generic_cmpxchg_local(volatile void *ptr,
 	default:
 		wrong_size_cmpxchg(ptr);
 	}
-	raw_local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 	return prev;
 }
 
@@ -57,11 +57,11 @@ static inline u64 __generic_cmpxchg64_local(volatile void *ptr,
 	u64 prev;
 	unsigned long flags;
 
-	raw_local_irq_save(flags);
+	flags = hard_local_irq_save();
 	prev = *(u64 *)ptr;
 	if (prev == old)
 		*(u64 *)ptr = new;
-	raw_local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 	return prev;
 }
 

@@ -18,7 +18,7 @@
 #include <asm/tlbflush.h>
 
 static u32 asid_bits;
-static DEFINE_RAW_SPINLOCK(cpu_asid_lock);
+static DEFINE_HARD_SPINLOCK(cpu_asid_lock);
 
 static atomic64_t asid_generation;
 static unsigned long *asid_map;
@@ -217,6 +217,9 @@ void check_and_switch_context(struct mm_struct *mm)
 	unsigned long flags;
 	unsigned int cpu;
 	u64 asid, old_active_asid;
+	bool need_flush;
+
+	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
 
 	if (system_supports_cnp())
 		cpu_set_reserved_ttbr0();
@@ -252,11 +255,13 @@ void check_and_switch_context(struct mm_struct *mm)
 	}
 
 	cpu = smp_processor_id();
-	if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending))
-		local_flush_tlb_all();
+	need_flush = cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending);
 
 	atomic64_set(this_cpu_ptr(&active_asids), asid);
 	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
+
+	if (need_flush)
+		local_flush_tlb_all();
 
 switch_mm_fastpath:
 

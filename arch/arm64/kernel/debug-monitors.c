@@ -232,7 +232,7 @@ static void send_user_sigtrap(int si_code)
 		return;
 
 	if (interrupts_enabled(regs))
-		local_irq_enable();
+		local_irq_enable_full();
 
 	arm64_force_sig_fault(SIGTRAP, si_code, instruction_pointer(regs),
 			      "User debug trap");

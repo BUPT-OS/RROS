@@ -288,6 +288,7 @@ pcpu_free_vm_areas(struct vm_struct **vms, int nr_vms)
 
 int register_vmap_purge_notifier(struct notifier_block *nb);
 int unregister_vmap_purge_notifier(struct notifier_block *nb);
+void arch_advertise_page_mapping(unsigned long start, unsigned long end);
 
 #if defined(CONFIG_MMU) && defined(CONFIG_PRINTK)
 bool vmalloc_dump_obj(void *object);

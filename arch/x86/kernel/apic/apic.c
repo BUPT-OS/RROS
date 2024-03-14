@@ -31,6 +31,7 @@
 #include <linux/i8253.h>
 #include <linux/dmar.h>
 #include <linux/init.h>
+#include <linux/irq.h>
 #include <linux/cpu.h>
 #include <linux/dmi.h>
 #include <linux/smp.h>
@@ -243,10 +244,10 @@ void native_apic_icr_write(u32 low, u32 id)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	apic_write(APIC_ICR2, SET_XAPIC_DEST_FIELD(id));
 	apic_write(APIC_ICR, low);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 u64 native_apic_icr_read(void)
@@ -305,6 +306,9 @@ int lapic_get_maxlvt(void)
 static void __setup_APIC_LVTT(unsigned int clocks, int oneshot, int irqen)
 {
 	unsigned int lvtt_value, tmp_value;
+	unsigned long flags;
+
+	flags = hard_cond_local_irq_save();
 
 	lvtt_value = LOCAL_TIMER_VECTOR;
 	if (!oneshot)
@@ -333,6 +337,8 @@ static void __setup_APIC_LVTT(unsigned int clocks, int oneshot, int irqen)
 		 * According to Intel, MFENCE can do the serialization here.
 		 */
 		asm volatile("mfence" : : : "memory");
+		hard_cond_local_irq_restore(flags);
+		printk_once(KERN_DEBUG "TSC deadline timer enabled\n");
 		return;
 	}
 
@@ -346,6 +352,8 @@ static void __setup_APIC_LVTT(unsigned int clocks, int oneshot, int irqen)
 
 	if (!oneshot)
 		apic_write(APIC_TMICT, clocks / APIC_DIVISOR);
+
+	hard_cond_local_irq_restore(flags);
 }
 
 /*
@@ -450,28 +458,34 @@ static int lapic_next_event(unsigned long delta,
 static int lapic_next_deadline(unsigned long delta,
 			       struct clock_event_device *evt)
 {
+	unsigned long flags;
 	u64 tsc;
 
 	/* This MSR is special and need a special fence: */
 	weak_wrmsr_fence();
 
+	flags = hard_local_irq_save();
 	tsc = rdtsc();
 	wrmsrl(MSR_IA32_TSC_DEADLINE, tsc + (((u64) delta) * TSC_DIVISOR));
+	hard_local_irq_restore(flags);
 	return 0;
 }
 
 static int lapic_timer_shutdown(struct clock_event_device *evt)
 {
+	unsigned long flags;
 	unsigned int v;
 
 	/* Lapic used as dummy for broadcast ? */
 	if (evt->features & CLOCK_EVT_FEAT_DUMMY)
 		return 0;
 
+	flags = hard_local_irq_save();
 	v = apic_read(APIC_LVTT);
 	v |= (APIC_LVT_MASKED | LOCAL_TIMER_VECTOR);
 	apic_write(APIC_LVTT, v);
 	apic_write(APIC_TMICT, 0);
+	hard_local_irq_restore(flags);
 	return 0;
 }
 
@@ -506,6 +520,32 @@ static void lapic_timer_broadcast(const struct cpumask *mask)
 #endif
 }
 
+static DEFINE_PER_CPU(struct clock_event_device, lapic_events);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+#define LAPIC_TIMER_IRQ  apicm_vector_irq(LOCAL_TIMER_VECTOR)
+
+static irqreturn_t lapic_oob_handler(int irq, void *dev_id)
+{
+	struct clock_event_device *evt = this_cpu_ptr(&lapic_events);
+
+	trace_local_timer_entry(LOCAL_TIMER_VECTOR);
+	clockevents_handle_event(evt);
+	trace_local_timer_exit(LOCAL_TIMER_VECTOR);
+
+	return IRQ_HANDLED;
+}
+
+static struct irqaction lapic_oob_action = {
+	.handler = lapic_oob_handler,
+	.name = "Out-of-band LAPIC timer interrupt",
+	.flags = IRQF_TIMER | IRQF_PERCPU,
+};
+
+#else
+#define LAPIC_TIMER_IRQ  -1
+#endif
 
 /*
  * The local apic timer can be used for any function which is CPU local.
@@ -513,8 +553,8 @@ static void lapic_timer_broadcast(const struct cpumask *mask)
 static struct clock_event_device lapic_clockevent = {
 	.name				= "lapic",
 	.features			= CLOCK_EVT_FEAT_PERIODIC |
-					  CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_C3STOP
-					  | CLOCK_EVT_FEAT_DUMMY,
+					  CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_C3STOP  |
+					  CLOCK_EVT_FEAT_PIPELINE | CLOCK_EVT_FEAT_DUMMY,
 	.shift				= 32,
 	.set_state_shutdown		= lapic_timer_shutdown,
 	.set_state_periodic		= lapic_timer_set_periodic,
@@ -523,9 +563,8 @@ static struct clock_event_device lapic_clockevent = {
 	.set_next_event			= lapic_next_event,
 	.broadcast			= lapic_timer_broadcast,
 	.rating				= 100,
-	.irq				= -1,
+	.irq				= LAPIC_TIMER_IRQ,
 };
-static DEFINE_PER_CPU(struct clock_event_device, lapic_events);
 
 static const struct x86_cpu_id deadline_match[] __initconst = {
 	X86_MATCH_INTEL_FAM6_MODEL_STEPPINGS(HASWELL_X, X86_STEPPINGS(0x2, 0x2), 0x3a), /* EP */
@@ -1021,6 +1060,9 @@ void __init setup_boot_APIC_clock(void)
 	/* Setup the lapic or request the broadcast */
 	setup_APIC_timer();
 	amd_e400_c1e_apic_setup();
+#ifdef CONFIG_IRQ_PIPELINE
+	setup_percpu_irq(LAPIC_TIMER_IRQ, &lapic_oob_action);
+#endif
 }
 
 void setup_secondary_APIC_clock(void)
@@ -1071,7 +1113,8 @@ static void local_apic_timer_interrupt(void)
  * [ if a single-CPU system runs an SMP kernel then we call the local
  *   interrupt as well. Thus we cannot inline the local irq ... ]
  */
-DEFINE_IDTENTRY_SYSVEC(sysvec_apic_timer_interrupt)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(LOCAL_TIMER_VECTOR,
+				 sysvec_apic_timer_interrupt)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
@@ -1479,7 +1522,7 @@ static bool apic_check_and_ack(union apic_ir *irr, union apic_ir *isr)
 		 * per set bit.
 		 */
 		for_each_set_bit(bit, isr->map, APIC_IR_BITS)
-			apic_eoi();
+			__apic_eoi();
 		return true;
 	}
 
@@ -2146,7 +2189,7 @@ static noinline void handle_spurious_interrupt(u8 vector)
 	if (v & (1 << (vector & 0x1f))) {
 		pr_info("Spurious interrupt (vector 0x%02x) on CPU#%d. Acked\n",
 			vector, smp_processor_id());
-		apic_eoi();
+		__apic_eoi();
 	} else {
 		pr_info("Spurious interrupt (vector 0x%02x) on CPU#%d. Not pending!\n",
 			vector, smp_processor_id());
@@ -2164,18 +2207,23 @@ out:
  * trigger on an entry which is routed to the common_spurious idtentry
  * point.
  */
-DEFINE_IDTENTRY_IRQ(spurious_interrupt)
+DEFINE_IDTENTRY_IRQ_PIPELINED(spurious_interrupt)
 {
 	handle_spurious_interrupt(vector);
 }
 
-DEFINE_IDTENTRY_SYSVEC(sysvec_spurious_apic_interrupt)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(SPURIOUS_APIC_VECTOR,
+				 sysvec_spurious_apic_interrupt)
 {
 	handle_spurious_interrupt(SPURIOUS_APIC_VECTOR);
 }
 
 /*
  * This interrupt should never happen with our APIC/SMP architecture
+ *
+ * irq_pipeline: same as spurious_interrupt, would run directly out of
+ * the IDT, no deferral via the interrupt log which means that only
+ * the hardware IRQ state is considered for masking.
  */
 DEFINE_IDTENTRY_SYSVEC(sysvec_error_interrupt)
 {

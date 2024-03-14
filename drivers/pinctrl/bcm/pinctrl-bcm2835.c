@@ -89,7 +89,7 @@ struct bcm2835_pinctrl {
 	struct pinctrl_desc pctl_desc;
 	struct pinctrl_gpio_range gpio_range;
 
-	raw_spinlock_t irq_lock[BCM2835_NUM_BANKS];
+	hard_spinlock_t irq_lock[BCM2835_NUM_BANKS];
 	/* Protect FSEL registers */
 	spinlock_t fsel_lock;
 };
@@ -710,7 +710,7 @@ static const struct irq_chip bcm2835_gpio_irq_chip = {
 	.irq_mask = bcm2835_gpio_irq_mask,
 	.irq_unmask = bcm2835_gpio_irq_unmask,
 	.irq_set_wake = bcm2835_gpio_irq_set_wake,
-	.flags = (IRQCHIP_MASK_ON_SUSPEND | IRQCHIP_IMMUTABLE),
+	.flags = (IRQCHIP_MASK_ON_SUSPEND | IRQCHIP_IMMUTABLE | IRQCHIP_PIPELINE_SAFE),
 	GPIOCHIP_IRQ_RESOURCE_HELPERS,
 };
 

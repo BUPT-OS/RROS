@@ -144,6 +144,52 @@ static void show_signal(struct task_struct *tsk, int signr,
 	}
 }
 
+static __always_inline
+bool mark_trap_entry(int trapnr, struct pt_regs *regs)
+{
+	oob_trap_notify(trapnr, regs);
+
+	if (likely(running_inband())) {
+		hard_cond_local_irq_enable();
+		return true;
+	}
+
+	/*
+	 * If the oob core did not switch us inband, our caller is
+	 * expected to leave the trap handler immediately, so we may
+	 * notify the core about this right now.
+	 */
+	oob_trap_unwind(trapnr, regs);
+
+	return false;
+}
+
+static __always_inline
+void mark_trap_exit(int trapnr, struct pt_regs *regs)
+{
+	oob_trap_unwind(trapnr, regs);
+	hard_cond_local_irq_disable();
+}
+
+static __always_inline
+bool mark_trap_entry_raw(int trapnr, struct pt_regs *regs)
+{
+	oob_trap_notify(trapnr, regs);
+
+	if (running_oob()) {
+		oob_trap_unwind(trapnr, regs);
+		return false;
+	}
+
+	return true;
+}
+
+static __always_inline
+void mark_trap_exit_raw(int trapnr, struct pt_regs *regs)
+{
+	oob_trap_unwind(trapnr, regs);
+}
+
 static void
 do_trap(int trapnr, int signr, char *str, struct pt_regs *regs,
 	long error_code, int sicode, void __user *addr)
@@ -167,12 +213,17 @@ static void do_error_trap(struct pt_regs *regs, long error_code, char *str,
 {
 	RCU_LOCKDEP_WARN(!rcu_is_watching(), "entry code didn't wake RCU");
 
+	if (!mark_trap_entry(trapnr, regs))
+		return;
+
 	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr) !=
 			NOTIFY_STOP) {
 		cond_local_irq_enable(regs);
 		do_trap(trapnr, signr, str, regs, error_code, sicode, addr);
 		cond_local_irq_disable(regs);
 	}
+
+	mark_trap_exit(trapnr, regs);
 }
 
 /*
@@ -232,15 +283,23 @@ static noinstr bool handle_bug(struct pt_regs *regs)
 	 * Since we're emulating a CALL with exceptions, restore the interrupt
 	 * state to what it was at the exception site.
 	 */
-	if (regs->flags & X86_EFLAGS_IF)
-		raw_local_irq_enable();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_oob())
+			hard_local_irq_enable();
+		else
+			local_irq_enable_full();
+	}
 	if (report_bug(regs->ip, regs) == BUG_TRAP_TYPE_WARN ||
 	    handle_cfi_failure(regs) == BUG_TRAP_TYPE_WARN) {
 		regs->ip += LEN_UD2;
 		handled = true;
 	}
-	if (regs->flags & X86_EFLAGS_IF)
-		raw_local_irq_disable();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_oob())
+			hard_local_irq_disable();
+		else
+			local_irq_disable_full();
+	}
 	instrumentation_end();
 
 	return handled;
@@ -254,15 +313,26 @@ DEFINE_IDTENTRY_RAW(exc_invalid_op)
 	 * We use UD2 as a short encoding for 'CALL __WARN', as such
 	 * handle it before exception entry to avoid recursive WARN
 	 * in case exception entry is the one triggering WARNs.
+	 *
+	 * dovetail: handle_bug() may run oob, so we do not downgrade
+	 * in-band upon a failed __WARN assertion since it might have
+	 * tripped in a section of code which would not be happy to
+	 * switch stage. However, anything else should be notified to
+	 * the core, because the kernel execution might be about to
+	 * stop, so we'd need to switch in-band to get any output
+	 * before this happens.
 	 */
 	if (!user_mode(regs) && handle_bug(regs))
 		return;
 
-	state = irqentry_enter(regs);
-	instrumentation_begin();
-	handle_invalid_op(regs);
-	instrumentation_end();
-	irqentry_exit(regs, state);
+	if (mark_trap_entry_raw(X86_TRAP_UD, regs)) {
+		state = irqentry_enter(regs);
+		instrumentation_begin();
+		handle_invalid_op(regs);
+		instrumentation_end();
+		irqentry_exit(regs, state);
+		mark_trap_exit_raw(X86_TRAP_UD, regs);
+	}
 }
 
 DEFINE_IDTENTRY(exc_coproc_segment_overrun)
@@ -293,8 +363,11 @@ DEFINE_IDTENTRY_ERRORCODE(exc_alignment_check)
 {
 	char *str = "alignment check";
 
-	if (notify_die(DIE_TRAP, str, regs, error_code, X86_TRAP_AC, SIGBUS) == NOTIFY_STOP)
+	if (!mark_trap_entry(X86_TRAP_AC, regs))
 		return;
+
+	if (notify_die(DIE_TRAP, str, regs, error_code, X86_TRAP_AC, SIGBUS) == NOTIFY_STOP)
+		goto mark_exit;
 
 	if (!user_mode(regs))
 		die("Split lock detected\n", regs, error_code);
@@ -309,6 +382,9 @@ DEFINE_IDTENTRY_ERRORCODE(exc_alignment_check)
 
 out:
 	local_irq_disable();
+
+mark_exit:
+	mark_trap_exit(X86_TRAP_AC, regs);
 }
 
 #ifdef CONFIG_VMAP_STACK
@@ -346,6 +422,9 @@ __visible void __noreturn handle_stack_overflow(struct pt_regs *regs,
  *
  * The 32bit #DF shim provides CR2 already as an argument. On 64bit it needs
  * to be read before doing anything else.
+ *
+ * Dovetail: do not even ask the companion core to try restoring the
+ * in-band stage on double-fault, this would be a lost cause.
  */
 DEFINE_IDTENTRY_DF(exc_double_fault)
 {
@@ -469,9 +548,12 @@ DEFINE_IDTENTRY_DF(exc_double_fault)
 
 DEFINE_IDTENTRY(exc_bounds)
 {
+	if (!mark_trap_entry(X86_TRAP_BR, regs))
+		return;
+
 	if (notify_die(DIE_TRAP, "bounds", regs, 0,
 			X86_TRAP_BR, SIGSEGV) == NOTIFY_STOP)
-		return;
+		goto out;
 	cond_local_irq_enable(regs);
 
 	if (!user_mode(regs))
@@ -480,6 +562,8 @@ DEFINE_IDTENTRY(exc_bounds)
 	do_trap(X86_TRAP_BR, SIGSEGV, "bounds", regs, 0, 0, NULL);
 
 	cond_local_irq_disable(regs);
+out:
+	mark_trap_exit(X86_TRAP_BR, regs);
 }
 
 enum kernel_gp_hint {
@@ -613,8 +697,12 @@ static bool gp_try_fixup_and_notify(struct pt_regs *regs, int trapnr,
 				    unsigned long error_code, const char *str,
 				    unsigned long address)
 {
+	bool ret;
+
 	if (fixup_exception(regs, trapnr, error_code, address))
 		return true;
+
+	mark_trap_entry(trapnr, regs);
 
 	current->thread.error_code = error_code;
 	current->thread.trap_nr = trapnr;
@@ -624,10 +712,14 @@ static bool gp_try_fixup_and_notify(struct pt_regs *regs, int trapnr,
 	 * from kprobe_running(), we have to be non-preemptible.
 	 */
 	if (!preemptible() && kprobe_running() &&
-	    kprobe_fault_handler(regs, trapnr))
-		return true;
+		kprobe_fault_handler(regs, trapnr))
+		ret = true;
+	else
+		ret = notify_die(DIE_GPF, str, regs, error_code, trapnr, SIGSEGV) == NOTIFY_STOP;
 
-	return notify_die(DIE_GPF, str, regs, error_code, trapnr, SIGSEGV) == NOTIFY_STOP;
+	mark_trap_exit(trapnr, regs);
+
+	return ret;
 }
 
 static void gp_user_force_sig_segv(struct pt_regs *regs, int trapnr,
@@ -656,9 +748,9 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 	}
 
 	if (v8086_mode(regs)) {
-		local_irq_enable();
+		local_irq_enable_full();
 		handle_vm86_fault((struct kernel_vm86_regs *) regs, error_code);
-		local_irq_disable();
+		local_irq_disable_full();
 		return;
 	}
 
@@ -669,8 +761,11 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 		if (fixup_vdso_exception(regs, X86_TRAP_GP, error_code, 0))
 			goto exit;
 
+		if (!mark_trap_entry(X86_TRAP_GP, regs))
+			goto exit;
+
 		gp_user_force_sig_segv(regs, X86_TRAP_GP, error_code, desc);
-		goto exit;
+		goto mark_exit;
 	}
 
 	if (gp_try_fixup_and_notify(regs, X86_TRAP_GP, error_code, desc, 0))
@@ -696,6 +791,8 @@ DEFINE_IDTENTRY_ERRORCODE(exc_general_protection)
 
 	die_addr(desc, regs, error_code, gp_addr);
 
+mark_exit:
+	mark_trap_exit(X86_TRAP_GP, regs);
 exit:
 	cond_local_irq_disable(regs);
 }
@@ -740,6 +837,9 @@ DEFINE_IDTENTRY_RAW(exc_int3)
 	if (poke_int3_handler(regs))
 		return;
 
+	if (!mark_trap_entry_raw(X86_TRAP_BP, regs))
+		return;
+
 	/*
 	 * irqentry_enter_from_user_mode() uses static_branch_{,un}likely()
 	 * and therefore can trigger INT3, hence poke_int3_handler() must
@@ -762,6 +862,8 @@ DEFINE_IDTENTRY_RAW(exc_int3)
 		instrumentation_end();
 		irqentry_nmi_exit(regs, irq_state);
 	}
+
+	mark_trap_exit_raw(X86_TRAP_BP, regs);
 }
 
 #ifdef CONFIG_X86_64
@@ -1058,7 +1160,7 @@ static __always_inline void exc_debug_user(struct pt_regs *regs,
 		goto out;
 
 	/* It's safe to allow irq's after DR6 has been saved */
-	local_irq_enable();
+	local_irq_enable_full();
 
 	if (v8086_mode(regs)) {
 		handle_vm86_trap((struct kernel_vm86_regs *)regs, 0, X86_TRAP_DB);
@@ -1075,7 +1177,7 @@ static __always_inline void exc_debug_user(struct pt_regs *regs,
 		send_sigtrap(regs, 0, get_si_code(dr6));
 
 out_irq:
-	local_irq_disable();
+	local_irq_disable_full();
 out:
 	instrumentation_end();
 	irqentry_exit_to_user_mode(regs);
@@ -1085,13 +1187,19 @@ out:
 /* IST stack entry */
 DEFINE_IDTENTRY_DEBUG(exc_debug)
 {
-	exc_debug_kernel(regs, debug_read_clear_dr6());
+	if (mark_trap_entry_raw(X86_TRAP_DB, regs)) {
+		exc_debug_kernel(regs, debug_read_clear_dr6());
+		mark_trap_exit_raw(X86_TRAP_DB, regs);
+	}
 }
 
 /* User entry, runs on regular task stack */
 DEFINE_IDTENTRY_DEBUG_USER(exc_debug)
 {
-	exc_debug_user(regs, debug_read_clear_dr6());
+	if (mark_trap_entry_raw(X86_TRAP_DB, regs)) {
+		exc_debug_user(regs, debug_read_clear_dr6());
+		mark_trap_exit_raw(X86_TRAP_DB, regs);
+	}
 }
 #else
 /* 32 bit does not have separate entry points. */
@@ -1125,13 +1233,16 @@ static void math_error(struct pt_regs *regs, int trapnr)
 		if (fixup_exception(regs, trapnr, 0, 0))
 			goto exit;
 
+		if (!mark_trap_entry(trapnr, regs))
+			goto exit;
+
 		task->thread.error_code = 0;
 		task->thread.trap_nr = trapnr;
 
 		if (notify_die(DIE_TRAP, str, regs, 0, trapnr,
 			       SIGFPE) != NOTIFY_STOP)
 			die(str, regs, 0);
-		goto exit;
+		goto mark_exit;
 	}
 
 	/*
@@ -1151,8 +1262,13 @@ static void math_error(struct pt_regs *regs, int trapnr)
 	if (fixup_vdso_exception(regs, trapnr, 0, 0))
 		goto exit;
 
+	if (!mark_trap_entry(trapnr, regs))
+		goto exit;
+
 	force_sig_fault(SIGFPE, si_code,
 			(void __user *)uprobe_get_trap_addr(regs));
+mark_exit:
+	mark_trap_exit(trapnr, regs);
 exit:
 	cond_local_irq_disable(regs);
 }
@@ -1215,6 +1331,8 @@ static bool handle_xfd_event(struct pt_regs *regs)
 	if (WARN_ON(!user_mode(regs)))
 		return false;
 
+	mark_trap_entry(X86_TRAP_NM, regs);
+
 	local_irq_enable();
 
 	err = xfd_enable_feature(xfd_err);
@@ -1229,6 +1347,9 @@ static bool handle_xfd_event(struct pt_regs *regs)
 	}
 
 	local_irq_disable();
+
+	mark_trap_exit(X86_TRAP_NM, regs);
+
 	return true;
 }
 
@@ -1263,7 +1384,10 @@ DEFINE_IDTENTRY(exc_device_not_available)
 		 * to kill the task than getting stuck in a never-ending
 		 * loop of #NM faults.
 		 */
-		die("unexpected #NM exception", regs, 0);
+		if (mark_trap_entry(X86_TRAP_NM, regs)) {
+			die("unexpected #NM exception", regs, 0);
+			mark_trap_exit(X86_TRAP_NM, regs);
+		}
 	}
 }
 

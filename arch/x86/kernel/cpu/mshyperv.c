@@ -115,7 +115,8 @@ static void (*hv_stimer0_handler)(void);
 static void (*hv_kexec_handler)(void);
 static void (*hv_crash_handler)(struct pt_regs *regs);
 
-DEFINE_IDTENTRY_SYSVEC(sysvec_hyperv_callback)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,
+				 sysvec_hyperv_callback)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
@@ -144,7 +145,8 @@ void hv_remove_vmbus_handler(void)
  * Routines to do per-architecture handling of stimer0
  * interrupts when in Direct Mode
  */
-DEFINE_IDTENTRY_SYSVEC(sysvec_hyperv_stimer0)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_STIMER0_VECTOR,
+				 sysvec_hyperv_stimer0)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 

@@ -601,6 +601,9 @@ gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 {
 	gro_result_t ret;
 
+	if (netif_receive_oob(skb))
+		return GRO_NORMAL;
+
 	skb_mark_napi_id(skb, napi);
 	trace_napi_gro_receive_entry(skb);
 

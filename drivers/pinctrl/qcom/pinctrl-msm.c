@@ -69,7 +69,7 @@ struct msm_pinctrl {
 
 	bool intr_target_use_scm;
 
-	raw_spinlock_t lock;
+	hard_spinlock_t lock;
 
 	DECLARE_BITMAP(dual_edge_irqs, MAX_NR_GPIO);
 	DECLARE_BITMAP(enabled_irqs, MAX_NR_GPIO);
@@ -1339,7 +1339,8 @@ static const struct irq_chip msm_gpio_irq_chip = {
 	.flags			= (IRQCHIP_MASK_ON_SUSPEND |
 				   IRQCHIP_SET_TYPE_MASKED |
 				   IRQCHIP_ENABLE_WAKEUP_ON_SUSPEND |
-				   IRQCHIP_IMMUTABLE),
+				   IRQCHIP_IMMUTABLE |
+				   IRQCHIP_PIPELINE_SAFE),
 };
 
 static int msm_gpio_init(struct msm_pinctrl *pctrl)

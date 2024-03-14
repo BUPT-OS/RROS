@@ -911,6 +911,22 @@ long compat_ptr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 }
 EXPORT_SYMBOL(compat_ptr_ioctl);
 
+/**
+ * compat_ptr_oob_ioctl - generic implementation of .compat_oob_ioctl file operation
+ *
+ * The equivalent of compat_ptr_ioctl, dealing with out-of-band ioctl
+ * calls. Management of this handler is delegated to the code
+ * implementing the out-of-band ioctl() syscall in the companion core.
+ */
+long compat_ptr_oob_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	if (!file->f_op->oob_ioctl)
+		return -ENOIOCTLCMD;
+
+	return file->f_op->oob_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
+}
+EXPORT_SYMBOL(compat_ptr_oob_ioctl);
+
 COMPAT_SYSCALL_DEFINE3(ioctl, unsigned int, fd, unsigned int, cmd,
 		       compat_ulong_t, arg)
 {

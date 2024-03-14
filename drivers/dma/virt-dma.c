@@ -23,11 +23,11 @@ dma_cookie_t vchan_tx_submit(struct dma_async_tx_descriptor *tx)
 	unsigned long flags;
 	dma_cookie_t cookie;
 
-	spin_lock_irqsave(&vc->lock, flags);
+	vchan_lock_irqsave(vc, flags);
 	cookie = dma_cookie_assign(tx);
 
 	list_move_tail(&vd->node, &vc->desc_submitted);
-	spin_unlock_irqrestore(&vc->lock, flags);
+	vchan_unlock_irqrestore(vc, flags);
 
 	dev_dbg(vc->chan.device->dev, "vchan %p: txd %p[%x]: submitted\n",
 		vc, vd, cookie);
@@ -52,9 +52,9 @@ int vchan_tx_desc_free(struct dma_async_tx_descriptor *tx)
 	struct virt_dma_desc *vd = to_virt_desc(tx);
 	unsigned long flags;
 
-	spin_lock_irqsave(&vc->lock, flags);
+	vchan_lock_irqsave(vc, flags);
 	list_del(&vd->node);
-	spin_unlock_irqrestore(&vc->lock, flags);
+	vchan_unlock_irqrestore(vc, flags);
 
 	dev_dbg(vc->chan.device->dev, "vchan %p: txd %p[%x]: freeing\n",
 		vc, vd, vd->tx.cookie);
@@ -87,7 +87,7 @@ static void vchan_complete(struct tasklet_struct *t)
 	struct dmaengine_desc_callback cb;
 	LIST_HEAD(head);
 
-	spin_lock_irq(&vc->lock);
+	vchan_lock_irq(vc);
 	list_splice_tail_init(&vc->desc_completed, &head);
 	vd = vc->cyclic;
 	if (vd) {
@@ -96,7 +96,7 @@ static void vchan_complete(struct tasklet_struct *t)
 	} else {
 		memset(&cb, 0, sizeof(cb));
 	}
-	spin_unlock_irq(&vc->lock);
+	vchan_unlock_irq(vc);
 
 	dmaengine_desc_callback_invoke(&cb, &vd->tx_result);
 
@@ -120,11 +120,119 @@ void vchan_dma_desc_free_list(struct virt_dma_chan *vc, struct list_head *head)
 }
 EXPORT_SYMBOL_GPL(vchan_dma_desc_free_list);
 
+#ifdef CONFIG_DMA_VIRTUAL_CHANNELS_OOB
+
+static void inband_init_chan_lock(struct virt_dma_chan *vc)
+{
+	spin_lock_init(&vc->lock);
+}
+
+static void inband_lock_chan(struct virt_dma_chan *vc)
+{
+	spin_lock(&vc->lock);
+}
+
+static void inband_unlock_chan(struct virt_dma_chan *vc)
+{
+	spin_unlock(&vc->lock);
+}
+
+static void inband_lock_irq_chan(struct virt_dma_chan *vc)
+{
+	spin_lock_irq(&vc->lock);
+}
+
+static void inband_unlock_irq_chan(struct virt_dma_chan *vc)
+{
+	spin_unlock_irq(&vc->lock);
+}
+
+static unsigned long inband_lock_irqsave_chan(struct virt_dma_chan *vc)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&vc->lock, flags);
+
+	return flags;
+}
+
+static void inband_unlock_irqrestore_chan(struct virt_dma_chan *vc,
+			unsigned long flags)
+{
+	spin_unlock_irqrestore(&vc->lock, flags);
+}
+
+static struct virt_dma_lockops inband_lock_ops = {
+	.init			= inband_init_chan_lock,
+	.lock			= inband_lock_chan,
+	.unlock			= inband_unlock_chan,
+	.lock_irq		= inband_lock_irq_chan,
+	.unlock_irq		= inband_unlock_irq_chan,
+	.lock_irqsave		= inband_lock_irqsave_chan,
+	.unlock_irqrestore	= inband_unlock_irqrestore_chan,
+};
+
+static void oob_init_chan_lock(struct virt_dma_chan *vc)
+{
+	raw_spin_lock_init(&vc->oob_lock);
+}
+
+static void oob_lock_chan(struct virt_dma_chan *vc)
+{
+	raw_spin_lock(&vc->oob_lock);
+}
+
+static void oob_unlock_chan(struct virt_dma_chan *vc)
+{
+	raw_spin_unlock(&vc->oob_lock);
+}
+
+static void oob_lock_irq_chan(struct virt_dma_chan *vc)
+{
+	raw_spin_lock_irq(&vc->oob_lock);
+}
+
+static void oob_unlock_irq_chan(struct virt_dma_chan *vc)
+{
+	raw_spin_unlock_irq(&vc->oob_lock);
+}
+
+static unsigned long oob_lock_irqsave_chan(struct virt_dma_chan *vc)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&vc->oob_lock, flags);
+
+	return flags;
+}
+
+static void oob_unlock_irqrestore_chan(struct virt_dma_chan *vc,
+				unsigned long flags)
+{
+	raw_spin_unlock_irqrestore(&vc->oob_lock, flags);
+}
+
+static struct virt_dma_lockops oob_lock_ops = {
+	.init			= oob_init_chan_lock,
+	.lock			= oob_lock_chan,
+	.unlock			= oob_unlock_chan,
+	.lock_irq		= oob_lock_irq_chan,
+	.unlock_irq		= oob_unlock_irq_chan,
+	.lock_irqsave		= oob_lock_irqsave_chan,
+	.unlock_irqrestore	= oob_unlock_irqrestore_chan,
+};
+
+#endif
+
 void vchan_init(struct virt_dma_chan *vc, struct dma_device *dmadev)
 {
 	dma_cookie_init(&vc->chan);
 
-	spin_lock_init(&vc->lock);
+#ifdef CONFIG_DMA_VIRTUAL_CHANNELS_OOB
+	vc->lock_ops = test_bit(DMA_OOB, dmadev->cap_mask.bits) ?
+		&oob_lock_ops : &inband_lock_ops;
+#endif
+	vchan_lock_init(vc);
 	INIT_LIST_HEAD(&vc->desc_allocated);
 	INIT_LIST_HEAD(&vc->desc_submitted);
 	INIT_LIST_HEAD(&vc->desc_issued);

@@ -31,7 +31,7 @@ static DEFINE_PER_CPU(bool, percpu_setup_called);
 
 static struct clock_event_device __percpu *twd_evt;
 static unsigned int twd_features =
-		CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT;
+		CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE;
 static int twd_ppi;
 
 static int twd_shutdown(struct clock_event_device *clk)
@@ -182,7 +182,7 @@ static irqreturn_t twd_handler(int irq, void *dev_id)
 	struct clock_event_device *evt = dev_id;
 
 	if (twd_timer_ack()) {
-		evt->event_handler(evt);
+		clockevents_handle_event(evt);
 		return IRQ_HANDLED;
 	}
 
@@ -279,7 +279,8 @@ static int __init twd_local_timer_common_register(struct device_node *np)
 		goto out_free;
 	}
 
-	err = request_percpu_irq(twd_ppi, twd_handler, "twd", twd_evt);
+	err = __request_percpu_irq(twd_ppi, twd_handler,
+				   IRQF_TIMER, "twd", twd_evt);
 	if (err) {
 		pr_err("twd: can't register interrupt %d (%d)\n", twd_ppi, err);
 		goto out_free;

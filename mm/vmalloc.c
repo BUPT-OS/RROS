@@ -298,6 +298,8 @@ static int vmap_range_noflush(unsigned long addr, unsigned long end,
 			break;
 	} while (pgd++, phys_addr += (next - addr), addr = next, addr != end);
 
+	arch_advertise_page_mapping(start, end);
+
 	if (mask & ARCH_PAGE_TABLE_SYNC_MASK)
 		arch_sync_kernel_mappings(start, end);
 
@@ -540,6 +542,10 @@ static int vmap_pages_p4d_range(pgd_t *pgd, unsigned long addr,
 	return 0;
 }
 
+void __weak arch_advertise_page_mapping(unsigned long start, unsigned long end)
+{
+}
+
 static int vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
 		pgprot_t prot, struct page **pages)
 {
@@ -560,6 +566,8 @@ static int vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
 		if (err)
 			return err;
 	} while (pgd++, addr = next, addr != end);
+
+	arch_advertise_page_mapping(start, end);
 
 	if (mask & ARCH_PAGE_TABLE_SYNC_MASK)
 		arch_sync_kernel_mappings(start, end);

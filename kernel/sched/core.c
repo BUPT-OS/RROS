@@ -3174,6 +3174,8 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
 
 	__do_set_cpus_allowed(p, ctx);
 
+	inband_migration_notify(p, dest_cpu);
+
 	return affine_move_task(rq, p, rf, dest_cpu, ctx->flags);
 
 out:
@@ -4213,7 +4215,7 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		 *  - we're serialized against set_special_state() by virtue of
 		 *    it disabling IRQs (this allows not taking ->pi_lock).
 		 */
-		if (!ttwu_state_match(p, state, &success))
+		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p))
 			goto out;
 
 		trace_sched_waking(p);
@@ -4229,7 +4231,7 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 */
 	scoped_guard (raw_spinlock_irqsave, &p->pi_lock) {
 		smp_mb__after_spinlock();
-		if (!ttwu_state_match(p, state, &success))
+		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p))
 			break;
 
 		trace_sched_waking(p);
@@ -4536,7 +4538,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->wake_entry.u_flags = CSD_TYPE_TTWU;
 	p->migration_pending = NULL;
 #endif
-	init_sched_mm_cid(p);
+#ifdef CONFIG_IRQ_PIPELINE
+	init_task_stall_bits(p);
+#endif
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
@@ -5186,6 +5190,13 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 	fire_sched_out_preempt_notifiers(prev, next);
 	kmap_local_sched_out();
 	prepare_task(next);
+	prepare_inband_switch(next);
+	/*
+	 * Do not fold the following hard irqs disabling into
+	 * prepare_inband_switch(), this is required when pipelining
+	 * interrupts, not only by alternate scheduling.
+	 */
+	hard_cond_local_irq_disable();
 	prepare_arch_switch(next);
 }
 
@@ -5306,8 +5317,19 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	 * finish_task_switch() will drop rq->lock() and lower preempt_count
 	 * and the preempt_enable() will end up enabling preemption (on
 	 * PREEMPT_COUNT kernels).
+	 *
+	 * If interrupts are pipelined, we may enable hard irqs since
+	 * the in-band stage is stalled. If dovetailing is enabled
+	 * too, schedule_tail() is the place where transitions of
+	 * tasks from the in-band to the oob stage completes. The
+	 * companion core is notified that 'prev' is now suspended in
+	 * the in-band stage, and can be safely resumed in the oob
+	 * stage.
 	 */
 
+	WARN_ON_ONCE(irq_pipeline_debug() && !irqs_disabled());
+	hard_cond_local_irq_enable();
+	oob_trampoline();
 	finish_task_switch(prev);
 	preempt_enable();
 
@@ -5364,6 +5386,20 @@ context_switch(struct rq *rq, struct task_struct *prev,
 		switch_mm_irqs_off(prev->active_mm, next->mm, next);
 		lru_gen_use_mm(next->mm);
 
+		/*
+		 * If dovetail is enabled, insert a short window of
+		 * opportunity for preemption by out-of-band IRQs
+		 * before finalizing the context switch.
+		 * dovetail_context_switch() can deal with preempting
+		 * partially switched in-band contexts.
+		 */
+		if (dovetailing()) {
+			struct mm_struct *oldmm = prev->active_mm;
+			prev->active_mm = next->mm;
+			hard_local_irq_sync();
+			prev->active_mm = oldmm;
+		}
+
 		if (!prev->mm) {                        // from kernel
 			/* will mmdrop_lazy_tlb() in finish_task_switch(). */
 			rq->prev_mm = prev->active_mm;
@@ -5381,6 +5417,15 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	/* Here we just switch the register state and the stack. */
 	switch_to(prev, next, prev);
 	barrier();
+
+	/*
+	 * If 'next' is on its way to the oob stage, don't run the
+	 * context switch epilogue just yet. We will do that at some
+	 * point later, when the task switches back to the in-band
+	 * stage.
+	 */
+	if (unlikely(inband_switch_tail()))
+		return NULL;
 
 	return finish_task_switch(prev);
 }
@@ -5939,6 +5984,8 @@ static inline void schedule_debug(struct task_struct *prev, bool preempt)
 	if (task_scs_end_corrupted(prev))
 		panic("corrupted shadow stack detected inside scheduler\n");
 #endif
+
+	check_inband_stage();
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 	if (!preempt && READ_ONCE(prev->__state) && prev->non_block_count) {
@@ -6573,7 +6620,7 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
  *
  * WARNING: must be called with preemption disabled!
  */
-static void __sched notrace __schedule(unsigned int sched_mode)
+static int __sched notrace __schedule(unsigned int sched_mode)
 {
 	struct task_struct *prev, *next;
 	unsigned long *switch_count;
@@ -6693,6 +6740,9 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 
 		/* Also unlocks the rq: */
 		rq = context_switch(rq, prev, next, &rf);
+		if (dovetailing() && rq == NULL)
+		/* Task moved to the oob stage. */
+		return 1;
 	} else {
 		rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
 
@@ -6700,6 +6750,8 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 		__balance_callbacks(rq);
 		raw_spin_rq_unlock_irq(rq);
 	}
+	
+	return 0;
 }
 
 void __noreturn do_task_dead(void)
@@ -6768,7 +6820,8 @@ asmlinkage __visible void __sched schedule(void)
 	sched_submit_work(tsk);
 	do {
 		preempt_disable();
-		__schedule(SM_NONE);
+		if (__schedule(SM_NONE))
+			return;
 		sched_preempt_enable_no_resched();
 	} while (need_resched());
 	sched_update_worker(tsk);
@@ -6861,7 +6914,8 @@ static void __sched notrace preempt_schedule_common(void)
 		 */
 		preempt_disable_notrace();
 		preempt_latency_start(1);
-		__schedule(SM_PREEMPT);
+		if (__schedule(SM_PREEMPT))
+			return;
 		preempt_latency_stop(1);
 		preempt_enable_no_resched_notrace();
 
@@ -6883,7 +6937,7 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
 	 * If there is a non-zero preempt_count or interrupts are disabled,
 	 * we do not want to preempt the current task. Just return..
 	 */
-	if (likely(!preemptible()))
+	if (likely(!running_inband() || !preemptible()))
 		return;
 	preempt_schedule_common();
 }
@@ -6929,7 +6983,7 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
 {
 	enum ctx_state prev_ctx;
 
-	if (likely(!preemptible()))
+	if (likely(!running_inband() || !preemptible()))
 		return;
 
 	do {
@@ -6991,23 +7045,41 @@ EXPORT_SYMBOL(dynamic_preempt_schedule_notrace);
  * off of irq context.
  * Note, that this is called and return with irqs disabled. This will
  * protect us against recursive calling from irq.
+ *
+ * IRQ pipeline: we are called with hard irqs off, synchronize the
+ * pipeline then return the same way, so that the in-band log is
+ * guaranteed empty and further interrupt delivery is postponed by the
+ * hardware until have exited the kernel.
  */
 asmlinkage __visible void __sched preempt_schedule_irq(void)
 {
 	enum ctx_state prev_state;
+
+	if (irq_pipeline_debug()) {
+		/* Catch any weirdness in pipelined entry code. */
+		if (WARN_ON_ONCE(!running_inband()))
+			return;
+		WARN_ON_ONCE(!hard_irqs_disabled());
+	}
+
+	hard_cond_local_irq_enable();
 
 	/* Catch callers which need to be fixed */
 	BUG_ON(preempt_count() || !irqs_disabled());
 
 	prev_state = exception_enter();
 
-	do {
+	for (;;) {
 		preempt_disable();
 		local_irq_enable();
 		__schedule(SM_PREEMPT);
+		sync_inband_irqs();
 		local_irq_disable();
 		sched_preempt_enable_no_resched();
-	} while (need_resched());
+		if (!need_resched())
+			break;
+		hard_cond_local_irq_enable();
+	}
 
 	exception_exit(prev_state);
 }
@@ -8559,6 +8631,8 @@ SYSCALL_DEFINE0(sched_yield)
 #if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
 int __sched __cond_resched(void)
 {
+	check_inband_stage();
+
 	if (should_resched(0)) {
 		preempt_schedule_common();
 		return 1;
@@ -11507,6 +11581,231 @@ struct cgroup_subsys cpu_cgrp_subsys = {
 };
 
 #endif	/* CONFIG_CGROUP_SCHED */
+
+#ifdef CONFIG_DOVETAIL
+
+int dovetail_leave_inband(void)
+{
+	struct task_struct *p = current;
+	struct irq_pipeline_data *pd;
+	unsigned long flags;
+
+	preempt_disable();
+
+	pd = raw_cpu_ptr(&irq_pipeline);
+
+	if (WARN_ON_ONCE(dovetail_debug() && pd->task_inflight))
+		goto out;	/* Paranoid. */
+
+	raw_spin_lock_irqsave(&p->pi_lock, flags);
+	pd->task_inflight = p;
+	/*
+	 * The scope of the off-stage state is broader than _TLF_OOB,
+	 * in that it includes the transition path from the in-band
+	 * context to the oob stage.
+	 */
+	set_thread_local_flags(_TLF_OFFSTAGE);
+	set_current_state(TASK_INTERRUPTIBLE);
+	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+	sched_submit_work(p);
+	/*
+	 * The current task is scheduled out from the inband stage,
+	 * before resuming on the oob stage. Since this code stands
+	 * for the scheduling tail of the oob scheduler,
+	 * arch_dovetail_switch_finish() is called to perform
+	 * architecture-specific fixups (e.g. fpu context reload).
+	 */
+	if (likely(__schedule(SM_NONE))) {
+		arch_dovetail_switch_finish(false);
+		return 0;
+	}
+
+	clear_thread_local_flags(_TLF_OFFSTAGE);
+	pd->task_inflight = NULL;
+out:
+	preempt_enable();
+
+	return -ERESTARTSYS;
+}
+EXPORT_SYMBOL_GPL(dovetail_leave_inband);
+
+void dovetail_resume_inband(void)
+{
+	struct task_struct *p;
+
+	p = __this_cpu_read(irq_pipeline.rqlock_owner);
+	if (WARN_ON_ONCE(dovetail_debug() && p == NULL))
+		return;
+
+	if (WARN_ON_ONCE(dovetail_debug() && (preempt_count() & STAGE_MASK)))
+		return;
+
+	finish_task_switch(p);
+	preempt_enable();
+	oob_trampoline();
+}
+EXPORT_SYMBOL_GPL(dovetail_resume_inband);
+
+#ifdef CONFIG_KVM
+
+#include <linux/kvm_host.h>
+
+static inline void notify_guest_preempt(void)
+{
+	struct kvm_oob_notifier *nfy;
+	struct irq_pipeline_data *p;
+
+	p = raw_cpu_ptr(&irq_pipeline);
+	nfy = p->vcpu_notify;
+	if (unlikely(nfy))
+		nfy->handler(nfy);
+}
+#else
+static inline void notify_guest_preempt(void)
+{ }
+#endif
+
+bool dovetail_context_switch(struct dovetail_altsched_context *out,
+			struct dovetail_altsched_context *in,
+			bool leave_inband)
+{
+	unsigned long pc __maybe_unused, lockdep_irqs;
+	struct task_struct *next, *prev, *last;
+	struct mm_struct *prev_mm, *next_mm;
+	bool inband_tail = false;
+
+	WARN_ON_ONCE(dovetail_debug() && on_pipeline_entry());
+
+	if (leave_inband) {
+		struct task_struct *tsk = current;
+		/*
+		 * We are about to leave the current inband context
+		 * for switching to an out-of-band task, save the
+		 * preempted context information.
+		 */
+		out->task = tsk;
+		out->active_mm = tsk->active_mm;
+		/*
+		 * Switching out-of-band may require some housekeeping
+		 * from a kernel VM which might currently run guest
+		 * code, notify it about the upcoming preemption.
+		 */
+		notify_guest_preempt();
+	}
+
+	arch_dovetail_switch_prepare(leave_inband);
+
+	next = in->task;
+	prev = out->task;
+	prev_mm = out->active_mm;
+	next_mm = in->active_mm;
+
+	if (next_mm == NULL) {
+		in->active_mm = prev_mm;
+		in->borrowed_mm = true;
+		enter_lazy_tlb(prev_mm, next);
+	} else {
+		switch_oob_mm(prev_mm, next_mm, next);
+		/*
+		 * We might be switching back to the inband context
+		 * which we preempted earlier, shortly after "current"
+		 * dropped its mm context in the do_exit() path
+		 * (next->mm == NULL). In such a case, a lazy TLB
+		 * state is expected when leaving the mm.
+		 */
+		if (next->mm == NULL)
+			enter_lazy_tlb(prev_mm, next);
+	}
+
+	if (out->borrowed_mm) {
+		out->borrowed_mm = false;
+		out->active_mm = NULL;
+	}
+
+	/*
+	 * Tasks running out-of-band may alter the (in-band)
+	 * preemption count as long as they don't trigger an in-band
+	 * rescheduling, which Dovetail properly blocks.
+	 *
+	 * If the preemption count is not stack-based but a global
+	 * per-cpu variable instead, changing it has a globally
+	 * visible side-effect though, which is a problem if the
+	 * out-of-band task is preempted and schedules away before the
+	 * change is rolled back: this may cause the in-band context
+	 * to later resume with a broken preemption count.
+	 *
+	 * For this reason, the preemption count of any context which
+	 * blocks from the out-of-band stage is carried over and
+	 * restored across switches, emulating a stack-based
+	 * storage.
+	 *
+	 * Eventually, the count is reset to FORK_PREEMPT_COUNT upon
+	 * transition from out-of-band to in-band stage, reinstating
+	 * the value in effect when the converse transition happened
+	 * at some point before.
+	 */
+	if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
+		pc = preempt_count();
+
+	/*
+	 * Like the preemption count and for the same reason, the irq
+	 * state maintained by lockdep must be preserved across
+	 * switches.
+	 */
+	lockdep_irqs = lockdep_read_irqs_state();
+
+	switch_to(prev, next, last);
+	barrier();
+
+	if (check_hard_irqs_disabled())
+		hard_local_irq_disable();
+
+	/*
+	 * If we entered this routine for switching to an out-of-band
+	 * task but don't have _TLF_OOB set for the current context
+	 * when resuming, this portion of code is the switch tail of
+	 * the inband schedule() routine, finalizing a transition to
+	 * the inband stage for the current task. Update the stage
+	 * level as/if required.
+	 */
+	if (unlikely(!leave_inband && !test_thread_local_flags(_TLF_OOB))) {
+		if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
+			preempt_count_set(FORK_PREEMPT_COUNT);
+		else if (unlikely(dovetail_debug() &&
+					!(preempt_count() & STAGE_MASK)))
+			WARN_ON_ONCE(1);
+		else
+			preempt_count_sub(STAGE_OFFSET);
+
+		lockdep_write_irqs_state(lockdep_irqs);
+
+		/*
+		 * Fixup the interrupt state conversely to what
+		 * inband_switch_tail() does for the opposite stage
+		 * switching direction.
+		 */
+		stall_inband();
+		trace_hardirqs_off();
+		inband_tail = true;
+	} else {
+		if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
+			preempt_count_set(pc);
+
+		lockdep_write_irqs_state(lockdep_irqs);
+	}
+
+	arch_dovetail_switch_finish(leave_inband);
+
+	/*
+	 * inband_tail is true whenever we are finalizing a transition
+	 * to the inband stage from the oob context for current. See
+	 * above.
+	 */
+	return inband_tail;
+}
+EXPORT_SYMBOL_GPL(dovetail_context_switch);
+
+#endif /* CONFIG_DOVETAIL */
 
 void dump_cpu_task(int cpu)
 {

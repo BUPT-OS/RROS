@@ -6578,10 +6578,10 @@ static int ftrace_process_locs(struct module *mod,
 	 * reason to cause large interrupt latencies while we do it.
 	 */
 	if (!mod)
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 	ftrace_update_code(mod, start_pg);
 	if (!mod)
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 	ret = 0;
  out:
 	mutex_unlock(&ftrace_lock);
@@ -7222,9 +7222,9 @@ void __init ftrace_init(void)
 	unsigned long count, flags;
 	int ret;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	ret = ftrace_dyn_arch_init();
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 	if (ret)
 		goto failed;
 

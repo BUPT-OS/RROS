@@ -49,7 +49,7 @@ struct pl061_context_save_regs {
 #endif
 
 struct pl061 {
-	raw_spinlock_t		lock;
+	hard_spinlock_t		lock;
 
 	void __iomem		*base;
 	struct gpio_chip	gc;
@@ -301,7 +301,7 @@ static const struct irq_chip pl061_irq_chip = {
 	.irq_set_type		= pl061_irq_type,
 	.irq_set_wake		= pl061_irq_set_wake,
 	.irq_print_chip		= pl061_irq_print_chip,
-	.flags			= IRQCHIP_IMMUTABLE,
+	.flags			= IRQCHIP_IMMUTABLE|IRQCHIP_PIPELINE_SAFE,
 	GPIOCHIP_IRQ_RESOURCE_HELPERS,
 };
 

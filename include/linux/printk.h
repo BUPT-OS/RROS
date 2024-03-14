@@ -140,6 +140,20 @@ void early_printk(const char *s, ...) { }
 
 struct dev_printk_info;
 
+#ifdef CONFIG_RAW_PRINTK
+void raw_puts(const char *s, size_t len);
+void raw_vprintk(const char *fmt, va_list ap);
+asmlinkage __printf(1, 2)
+void raw_printk(const char *fmt, ...);
+#else
+static inline __cold
+void raw_puts(const char *s, size_t len) { }
+static inline __cold
+void raw_vprintk(const char *s, va_list ap) { }
+static inline __printf(1, 2) __cold
+void raw_printk(const char *s, ...) { }
+#endif
+
 #ifdef CONFIG_PRINTK
 asmlinkage __printf(4, 0)
 int vprintk_emit(int facility, int level,
@@ -305,14 +319,22 @@ extern void __printk_cpu_sync_put(void);
  *       unsafe to perform any type of locking or spinning to wait for other
  *       CPUs after calling this function from any context. This includes
  *       using spinlocks or any other busy-waiting synchronization methods.
+ *
+ * irq_pipeline: we neither need nor want to disable in-band IRQs over
+ * the oob stage or pipeline entry contexts, where CPU migration can't
+ * happen. Conversely, we neither need nor want to disable hard IRQs
+ * from the oob stage, so that latency won't skyrocket as a result of
+ * holding the print lock.
  */
-#define printk_cpu_sync_get_irqsave(flags)		\
-	for (;;) {					\
-		local_irq_save(flags);			\
-		if (__printk_cpu_sync_try_get())	\
-			break;				\
-		local_irq_restore(flags);		\
-		__printk_cpu_sync_wait();		\
+#define printk_cpu_sync_get_irqsave(flags)			\
+	for (;;) {						\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_save(flags);			\
+		if (__printk_cpu_sync_try_get())		\
+			break;					\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_restore(flags);		\
+		__printk_cpu_sync_wait();			\
 	}
 
 /**
@@ -320,10 +342,11 @@ extern void __printk_cpu_sync_put(void);
  *                                    lock and restore interrupts.
  * @flags: Caller's saved interrupt state, from printk_cpu_sync_get_irqsave().
  */
-#define printk_cpu_sync_put_irqrestore(flags)	\
-	do {					\
-		__printk_cpu_sync_put();	\
-		local_irq_restore(flags);	\
+#define printk_cpu_sync_put_irqrestore(flags)			\
+	do {							\
+		__printk_cpu_sync_put();			\
+		if (running_inband() &&	!on_pipeline_entry())	\
+			local_irq_restore(flags);		\
 	} while (0)
 
 extern int kptr_restrict;
@@ -645,7 +668,7 @@ struct pi_entry {
 				      DEFAULT_RATELIMIT_INTERVAL,	\
 				      DEFAULT_RATELIMIT_BURST);		\
 									\
-	if (__ratelimit(&_rs))						\
+	if (running_oob() || __ratelimit(&_rs))				\
 		printk(fmt, ##__VA_ARGS__);				\
 })
 #else

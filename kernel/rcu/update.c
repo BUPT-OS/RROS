@@ -101,6 +101,11 @@ module_param(rcu_normal_after_boot, int, 0444);
  */
 static bool rcu_read_lock_held_common(bool *ret)
 {
+	if (irqs_pipelined() &&
+		(hard_irqs_disabled() || running_oob())) {
+		*ret = true;
+		return true;
+	}
 	if (!debug_lockdep_rcu_enabled()) {
 		*ret = true;
 		return true;
@@ -248,6 +253,32 @@ bool rcu_inkernel_boot_has_ended(void)
 EXPORT_SYMBOL_GPL(rcu_inkernel_boot_has_ended);
 
 #endif /* #ifndef CONFIG_TINY_RCU */
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+/*
+ * Prepare for taking the RCU read lock when running out-of-band. Nop
+ * otherwise.
+ */
+void rcu_oob_prepare_lock(void)
+{
+	if (!on_pipeline_entry() && running_oob())
+		ct_nmi_enter();
+}
+EXPORT_SYMBOL_GPL(rcu_oob_prepare_lock);
+
+/*
+ * Converse to rcu_oob_prepare_lock(), after dropping the RCU read
+ * lock.
+ */
+void rcu_oob_finish_lock(void)
+{
+	if (!on_pipeline_entry() && running_oob())
+		ct_nmi_exit();
+}
+EXPORT_SYMBOL_GPL(rcu_oob_finish_lock);
+
+#endif	/* CONFIG_IRQ_PIPELINE */
 
 /*
  * Test each non-SRCU synchronous grace-period wait API.  This is

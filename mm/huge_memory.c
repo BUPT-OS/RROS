@@ -1246,6 +1246,7 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	/*
 	 * TODO: once we support anonymous pages, use page_try_dup_anon_rmap()
 	 * and split if duplicating fails.
+	 * irq_pipeline: update as required as well.
 	 */
 	pudp_set_wrprotect(src_mm, addr, src_pud);
 	pud = pud_mkold(pud_wrprotect(pud));

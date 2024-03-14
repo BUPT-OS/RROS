@@ -51,7 +51,7 @@ static int __init st_clksrc_init(void)
 
 	sched_clock_register(st_clksrc_sched_clock_read, 32, rate);
 
-	ret = clocksource_mmio_init(ddata.base + LPC_LPT_LSB_OFF,
+	ret = clocksource_user_single_mmio_init(ddata.base + LPC_LPT_LSB_OFF,
 				    "clksrc-st-lpc", rate, 300, 32,
 				    clocksource_mmio_readl_up);
 	if (ret) {

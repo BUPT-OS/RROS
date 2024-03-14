@@ -84,6 +84,8 @@ static int __wake_up_common(struct wait_queue_head *wq_head, unsigned int mode,
 	wait_queue_entry_t *curr, *next;
 	int cnt = 0;
 
+	check_inband_stage();
+
 	lockdep_assert_held(&wq_head->lock);
 
 	if (bookmark && (bookmark->flags & WQ_FLAG_BOOKMARK)) {

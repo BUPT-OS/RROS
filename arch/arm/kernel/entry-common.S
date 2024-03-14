@@ -3,6 +3,7 @@
  *  linux/arch/arm/kernel/entry-common.S
  *
  *  Copyright (C) 2000 Russell King
+ *  Copyright (C) 2005 Stelian Pop.
  */
 
 #include <asm/assembler.h>
@@ -12,6 +13,7 @@
 #include <asm/page.h>
 #ifdef CONFIG_AEABI
 #include <asm/unistd-oabi.h>
+#include <uapi/asm-generic/dovetail.h>
 #endif
 
 	.equ	NR_syscalls, __NR_syscalls
@@ -122,6 +124,10 @@ no_work_pending:
 	restore_user_regs fast = 0, offset = 0
 ENDPROC(ret_to_user_from_irq)
 ENDPROC(ret_to_user)
+ENTRY(fast_ret_to_user)
+	disable_irq_notrace			@ disable interrupts
+	b	no_work_pending
+ENDPROC(fast_ret_to_user)
 
 /*
  * This is how we return from a fork.
@@ -257,6 +263,70 @@ ENTRY(vector_swi)
  TRACE(	ldmia	sp, {r0 - r3}		)
 
 local_restart:
+#ifdef CONFIG_DOVETAIL
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]	@ tsk(r10) is callee-saved
+#ifdef CONFIG_IPIPE_COMPAT
+	ldr	r0, =#0xf0042			@ old syscall signature
+	cmp	scno, r0
+	bne	1f
+	add	scno, scno, #__OOB_SYSCALL_BIT	@ force in oob marker
+	b	fastcall_try
+1:
+#endif	
+#ifdef CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE
+	ldr	r0, =#__OOB_SYSCALL_BIT
+	ands	r0, scno, r0
+	bne	fastcall_try
+#endif
+	cmp	scno, #__NR_prctl
+	bne	slow_path
+	ldr	r0, [sp, #S_OLD_R0]
+	tst	r0, #__OOB_SYSCALL_BIT
+	beq	slow_path
+fastcall_try:
+	tst	r10, #_TLF_OOB
+	beq	slow_path
+	mov	r0, sp				@ regs
+	bl	handle_oob_syscall
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]
+	tst	r0, r0
+	beq	slow_path
+	tst	r10, #_TLF_OOB
+	bne	fastcall_exit_check		@ check for MAYDAY
+	bl	sync_inband_irqs
+	b	ret_slow_syscall
+fastcall_exit_check:
+	ldr	r10, [tsk, #TI_FLAGS]
+	tst	r10, #_TIF_MAYDAY
+	beq	fast_ret_to_user
+	mov	r0, sp				@ regs
+	bl	dovetail_call_mayday
+	b	fast_ret_to_user
+slow_path:
+	tst	r10, #_TLF_DOVETAIL
+	bne	pipeline_syscall
+#ifdef CONFIG_DOVETAIL_LEGACY_SYSCALL_RANGE
+	ldr	r0, =#__OOB_SYSCALL_BIT
+	ands	r0, scno, r0
+	bne	pipeline_syscall
+#endif	
+	cmp	scno, #__NR_prctl
+	bne	root_syscall
+	ldr	r0, [sp, #S_OLD_R0]
+	tst	r0, #__OOB_SYSCALL_BIT
+	beq	root_syscall
+pipeline_syscall:
+	mov	r0, sp				@ regs
+	bl	__pipeline_syscall
+	ldr	r10, [tsk, #TI_LOCAL_FLAGS]
+	tst	r10, #_TLF_OOB
+	bne	fast_ret_to_user
+	cmp	r0, #0
+	bgt	ret_slow_syscall
+root_syscall:
+	ldmia	sp, { r0 - r3 }
+#endif /* CONFIG_DOVETAIL */
+
 	ldr	r10, [tsk, #TI_FLAGS]		@ check for syscall tracing
 	stmdb	sp!, {r4, r5}			@ push fifth and sixth args
 

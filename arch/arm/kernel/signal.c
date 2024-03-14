@@ -8,6 +8,7 @@
 #include <linux/random.h>
 #include <linux/signal.h>
 #include <linux/personality.h>
+#include <linux/irq_pipeline.h>
 #include <linux/uaccess.h>
 #include <linux/resume_user_mode.h>
 #include <linux/uprobes.h>
@@ -598,16 +599,36 @@ static int do_signal(struct pt_regs *regs, int syscall)
 	return 0;
 }
 
+static inline void do_retuser(void)
+{
+	unsigned int thread_flags;
+
+	if (dovetailing()) {
+		thread_flags = current_thread_info()->flags;
+		if (thread_flags & _TIF_RETUSER)
+			inband_retuser_notify();
+	}
+}
+
 asmlinkage int
 do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 {
+	WARN_ON_ONCE(irq_pipeline_debug() &&
+		(irqs_disabled() || running_oob()));
+
 	/*
 	 * The assembly code enters us with IRQs off, but it hasn't
 	 * informed the tracing code of that for efficiency reasons.
 	 * Update the trace code with the current status.
 	 */
-	trace_hardirqs_off();
+	if (!irqs_pipelined())
+		trace_hardirqs_off();
 	do {
+		if (irqs_pipelined()) {
+			local_irq_disable();
+			hard_cond_local_irq_enable();
+		}
+
 		if (likely(thread_flags & _TIF_NEED_RESCHED)) {
 			schedule();
 		} else {
@@ -617,6 +638,7 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 			if (thread_flags & (_TIF_SIGPENDING | _TIF_NOTIFY_SIGNAL)) {
 				int restart = do_signal(regs, syscall);
 				if (unlikely(restart)) {
+					do_retuser();
 					/*
 					 * Restart without handlers.
 					 * Deal with it without leaving
@@ -630,10 +652,16 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 			} else {
 				resume_user_mode_work(regs);
 			}
+			do_retuser();
 		}
-		local_irq_disable();
+		hard_local_irq_disable();
+
+		/* RETUSER might have switched oob */
+		if (!running_inband())
+			break;
+
 		thread_flags = read_thread_flags();
-	} while (thread_flags & _TIF_WORK_MASK);
+	} while (inband_irq_pending() || (thread_flags & _TIF_WORK_MASK));
 	return 0;
 }
 

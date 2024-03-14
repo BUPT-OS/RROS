@@ -32,7 +32,10 @@ static struct page **vdso_text_pagelist;
 
 extern char vdso_start[], vdso_end[];
 
-/* Total number of pages needed for the data and text portions of the VDSO. */
+/*
+ * Total number of pages needed for the data, private and text
+ * portions of the VDSO.
+ */
 unsigned int vdso_total_pages __ro_after_init;
 
 /*
@@ -171,8 +174,10 @@ static void __init patch_vdso(void *ehdr)
 	/* If the virtual counter is absent or non-functional we don't
 	 * want programs to incur the slight additional overhead of
 	 * dispatching through the VDSO only to fall back to syscalls.
+	 * However, if clocksources supporting generic MMIO access can
+	 * be reached via the vDSO, keep this fast path enabled.
 	 */
-	if (!cntvct_ok) {
+	if (!cntvct_ok && !IS_ENABLED(CONFIG_GENERIC_CLOCKSOURCE_VDSO)) {
 		vdso_nullpatch_one(&einfo, "__vdso_gettimeofday");
 		vdso_nullpatch_one(&einfo, "__vdso_clock_gettime");
 		vdso_nullpatch_one(&einfo, "__vdso_clock_gettime64");
@@ -210,16 +215,27 @@ static int __init vdso_init(void)
 
 	vdso_text_mapping.pages = vdso_text_pagelist;
 
-	vdso_total_pages = 1; /* for the data/vvar page */
+	vdso_total_pages = 2; /* for the data/vvar and vpriv pages */
 	vdso_total_pages += text_pages;
 
 	cntvct_ok = cntvct_functional();
 
 	patch_vdso(vdso_start);
+#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+	vdso_data->cs_type_seq = CLOCKSOURCE_VDSO_NONE << 16 | 1;
+#endif
 
 	return 0;
 }
 arch_initcall(vdso_init);
+
+static int install_vpriv(struct mm_struct *mm, unsigned long addr)
+{
+	/* Try mapping a page of anonymous memory at 'addr'. */
+	return mmap_region(NULL, addr, PAGE_SIZE,
+			  VM_READ | VM_WRITE | VM_MAYREAD | VM_MAYWRITE,
+			   0, NULL) != addr ? -EINVAL : 0;
+}
 
 static int install_vvar(struct mm_struct *mm, unsigned long addr)
 {
@@ -228,8 +244,13 @@ static int install_vvar(struct mm_struct *mm, unsigned long addr)
 	vma = _install_special_mapping(mm, addr, PAGE_SIZE,
 				       VM_READ | VM_MAYREAD,
 				       &vdso_data_mapping);
+	if (IS_ERR(vma))
+		return PTR_ERR(vma);
 
-	return PTR_ERR_OR_ZERO(vma);
+	if (cache_is_vivt())
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+	return vma->vm_start != addr ? -EINVAL : 0;
 }
 
 /* assumes mmap_lock is write-locked */
@@ -243,18 +264,41 @@ void arm_install_vdso(struct mm_struct *mm, unsigned long addr)
 	if (vdso_text_pagelist == NULL)
 		return;
 
-	if (install_vvar(mm, addr))
-		return;
+	/*
+	 * Install the vDSO mappings we need:
+	 *
+	 * +----------------+
+	 * |     vpriv      |  PAGE_SIZE (private anon memory)
+	 * |----------------|
+	 * |     vvar       |  PAGE_SIZE (shared)
+	 * |----------------|
+	 * |     text       |  text_pages * PAGE_SIZE (shared)
+	 * |        ...     |
+	 * +----------------+
+	 */
 
-	/* Account for vvar page. */
+	if (install_vpriv(mm, addr)) {
+		pr_err("cannot map VPRIV at expected address!\n");
+		return;
+	}
+
 	addr += PAGE_SIZE;
-	len = (vdso_total_pages - 1) << PAGE_SHIFT;
+	if (install_vvar(mm, addr)) {
+		WARN(1, "cannot map VVAR at expected address!\n");
+		return;
+	}
+
+	/* Account for vvar and vpriv pages. */
+	addr += PAGE_SIZE;
+	len = (vdso_total_pages - 2) << PAGE_SHIFT;
 
 	vma = _install_special_mapping(mm, addr, len,
 		VM_READ | VM_EXEC | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC,
 		&vdso_text_mapping);
 
-	if (!IS_ERR(vma))
+	if (IS_ERR(vma) || vma->vm_start != addr)
+		WARN(1, "cannot map VDSO at expected address!\n");
+	else
 		mm->context.vdso = addr;
 }
 

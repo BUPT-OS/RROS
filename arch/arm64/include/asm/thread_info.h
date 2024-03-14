@@ -14,6 +14,7 @@
 
 struct task_struct;
 
+#include <dovetail/thread_info.h>
 #include <asm/memory.h>
 #include <asm/stack_pointer.h>
 #include <asm/types.h>
@@ -23,6 +24,7 @@ struct task_struct;
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	unsigned long		local_flags;	/* local (synchronous) flags */
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 	u64			ttbr0;		/* saved TTBR0_EL1 */
 #endif
@@ -43,6 +45,7 @@ struct thread_info {
 	void			*scs_sp;
 #endif
 	u32			cpu;
+	struct oob_thread_state	oob_state;
 };
 
 #define thread_saved_pc(tsk)	\
@@ -55,6 +58,8 @@ struct thread_info {
 void arch_setup_new_exec(void);
 #define arch_setup_new_exec     arch_setup_new_exec
 
+#define ti_local_flags(__ti)	((__ti)->local_flags)
+
 #endif
 
 #define TIF_SIGPENDING		0	/* signal pending */
@@ -64,6 +69,7 @@ void arch_setup_new_exec(void);
 #define TIF_UPROBE		4	/* uprobe breakpoint or singlestep */
 #define TIF_MTE_ASYNC_FAULT	5	/* MTE Asynchronous Tag Check Fault */
 #define TIF_NOTIFY_SIGNAL	6	/* signal notifications exist */
+#define TIF_RETUSER		7	/* INBAND_TASK_RETUSER is pending */
 #define TIF_SYSCALL_TRACE	8	/* syscall trace active */
 #define TIF_SYSCALL_AUDIT	9	/* syscall auditing */
 #define TIF_SYSCALL_TRACEPOINT	10	/* syscall tracepoint for ftrace */
@@ -80,6 +86,7 @@ void arch_setup_new_exec(void);
 #define TIF_TAGGED_ADDR		26	/* Allow tagged user addresses */
 #define TIF_SME			27	/* SME in use */
 #define TIF_SME_VL_INHERIT	28	/* Inherit SME vl_onexec across exec */
+#define TIF_MAYDAY		29	/* Emergency trap pending */
 
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
@@ -96,11 +103,13 @@ void arch_setup_new_exec(void);
 #define _TIF_SVE		(1 << TIF_SVE)
 #define _TIF_MTE_ASYNC_FAULT	(1 << TIF_MTE_ASYNC_FAULT)
 #define _TIF_NOTIFY_SIGNAL	(1 << TIF_NOTIFY_SIGNAL)
+#define _TIF_RETUSER		(1 << TIF_RETUSER)
+#define _TIF_MAYDAY		(1 << TIF_MAYDAY)
 
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
 				 _TIF_NOTIFY_RESUME | _TIF_FOREIGN_FPSTATE | \
 				 _TIF_UPROBE | _TIF_MTE_ASYNC_FAULT | \
-				 _TIF_NOTIFY_SIGNAL)
+				 _TIF_NOTIFY_SIGNAL | _TIF_RETUSER)
 
 #define _TIF_SYSCALL_WORK	(_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | \
 				 _TIF_SYSCALL_TRACEPOINT | _TIF_SECCOMP | \
@@ -120,5 +129,13 @@ void arch_setup_new_exec(void);
 	.preempt_count	= INIT_PREEMPT_COUNT,				\
 	INIT_SCS							\
 }
+
+/*
+ * Local (synchronous) thread flags.
+ */
+#define _TLF_OOB		0x0001
+#define _TLF_DOVETAIL		0x0002
+#define _TLF_OFFSTAGE		0x0004
+#define _TLF_OOBTRAP		0x0008
 
 #endif /* __ASM_THREAD_INFO_H */

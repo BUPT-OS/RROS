@@ -39,6 +39,7 @@ struct task_struct;
 
 DECLARE_PER_CPU(struct task_struct *, __entry_task);
 
+#include <dovetail/thread_info.h>
 #include <asm/types.h>
 #include <asm/traps.h>
 
@@ -62,6 +63,7 @@ struct cpu_context_save {
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	__u32			local_flags;	/* local (synchronous) flags */
 	int			preempt_count;	/* 0 => preemptable, <0 => bug */
 	__u32			cpu;		/* cpu */
 	__u32			cpu_domain;	/* cpu domain */
@@ -73,11 +75,13 @@ struct thread_info {
 #ifdef CONFIG_ARM_THUMBEE
 	unsigned long		thumbee_state;	/* ThumbEE Handler Base register */
 #endif
+	struct oob_thread_state	oob_state; /* co-kernel thread state */
 };
 
 #define INIT_THREAD_INFO(tsk)						\
 {									\
 	.flags		= 0,						\
+	.local_flags	= 0,						\
 	.preempt_count	= INIT_PREEMPT_COUNT,				\
 }
 
@@ -86,7 +90,9 @@ static inline struct task_struct *thread_task(struct thread_info* ti)
 	return (struct task_struct *)ti;
 }
 
-#define thread_saved_pc(tsk)	\
+#define ti_local_flags(__ti)	((__ti)->local_flags)
+
+#define thread_saved_pc(tsk)						\
 	((unsigned long)(task_thread_info(tsk)->cpu_context.pc))
 #define thread_saved_sp(tsk)	\
 	((unsigned long)(task_thread_info(tsk)->cpu_context.sp))
@@ -144,6 +150,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define TIF_NOTIFY_RESUME	2	/* callback before returning to user */
 #define TIF_UPROBE		3	/* breakpointed or singlestepping */
 #define TIF_NOTIFY_SIGNAL	4	/* signal notifications exist */
+#define TIF_RETUSER		5	/* INBAND_TASK_RETUSER is pending */
 
 #define TIF_USING_IWMMXT	17
 #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
@@ -153,6 +160,7 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define TIF_SYSCALL_TRACEPOINT	22	/* syscall tracepoint instrumentation */
 #define TIF_SECCOMP		23	/* seccomp syscall filtering active */
 
+#define TIF_MAYDAY		24	/* emergency trap pending */
 
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
@@ -163,9 +171,14 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
 #define _TIF_SYSCALL_TRACEPOINT	(1 << TIF_SYSCALL_TRACEPOINT)
 #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
 #define _TIF_NOTIFY_SIGNAL	(1 << TIF_NOTIFY_SIGNAL)
+#define _TIF_RETUSER		(1 << TIF_RETUSER)
 #define _TIF_USING_IWMMXT	(1 << TIF_USING_IWMMXT)
+#define _TIF_MAYDAY		(1 << TIF_MAYDAY)
 
-/* Checks for any syscall work in entry-common.S */
+/*
+ * Checks for any syscall work in entry-common.S.
+ * CAUTION: Only bit0-bit15 are tested there.
+ */
 #define _TIF_SYSCALL_WORK (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | \
 			   _TIF_SYSCALL_TRACEPOINT | _TIF_SECCOMP)
 
@@ -174,7 +187,15 @@ extern int vfp_restore_user_hwstate(struct user_vfp *,
  */
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
 				 _TIF_NOTIFY_RESUME | _TIF_UPROBE | \
-				 _TIF_NOTIFY_SIGNAL)
+				 _TIF_NOTIFY_SIGNAL | _TIF_RETUSER)
+
+/*
+ * Local (synchronous) thread flags.
+ */
+#define _TLF_OOB		0x0001
+#define _TLF_DOVETAIL		0x0002
+#define _TLF_OFFSTAGE		0x0004
+#define _TLF_OOBTRAP		0x0008
 
 #endif /* __KERNEL__ */
 #endif /* __ASM_ARM_THREAD_INFO_H */

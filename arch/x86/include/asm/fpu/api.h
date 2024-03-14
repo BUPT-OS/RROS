@@ -66,20 +66,29 @@ static inline void kernel_fpu_begin(void)
  *
  * Disabling preemption also serializes against kernel_fpu_begin().
  */
-static inline void fpregs_lock(void)
+static inline unsigned long fpregs_lock(void)
 {
+	if (IS_ENABLED(CONFIG_IRQ_PIPELINE))
+		return hard_preempt_disable();
+
 	if (!IS_ENABLED(CONFIG_PREEMPT_RT))
 		local_bh_disable();
 	else
 		preempt_disable();
+
+	return 0;
 }
 
-static inline void fpregs_unlock(void)
+static inline void fpregs_unlock(unsigned long flags)
 {
-	if (!IS_ENABLED(CONFIG_PREEMPT_RT))
-		local_bh_enable();
-	else
-		preempt_enable();
+	if (IS_ENABLED(CONFIG_IRQ_PIPELINE)) {
+		hard_preempt_enable(flags);
+	} else {
+		if (!IS_ENABLED(CONFIG_PREEMPT_RT))
+			local_bh_enable();
+		else
+			preempt_enable();
+	}
 }
 
 /*
@@ -89,7 +98,7 @@ static inline void fpregs_unlock(void)
  * being automatically saved/restored. Then FPU state can be modified safely in the
  * registers, before unlocking with fpregs_unlock().
  */
-void fpregs_lock_and_load(void);
+unsigned long fpregs_lock_and_load(void);
 
 #ifdef CONFIG_X86_DEBUG_FPU
 extern void fpregs_assert_state_consistent(void);
@@ -101,6 +110,10 @@ static inline void fpregs_assert_state_consistent(void) { }
  * Load the task FPU state before returning to userspace.
  */
 extern void switch_fpu_return(void);
+
+/* For Dovetail context switching. */
+void fpu__suspend_inband(void);
+void fpu__resume_inband(void);
 
 /*
  * Query the presence of one or more xfeatures. Works on any legacy CPU as well.

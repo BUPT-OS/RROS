@@ -15,6 +15,7 @@
 #include <linux/percpu.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/irq_pipeline.h>
 #include <linux/gfp.h>
 #include <linux/smp.h>
 #include <linux/cpu.h>
@@ -49,6 +50,8 @@ static DEFINE_PER_CPU_SHARED_ALIGNED(struct llist_head, call_single_queue);
 static DEFINE_PER_CPU(atomic_t, trigger_backtrace) = ATOMIC_INIT(1);
 
 static void __flush_smp_call_function_queue(bool warn_cpu_offline);
+
+static void call_function_oob_init(void);
 
 int smpcfd_prepare_cpu(unsigned int cpu)
 {
@@ -104,6 +107,8 @@ void __init call_function_init(void)
 
 	for_each_possible_cpu(i)
 		init_llist_head(&per_cpu(call_single_queue, i));
+
+	call_function_oob_init();
 
 	smpcfd_prepare_cpu(smp_processor_id());
 }
@@ -1112,3 +1117,142 @@ int smp_call_on_cpu(unsigned int cpu, int (*func)(void *), void *par, bool phys)
 	return sscs.ret;
 }
 EXPORT_SYMBOL_GPL(smp_call_on_cpu);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct llist_head, call_oob_queue);
+static DEFINE_PER_CPU_SHARED_ALIGNED(call_single_data_t, csd_oob_data);
+
+static void __init call_function_oob_init(void)
+{
+	int n;
+
+	for_each_possible_cpu(n)
+		init_llist_head(&per_cpu(call_oob_queue, n));
+}
+
+/*
+ * Runs the oob callbacks queued by remote CPUs. Hard irqs off, oob
+ * stage on entry. The implementation was shamelessly lifted from
+ * __flush_smp_call_function_queue().
+ */
+void smp_flush_oob_call_function_queue(void)
+{
+	call_single_data_t *csd, *csd_next;
+	struct llist_node *entry, *prev;
+	struct llist_head *head;
+
+	WARN_ON(irq_pipeline_debug() && (!hard_irqs_disabled() || running_inband()));
+
+	head = raw_cpu_ptr(&call_oob_queue);
+	if (llist_empty(head))
+		return;
+
+	entry = llist_del_all(head);
+
+	/*
+	 * Run all SYNC callbacks first since senders are waiting for
+	 * us. Callbacks are pushed at head, so walk the list in
+	 * reverse order to preserve the enqueuing sequence.
+	 */
+	entry = llist_reverse_order(entry);
+	prev = NULL;
+	llist_for_each_entry_safe(csd, csd_next, entry, node.llist) {
+		if (CSD_TYPE(csd) == CSD_TYPE_SYNC) {
+			smp_call_func_t func = csd->func;
+			void *info = csd->info;
+
+			if (prev)
+				prev->next = &csd_next->node.llist;
+			else
+				entry = &csd_next->node.llist;
+
+			csd_do_func(func, info, csd);
+			csd_unlock(csd);
+		} else {
+			prev = &csd->node.llist;
+		}
+	}
+
+	if (!entry)
+		return;
+
+	/* Finish with ASYNC calls. */
+	prev = NULL;
+	llist_for_each_entry_safe(csd, csd_next, entry, node.llist) {
+		if (prev)
+			prev->next = &csd_next->node.llist;
+		else
+			entry = &csd_next->node.llist;
+		if (CSD_TYPE(csd) == CSD_TYPE_ASYNC) {
+			smp_call_func_t func = csd->func;
+			void *info = csd->info;
+
+			csd_unlock(csd);
+			csd_do_func(func, info, csd);
+		}
+	}
+}
+
+/*
+ * smp_call_function_oob - Run a function on a specific CPU, on the
+ *                         out-of-band stage.
+ *
+ * @func: The function to run. This must be fast and non-blocking.
+ * @info: An arbitrary pointer to pass to the function.
+ * @wait: If true, wait until function has completed on the target CPU.
+ *
+ * Hard irqs must be enabled on entry.
+ *
+ * Returns 0 on success, else a negative status code.
+ */
+int smp_call_function_oob(int cpu, smp_call_func_t func, void *info, bool wait)
+{
+	call_single_data_t csd_stack = {
+		.node = { .u_flags = CSD_FLAG_LOCK | CSD_TYPE_SYNC },
+	}, *csd;
+	unsigned long flags;
+	int this_cpu;
+
+	/*
+	 * If hard irqs are off, this call might deadlock if two CPUs
+	 * are waiting for each other to unlock the csd. Make sure to
+	 * detect this.
+	 */
+	WARN_ON_ONCE(hard_irqs_disabled());
+
+	if ((unsigned)cpu >= nr_cpu_ids || !cpu_online(cpu))
+		return -ENXIO;
+
+	this_cpu = hard_get_cpu(flags);
+	if (this_cpu == cpu) {
+	  	trace_csd_function_entry(func, NULL);
+		up_oob_call(func, info);
+		trace_csd_function_exit(func, NULL);
+		goto out;
+	}
+
+	csd = &csd_stack;
+	if (!wait) {
+		csd = raw_cpu_ptr(&csd_oob_data);
+		csd_lock(csd);
+	}
+
+	csd->func = func;
+	csd->info = info;
+
+	if (llist_add(&csd->node.llist, &per_cpu(call_oob_queue, cpu)))
+		irq_send_oob_ipi(CALL_FUNCTION_OOB_IPI, cpumask_of(cpu));
+
+	if (wait)
+		csd_lock_wait(csd);
+out:
+	hard_put_cpu(flags);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(smp_call_function_oob);
+
+#else
+static inline void call_function_oob_init(void) { }
+#endif

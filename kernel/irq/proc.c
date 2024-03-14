@@ -519,6 +519,9 @@ int show_interrupts(struct seq_file *p, void *v)
 #ifdef CONFIG_GENERIC_IRQ_SHOW_LEVEL
 	seq_printf(p, " %-8s", irqd_is_level_type(&desc->irq_data) ? "Level" : "Edge");
 #endif
+#ifdef CONFIG_IRQ_PIPELINE
+	seq_printf(p, " %-3s", irq_settings_is_oob(desc) ? "oob" : "");
+#endif
 	if (desc->name)
 		seq_printf(p, "-%-8s", desc->name);
 

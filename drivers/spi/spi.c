@@ -2910,6 +2910,9 @@ struct spi_controller *__spi_alloc_controller(struct device *dev,
 	mutex_init(&ctlr->bus_lock_mutex);
 	mutex_init(&ctlr->io_mutex);
 	mutex_init(&ctlr->add_lock);
+#ifdef CONFIG_SPI_OOB
+	sema_init(&ctlr->bus_oob_lock_sem, 1);
+#endif
 	ctlr->bus_num = -1;
 	ctlr->num_chipselect = 1;
 	ctlr->slave = slave;
@@ -4182,6 +4185,22 @@ out:
  * inline functions.
  */
 
+static void get_spi_bus(struct spi_controller *ctlr)
+{
+	mutex_lock(&ctlr->bus_lock_mutex);
+#ifdef CONFIG_SPI_OOB
+	down(&ctlr->bus_oob_lock_sem);
+#endif
+}
+
+static void put_spi_bus(struct spi_controller *ctlr)
+{
+#ifdef CONFIG_SPI_OOB
+	up(&ctlr->bus_oob_lock_sem);
+#endif
+	mutex_unlock(&ctlr->bus_lock_mutex);
+}
+
 static void spi_complete(void *arg)
 {
 	complete(arg);
@@ -4265,9 +4284,9 @@ int spi_sync(struct spi_device *spi, struct spi_message *message)
 {
 	int ret;
 
-	mutex_lock(&spi->controller->bus_lock_mutex);
+	get_spi_bus(spi->controller);
 	ret = __spi_sync(spi, message);
-	mutex_unlock(&spi->controller->bus_lock_mutex);
+	put_spi_bus(spi->controller);
 
 	return ret;
 }
@@ -4314,7 +4333,7 @@ int spi_bus_lock(struct spi_controller *ctlr)
 {
 	unsigned long flags;
 
-	mutex_lock(&ctlr->bus_lock_mutex);
+	get_spi_bus(ctlr);
 
 	spin_lock_irqsave(&ctlr->bus_lock_spinlock, flags);
 	ctlr->bus_lock_flag = 1;
@@ -4343,7 +4362,7 @@ int spi_bus_unlock(struct spi_controller *ctlr)
 {
 	ctlr->bus_lock_flag = 0;
 
-	mutex_unlock(&ctlr->bus_lock_mutex);
+	put_spi_bus(ctlr);
 
 	return 0;
 }
@@ -4428,6 +4447,274 @@ int spi_write_then_read(struct spi_device *spi,
 	return status;
 }
 EXPORT_SYMBOL_GPL(spi_write_then_read);
+
+#ifdef CONFIG_SPI_OOB
+
+static int bus_lock_oob(struct spi_controller *ctlr)
+{
+	unsigned long flags;
+	int ret = -EBUSY;
+
+	mutex_lock(&ctlr->bus_lock_mutex);
+
+	spin_lock_irqsave(&ctlr->bus_lock_spinlock, flags);
+
+	if (!ctlr->bus_lock_flag && !down_trylock(&ctlr->bus_oob_lock_sem)) {
+		ctlr->bus_lock_flag = 1;
+		ret = 0;
+	}
+
+	spin_unlock_irqrestore(&ctlr->bus_lock_spinlock, flags);
+
+	mutex_unlock(&ctlr->bus_lock_mutex);
+
+	return ret;
+}
+
+static int bus_unlock_oob(struct spi_controller *ctlr)
+{
+	ctlr->bus_lock_flag = 0;
+	up(&ctlr->bus_oob_lock_sem);
+
+	return 0;
+}
+
+static int prepare_oob_dma(struct spi_controller *ctlr,
+			struct spi_oob_transfer *xfer)
+{
+	struct dma_async_tx_descriptor *desc;
+	size_t len = xfer->setup.frame_len;
+	dma_cookie_t cookie;
+	dma_addr_t addr;
+	int ret;
+
+	/* TX to second half of I/O buffer. */
+	addr = xfer->dma_addr + xfer->aligned_frame_len;
+	desc = dmaengine_prep_slave_single(ctlr->dma_tx, addr, len,
+					DMA_MEM_TO_DEV,
+					DMA_OOB_INTERRUPT|DMA_OOB_PULSE);
+	if (!desc)
+		return -EIO;
+
+	xfer->txd = desc;
+	cookie = dmaengine_submit(desc);
+	ret = dma_submit_error(cookie);
+	if (ret)
+		return ret;
+
+	dma_async_issue_pending(ctlr->dma_tx);
+
+	/* RX to first half of I/O buffer. */
+	addr = xfer->dma_addr;
+	desc = dmaengine_prep_slave_single(ctlr->dma_rx, addr, len,
+					DMA_DEV_TO_MEM,
+					DMA_OOB_INTERRUPT|DMA_OOB_PULSE);
+	if (!desc) {
+		ret = -EIO;
+		goto fail_rx;
+	}
+
+	desc->callback = xfer->setup.xfer_done;
+	desc->callback_param = xfer;
+
+	xfer->rxd = desc;
+	cookie = dmaengine_submit(desc);
+	ret = dma_submit_error(cookie);
+	if (ret)
+		goto fail_rx;
+
+	dma_async_issue_pending(ctlr->dma_rx);
+
+	return 0;
+
+fail_rx:
+	dmaengine_terminate_sync(ctlr->dma_tx);
+
+	return ret;
+}
+
+static void unprepare_oob_dma(struct spi_controller *ctlr)
+{
+	dmaengine_terminate_sync(ctlr->dma_rx);
+	dmaengine_terminate_sync(ctlr->dma_tx);
+}
+
+/*
+ * A simpler version of __spi_validate() for oob transfers.
+ */
+static int validate_oob_xfer(struct spi_device *spi,
+			struct spi_oob_transfer *xfer)
+{
+	struct spi_controller *ctlr = spi->controller;
+	struct spi_oob_setup *p = &xfer->setup;
+	int w_size;
+
+	if (p->frame_len == 0)
+		return -EINVAL;
+
+	if (!p->bits_per_word)
+		p->bits_per_word = spi->bits_per_word;
+
+	if (!p->speed_hz)
+		p->speed_hz = spi->max_speed_hz;
+
+	if (ctlr->max_speed_hz && p->speed_hz > ctlr->max_speed_hz)
+		p->speed_hz = ctlr->max_speed_hz;
+
+	if (__spi_validate_bits_per_word(ctlr, p->bits_per_word))
+		return -EINVAL;
+
+	if (p->bits_per_word <= 8)
+		w_size = 1;
+	else if (p->bits_per_word <= 16)
+		w_size = 2;
+	else
+		w_size = 4;
+
+	if (p->frame_len % w_size)
+		return -EINVAL;
+
+	if (p->speed_hz && ctlr->min_speed_hz &&
+		p->speed_hz < ctlr->min_speed_hz)
+		return -EINVAL;
+
+	return 0;
+}
+
+int spi_prepare_oob_transfer(struct spi_device *spi,
+			struct spi_oob_transfer *xfer)
+{
+	struct spi_controller *ctlr;
+	dma_addr_t dma_addr;
+	size_t alen, iolen;
+	void *iobuf;
+	int ret;
+
+	/* Controller must support oob transactions. */
+	ctlr = spi->controller;
+	if (!ctlr->prepare_oob_transfer)
+		return -ENOTSUPP;
+
+	/* Out-of-band transfers require DMA support. */
+	if (!ctlr->can_dma)
+		return -ENODEV;
+
+	ret = validate_oob_xfer(spi, xfer);
+	if (ret)
+		return ret;
+
+	alen = L1_CACHE_ALIGN(xfer->setup.frame_len);
+	/*
+	 * Allocate a single coherent I/O buffer which is twice as
+	 * large as the user specified transfer length, TX data goes
+	 * to the upper half, RX data to the lower half.
+	 */
+	iolen = alen * 2;
+	iobuf = dma_alloc_coherent(ctlr->dev.parent, iolen,
+				&dma_addr, GFP_KERNEL);
+	if (iobuf == NULL)
+		return -ENOMEM;
+
+	xfer->spi = spi;
+	xfer->dma_addr = dma_addr;
+	xfer->io_buffer = iobuf;
+	xfer->aligned_frame_len = alen;
+	xfer->effective_speed_hz = 0;
+
+	ret = prepare_oob_dma(ctlr, xfer);
+	if (ret)
+		goto fail_prep_dma;
+
+	ret = bus_lock_oob(ctlr);
+	if (ret)
+		goto fail_bus_lock;
+
+	ret = ctlr->prepare_oob_transfer(ctlr, xfer);
+	if (ret)
+		goto fail_prep_xfer;
+
+	return 0;
+
+fail_prep_xfer:
+	bus_unlock_oob(ctlr);
+fail_bus_lock:
+	unprepare_oob_dma(ctlr);
+fail_prep_dma:
+	dma_free_coherent(ctlr->dev.parent, iolen, iobuf, dma_addr);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(spi_prepare_oob_transfer);
+
+void spi_start_oob_transfer(struct spi_oob_transfer *xfer)
+{
+	struct spi_device *spi = xfer->spi;
+	struct spi_controller *ctlr = spi->controller;
+
+	ctlr->start_oob_transfer(ctlr, xfer);
+}
+EXPORT_SYMBOL_GPL(spi_start_oob_transfer);
+
+int spi_pulse_oob_transfer(struct spi_oob_transfer *xfer) /* oob stage */
+{
+	struct spi_device *spi = xfer->spi;
+	struct spi_controller *ctlr = spi->controller;
+	int ret;
+
+	if (ctlr->pulse_oob_transfer)
+		ctlr->pulse_oob_transfer(ctlr, xfer);
+
+	ret = dma_pulse_oob(ctlr->dma_rx);
+	if (likely(!ret))
+		ret = dma_pulse_oob(ctlr->dma_tx);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(spi_pulse_oob_transfer);
+
+void spi_terminate_oob_transfer(struct spi_oob_transfer *xfer)
+{
+	struct spi_device *spi = xfer->spi;
+	struct spi_controller *ctlr = spi->controller;
+
+	if (ctlr->terminate_oob_transfer)
+		ctlr->terminate_oob_transfer(ctlr, xfer);
+
+	unprepare_oob_dma(ctlr);
+	bus_unlock_oob(ctlr);
+	dma_free_coherent(ctlr->dev.parent, xfer->aligned_frame_len * 2,
+			xfer->io_buffer, xfer->dma_addr);
+}
+EXPORT_SYMBOL_GPL(spi_terminate_oob_transfer);
+
+int spi_mmap_oob_transfer(struct vm_area_struct *vma,
+			struct spi_oob_transfer *xfer)
+{
+	struct spi_device *spi = xfer->spi;
+	struct spi_controller *ctlr = spi->controller;
+	size_t len;
+	int ret;
+
+	/*
+	 * We may have an IOMMU, rely on dma_mmap_coherent() for
+	 * dealing with the nitty-gritty details of mapping a coherent
+	 * buffer.
+	 */
+	len = vma->vm_end - vma->vm_start;
+	if (spi_get_oob_iolen(xfer) <= len)
+		ret = dma_mmap_coherent(ctlr->dev.parent,
+					vma,
+					xfer->io_buffer,
+					xfer->dma_addr,
+					len);
+	else
+		ret = -EINVAL;
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(spi_mmap_oob_transfer);
+
+#endif	/* SPI_OOB */
 
 /*-------------------------------------------------------------------------*/
 

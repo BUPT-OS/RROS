@@ -211,29 +211,30 @@ static inline void lockdep_init_map(struct lockdep_map *lock, const char *name,
  * of dependencies wrong: they are either too broad (they need a class-split)
  * or they are too narrow (they suffer from a false class-split):
  */
-#define lockdep_set_class(lock, key)				\
-	lockdep_init_map_type(&(lock)->dep_map, #key, key, 0,	\
-			      (lock)->dep_map.wait_type_inner,	\
-			      (lock)->dep_map.wait_type_outer,	\
-			      (lock)->dep_map.lock_type)
+#define lockdep_set_class(lock, key)					\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #key, key, 0,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
-#define lockdep_set_class_and_name(lock, key, name)		\
-	lockdep_init_map_type(&(lock)->dep_map, name, key, 0,	\
-			      (lock)->dep_map.wait_type_inner,	\
-			      (lock)->dep_map.wait_type_outer,	\
-			      (lock)->dep_map.lock_type)
+#define lockdep_set_class_and_name(lock, key, name)			\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), name, key, 0,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
-#define lockdep_set_class_and_subclass(lock, key, sub)		\
-	lockdep_init_map_type(&(lock)->dep_map, #key, key, sub,	\
-			      (lock)->dep_map.wait_type_inner,	\
-			      (lock)->dep_map.wait_type_outer,	\
-			      (lock)->dep_map.lock_type)
+#define lockdep_set_class_and_subclass(lock, key, sub)			\
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #key, key, sub,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
 #define lockdep_set_subclass(lock, sub)					\
-	lockdep_init_map_type(&(lock)->dep_map, #lock, (lock)->dep_map.key, sub,\
-			      (lock)->dep_map.wait_type_inner,		\
-			      (lock)->dep_map.wait_type_outer,		\
-			      (lock)->dep_map.lock_type)
+	lockdep_init_map_type(LOCKDEP_ALT_DEPMAP(lock), #lock,		\
+			LOCKDEP_ALT_DEPMAP(lock)->key, sub,		\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_inner,	\
+			LOCKDEP_ALT_DEPMAP(lock)->wait_type_outer,	\
+			LOCKDEP_ALT_DEPMAP(lock)->lock_type)
 
 #define lockdep_set_novalidate_class(lock) \
 	lockdep_set_class_and_name(lock, &__lockdep_no_validate__, #lock)
@@ -241,7 +242,8 @@ static inline void lockdep_init_map(struct lockdep_map *lock, const char *name,
 /*
  * Compare locking classes
  */
-#define lockdep_match_class(lock, key) lockdep_match_key(&(lock)->dep_map, key)
+#define lockdep_match_class(lock, key) \
+	lockdep_match_key(LOCKDEP_ALT_DEPMAP(lock), key)
 
 static inline int lockdep_match_key(struct lockdep_map *lock,
 				    struct lock_class_key *key)
@@ -288,8 +290,8 @@ static inline int lock_is_held(const struct lockdep_map *lock)
 	return lock_is_held_type(lock, -1);
 }
 
-#define lockdep_is_held(lock)		lock_is_held(&(lock)->dep_map)
-#define lockdep_is_held_type(lock, r)	lock_is_held_type(&(lock)->dep_map, (r))
+#define lockdep_is_held(lock)		lock_is_held(LOCKDEP_ALT_DEPMAP(lock))
+#define lockdep_is_held_type(lock, r)	lock_is_held_type(LOCKDEP_ALT_DEPMAP(lock), (r))
 
 extern void lock_set_class(struct lockdep_map *lock, const char *name,
 			   struct lock_class_key *key, unsigned int subclass,
@@ -321,28 +323,34 @@ extern void lock_unpin_lock(struct lockdep_map *lock, struct pin_cookie);
 	do { WARN_ON_ONCE(debug_locks && !(cond)); } while (0)
 
 #define lockdep_assert_held(l)		\
-	lockdep_assert(lockdep_is_held(l) != LOCK_STATE_NOT_HELD)
+	lockdep_assert(LOCKDEP_HARD_DEBUG_RET(l, 1, \
+			lockdep_is_held(l) != LOCK_STATE_NOT_HELD))
 
 #define lockdep_assert_not_held(l)	\
-	lockdep_assert(lockdep_is_held(l) != LOCK_STATE_HELD)
+	lockdep_assert(LOCKDEP_HARD_DEBUG_RET(l, 1, \
+		       lockdep_is_held(l) != LOCK_STATE_HELD))
 
 #define lockdep_assert_held_write(l)	\
-	lockdep_assert(lockdep_is_held_type(l, 0))
+	lockdep_assert(LOCKDEP_HARD_DEBUG_RET(l, 1,	\
+			lockdep_is_held_type(l, 0)))
 
 #define lockdep_assert_held_read(l)	\
-	lockdep_assert(lockdep_is_held_type(l, 1))
+	lockdep_assert(LOCKDEP_HARD_DEBUG_RET(l, 1,	\
+			lockdep_is_held_type(l, 1)))
 
 #define lockdep_assert_held_once(l)		\
-	lockdep_assert_once(lockdep_is_held(l) != LOCK_STATE_NOT_HELD)
+	lockdep_assert_once(LOCKDEP_HARD_DEBUG_RET(l, 1, \
+			lockdep_is_held(l) != LOCK_STATE_NOT_HELD))
 
 #define lockdep_assert_none_held_once()		\
 	lockdep_assert_once(!current->lockdep_depth)
 
 #define lockdep_recursing(tsk)	((tsk)->lockdep_recursion)
 
-#define lockdep_pin_lock(l)	lock_pin_lock(&(l)->dep_map)
-#define lockdep_repin_lock(l,c)	lock_repin_lock(&(l)->dep_map, (c))
-#define lockdep_unpin_lock(l,c)	lock_unpin_lock(&(l)->dep_map, (c))
+#define lockdep_pin_lock(l)	LOCKDEP_HARD_DEBUG_RET(l, ({ struct pin_cookie cookie; cookie;} ), \
+							lock_pin_lock(LOCKDEP_ALT_DEPMAP(l)))
+#define lockdep_repin_lock(l,c)	LOCKDEP_HARD_DEBUG(l,, lock_repin_lock(LOCKDEP_ALT_DEPMAP(l), (c)))
+#define lockdep_unpin_lock(l,c)	LOCKDEP_HARD_DEBUG(l,, lock_unpin_lock(LOCKDEP_ALT_DEPMAP(l), (c)))
 
 /*
  * Must use lock_map_aquire_try() with override maps to avoid
@@ -586,22 +594,22 @@ do {									\
 #ifdef CONFIG_PROVE_LOCKING
 # define might_lock(lock)						\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, 0, 0, 0, 1, NULL, _THIS_IP_);	\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), 0, 0, 0, 1, NULL, _THIS_IP_);	\
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);			\
 } while (0)
 # define might_lock_read(lock)						\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, 0, 0, 1, 1, NULL, _THIS_IP_);	\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), 0, 0, 1, 1, NULL, _THIS_IP_); \
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);		\
 } while (0)
 # define might_lock_nested(lock, subclass)				\
 do {									\
-	typecheck(struct lockdep_map *, &(lock)->dep_map);		\
-	lock_acquire(&(lock)->dep_map, subclass, 0, 1, 1, NULL,		\
+	typecheck(struct lockdep_map *, LOCKDEP_ALT_DEPMAP(lock));	\
+	lock_acquire(LOCKDEP_ALT_DEPMAP(lock), subclass, 0, 1, 1, NULL,	\
 		     _THIS_IP_);					\
-	lock_release(&(lock)->dep_map, _THIS_IP_);			\
+	lock_release(LOCKDEP_ALT_DEPMAP(lock), _THIS_IP_);		\
 } while (0)
 
 DECLARE_PER_CPU(int, hardirqs_enabled);
@@ -610,14 +618,32 @@ DECLARE_PER_CPU(unsigned int, lockdep_recursion);
 
 #define __lockdep_enabled	(debug_locks && !this_cpu_read(lockdep_recursion))
 
+#define __lockdep_check_irqs_enabled()					\
+	({ !hard_irqs_disabled() &&					\
+		(running_oob() || this_cpu_read(hardirqs_enabled)); })
+
 #define lockdep_assert_irqs_enabled()					\
-do {									\
-	WARN_ON_ONCE(__lockdep_enabled && !this_cpu_read(hardirqs_enabled)); \
-} while (0)
+	do {								\
+		WARN_ON_ONCE(__lockdep_enabled &&			\
+			!__lockdep_check_irqs_enabled());		\
+	} while (0)
+
+#define __lockdep_check_irqs_disabled()					\
+	({ hard_irqs_disabled() ||					\
+		(running_inband() && !this_cpu_read(hardirqs_enabled)); })
 
 #define lockdep_assert_irqs_disabled()					\
+	  do {								\
+		  WARN_ON_ONCE(__lockdep_enabled &&			\
+			  !__lockdep_check_irqs_disabled());		\
+	  } while (0)
+
+#define lockdep_read_irqs_state()					\
+	({ this_cpu_read(hardirqs_enabled); })
+
+#define lockdep_write_irqs_state(__state)				\
 do {									\
-	WARN_ON_ONCE(__lockdep_enabled && this_cpu_read(hardirqs_enabled)); \
+	this_cpu_write(hardirqs_enabled, __state);			\
 } while (0)
 
 #define lockdep_assert_in_irq()						\
@@ -636,7 +662,7 @@ do {									\
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&		\
 		     __lockdep_enabled			&&		\
 		     (preempt_count() != 0		||		\
-		      !this_cpu_read(hardirqs_enabled)));		\
+		     __lockdep_check_irqs_disabled()));			\
 } while (0)
 
 #define lockdep_assert_preemption_disabled()				\
@@ -644,7 +670,7 @@ do {									\
 	WARN_ON_ONCE(IS_ENABLED(CONFIG_PREEMPT_COUNT)	&&		\
 		     __lockdep_enabled			&&		\
 		     (preempt_count() == 0		&&		\
-		      this_cpu_read(hardirqs_enabled)));		\
+		     __lockdep_check_irqs_enabled()));			\
 } while (0)
 
 /*
@@ -664,6 +690,8 @@ do {									\
 
 # define lockdep_assert_irqs_enabled() do { } while (0)
 # define lockdep_assert_irqs_disabled() do { } while (0)
+# define lockdep_read_irqs_state() 0
+# define lockdep_write_irqs_state(__state) do { (void)(__state); } while (0)
 # define lockdep_assert_in_irq() do { } while (0)
 # define lockdep_assert_no_hardirq() do { } while (0)
 

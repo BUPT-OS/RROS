@@ -78,8 +78,13 @@ static inline void outer_flush_range(phys_addr_t start, phys_addr_t end)
  */
 static inline void outer_flush_all(void)
 {
-	if (outer_cache.flush_all)
+	unsigned long flags;
+
+	if (outer_cache.flush_all) {
+		flags = hard_cond_local_irq_save();
 		outer_cache.flush_all();
+		hard_cond_local_irq_restore(flags);
+	}
 }
 
 /**

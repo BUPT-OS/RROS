@@ -67,6 +67,12 @@
  *                later.
  * IRQF_NO_DEBUG - Exclude from runnaway detection for IPI and similar handlers,
  *		   depends on IRQF_PERCPU.
+ * IRQF_OOB - Interrupt is attached to an out-of-band handler living
+ *            on the heading stage of the interrupt pipeline
+ *            (CONFIG_IRQ_PIPELINE).  It may be delivered to the
+ *            handler any time interrupts are enabled in the CPU,
+ *            regardless of the (virtualized) interrupt state
+ *            maintained by local_irq_save/disable().
  */
 #define IRQF_SHARED		0x00000080
 #define IRQF_PROBE_SHARED	0x00000100
@@ -82,6 +88,7 @@
 #define IRQF_COND_SUSPEND	0x00040000
 #define IRQF_NO_AUTOEN		0x00080000
 #define IRQF_NO_DEBUG		0x00100000
+#define IRQF_OOB		0x00200000
 
 #define IRQF_TIMER		(__IRQF_TIMER | IRQF_NO_SUSPEND | IRQF_NO_THREAD)
 
@@ -534,9 +541,29 @@ DECLARE_STATIC_KEY_FALSE(force_irqthreads_key);
  * to ensure that after a local_irq_disable(), interrupts have
  * really been disabled in hardware. Such architectures need to
  * implement the following hook.
+ *
+ * Those cases also apply when interrupt pipelining is in effect,
+ * since we are virtualizing the interrupt disable state here too.
  */
 #ifndef hard_irq_disable
-#define hard_irq_disable()	do { } while(0)
+#define hard_irq_disable()	hard_cond_local_irq_disable()
+#endif
+
+/*
+ * Unlike other virtualized interrupt disabling schemes may assume, we
+ * can't expect local_irq_restore() to turn hard interrupts on when
+ * pipelining.  hard_irq_enable() is introduced to be paired with
+ * hard_irq_disable(), for unconditionally turning them on. The only
+ * sane sequence mixing virtual and real disable state manipulation
+ * is:
+ *
+ * 1. local_irq_save/disable
+ * 2. hard_irq_disable
+ * 3. hard_irq_enable
+ * 4. local_irq_restore/enable
+ */
+#ifndef hard_irq_enable
+#define hard_irq_enable()	hard_cond_local_irq_enable()
 #endif
 
 /* PLEASE, avoid to allocate new softirqs, if you need not _really_ high

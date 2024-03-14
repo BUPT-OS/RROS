@@ -68,7 +68,7 @@ struct irq_desc {
 	unsigned int		irqs_unhandled;
 	atomic_t		threads_handled;
 	int			threads_handled_last;
-	raw_spinlock_t		lock;
+	hybrid_spinlock_t	lock;
 	struct cpumask		*percpu_enabled;
 	const struct cpumask	*percpu_affinity;
 #ifdef CONFIG_SMP
@@ -239,6 +239,11 @@ static inline bool irq_is_percpu(unsigned int irq)
 static inline bool irq_is_percpu_devid(unsigned int irq)
 {
 	return irq_check_status_bit(irq, IRQ_PER_CPU_DEVID);
+}
+
+static inline int irq_is_oob(unsigned int irq)
+{
+	return irq_check_status_bit(irq, IRQ_OOB);
 }
 
 void __irq_set_lockdep_class(unsigned int irq, struct lock_class_key *lock_class,

@@ -86,6 +86,29 @@ config NET_SCH_MULTIQ
 	  To compile this code as a module, choose M here: the
 	  module will be called sch_multiq.
 
+config NET_SCH_OOB
+	tristate "Out-of-band packet queuing (OOB)"
+	depends on NET_OOB
+	help
+	  Say Y here if you want to use a Dovetail-aware packet
+	  scheduler for prioritizing egress traffic between the
+	  regular (in-band) network stack and a companion core. This
+	  scheduler helps in two cases:
+
+	  - for sending high priority packets originating from the
+	    out-of-band stage to NICs which cannot handle outgoing
+	    packets from that stage directly. In this case, these
+	    packets take precedence over regular traffic for
+	    transmission.
+
+	  - for sharing an out-of-band capable interface between the
+            in-band and out-of-band network stacks, proxying regular
+            traffic originating from the in-band stage to NICs which
+            will be processing all packets from the out-of-band stage.
+
+	  To compile this code as a module, choose M here: the
+	  module will be called sch_oob.
+
 config NET_SCH_RED
 	tristate "Random Early Detection (RED)"
 	help

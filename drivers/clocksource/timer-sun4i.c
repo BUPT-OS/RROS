@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/irqreturn.h>
+#include <linux/dovetail.h>
 #include <linux/sched_clock.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -133,7 +134,7 @@ static irqreturn_t sun4i_timer_interrupt(int irq, void *dev_id)
 	struct timer_of *to = to_timer_of(evt);
 
 	sun4i_timer_clear_interrupt(timer_of_base(to));
-	evt->event_handler(evt);
+	clockevents_handle_event(evt);
 
 	return IRQ_HANDLED;
 }
@@ -145,7 +146,7 @@ static struct timer_of to = {
 		.name = "sun4i_tick",
 		.rating = 350,
 		.features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT |
-				CLOCK_EVT_FEAT_DYNIRQ,
+				CLOCK_EVT_FEAT_DYNIRQ | CLOCK_EVT_FEAT_PIPELINE,
 		.set_state_shutdown = sun4i_clkevt_shutdown,
 		.set_state_periodic = sun4i_clkevt_set_periodic,
 		.set_state_oneshot = sun4i_clkevt_set_oneshot,

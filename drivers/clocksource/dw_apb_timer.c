@@ -43,7 +43,7 @@ ced_to_dw_apb_ced(struct clock_event_device *evt)
 static inline struct dw_apb_clocksource *
 clocksource_to_dw_apb_clocksource(struct clocksource *cs)
 {
-	return container_of(cs, struct dw_apb_clocksource, cs);
+	return container_of(cs, struct dw_apb_clocksource, ummio.mmio.clksrc);
 }
 
 static inline u32 apbt_readl(struct dw_apb_timer *timer, unsigned long offs)
@@ -343,18 +343,6 @@ void dw_apb_clocksource_start(struct dw_apb_clocksource *dw_cs)
 	dw_apb_clocksource_read(dw_cs);
 }
 
-static u64 __apbt_read_clocksource(struct clocksource *cs)
-{
-	u32 current_count;
-	struct dw_apb_clocksource *dw_cs =
-		clocksource_to_dw_apb_clocksource(cs);
-
-	current_count = apbt_readl_relaxed(&dw_cs->timer,
-					APBTMR_N_CURRENT_VALUE);
-
-	return (u64)~current_count;
-}
-
 static void apbt_restart_clocksource(struct clocksource *cs)
 {
 	struct dw_apb_clocksource *dw_cs =
@@ -376,7 +364,7 @@ static void apbt_restart_clocksource(struct clocksource *cs)
  * dw_apb_clocksource_register() as the next step.
  */
 struct dw_apb_clocksource *
-dw_apb_clocksource_init(unsigned rating, const char *name, void __iomem *base,
+__init dw_apb_clocksource_init(unsigned rating, const char *name, void __iomem *base,
 			unsigned long freq)
 {
 	struct dw_apb_clocksource *dw_cs = kzalloc(sizeof(*dw_cs), GFP_KERNEL);
@@ -386,12 +374,12 @@ dw_apb_clocksource_init(unsigned rating, const char *name, void __iomem *base,
 
 	dw_cs->timer.base = base;
 	dw_cs->timer.freq = freq;
-	dw_cs->cs.name = name;
-	dw_cs->cs.rating = rating;
-	dw_cs->cs.read = __apbt_read_clocksource;
-	dw_cs->cs.mask = CLOCKSOURCE_MASK(32);
-	dw_cs->cs.flags = CLOCK_SOURCE_IS_CONTINUOUS;
-	dw_cs->cs.resume = apbt_restart_clocksource;
+	dw_cs->ummio.mmio.clksrc.name = name;
+	dw_cs->ummio.mmio.clksrc.rating = rating;
+	dw_cs->ummio.mmio.clksrc.read = clocksource_mmio_readl_down;
+	dw_cs->ummio.mmio.clksrc.mask = CLOCKSOURCE_MASK(32);
+	dw_cs->ummio.mmio.clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
+	dw_cs->ummio.mmio.clksrc.resume = apbt_restart_clocksource;
 
 	return dw_cs;
 }
@@ -401,9 +389,17 @@ dw_apb_clocksource_init(unsigned rating, const char *name, void __iomem *base,
  *
  * @dw_cs:	The clocksource to register.
  */
-void dw_apb_clocksource_register(struct dw_apb_clocksource *dw_cs)
+void __init dw_apb_clocksource_register(struct dw_apb_clocksource *dw_cs)
 {
-	clocksource_register_hz(&dw_cs->cs, dw_cs->timer.freq);
+	struct clocksource_mmio_regs mmr;
+
+	mmr.reg_lower = dw_cs->timer.base + APBTMR_N_CURRENT_VALUE;
+	mmr.bits_lower = 32;
+	mmr.reg_upper = 0;
+	mmr.bits_upper = 0;
+	mmr.revmap = NULL;
+
+	clocksource_user_mmio_init(&dw_cs->ummio, &mmr, dw_cs->timer.freq);
 }
 
 /**

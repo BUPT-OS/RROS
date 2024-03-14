@@ -5,6 +5,7 @@
 #include <linux/spinlock.h>
 #include <linux/smp.h>
 #include <linux/interrupt.h>
+#include <linux/irq_pipeline.h>
 #include <linux/export.h>
 #include <linux/cpu.h>
 #include <linux/debugfs.h>
@@ -324,10 +325,12 @@ EXPORT_SYMBOL_GPL(leave_mm);
 void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	       struct task_struct *tsk)
 {
-	unsigned long flags;
+	unsigned long flags, _flags;
 
 	local_irq_save(flags);
+	protect_inband_mm(_flags);
 	switch_mm_irqs_off(prev, next, tsk);
+	unprotect_inband_mm(_flags);
 	local_irq_restore(flags);
 }
 
@@ -514,7 +517,9 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 	 */
 
 	/* We don't want flush_tlb_func() to run concurrently with us. */
-	if (IS_ENABLED(CONFIG_PROVE_LOCKING))
+	if (IS_ENABLED(CONFIG_DOVETAIL))
+		WARN_ON_ONCE(!hard_irqs_disabled());
+	else if (IS_ENABLED(CONFIG_PROVE_LOCKING))
 		WARN_ON_ONCE(!irqs_disabled());
 
 	/*
@@ -753,11 +758,11 @@ static void flush_tlb_func(void *info)
 	 */
 	const struct flush_tlb_info *f = info;
 	struct mm_struct *loaded_mm = this_cpu_read(cpu_tlbstate.loaded_mm);
-	u32 loaded_mm_asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
-	u64 local_tlb_gen = this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].tlb_gen);
-	bool local = smp_processor_id() == f->initiating_cpu;
-	unsigned long nr_invalidate = 0;
+	u32 loaded_mm_asid;
 	u64 mm_tlb_gen;
+	u64 local_tlb_gen;
+	bool local = smp_processor_id() == f->initiating_cpu;
+	unsigned long nr_invalidate = 0, flags;
 
 	/* This code cannot presently handle being reentered. */
 	VM_WARN_ON(!irqs_disabled());
@@ -771,8 +776,16 @@ static void flush_tlb_func(void *info)
 			return;
 	}
 
-	if (unlikely(loaded_mm == &init_mm))
+	protect_inband_mm(flags);
+
+	loaded_mm_asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
+	mm_tlb_gen = atomic64_read(&loaded_mm->context.tlb_gen);
+	local_tlb_gen = this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].tlb_gen);
+
+	if (unlikely(loaded_mm == &init_mm)) {
+		unprotect_inband_mm(flags);
 		return;
+	}
 
 	VM_WARN_ON(this_cpu_read(cpu_tlbstate.ctxs[loaded_mm_asid].ctx_id) !=
 		   loaded_mm->context.ctx_id);
@@ -788,6 +801,7 @@ static void flush_tlb_func(void *info)
 		 * IPIs to lazy TLB mode CPUs.
 		 */
 		switch_mm_irqs_off(NULL, &init_mm, NULL);
+		unprotect_inband_mm(flags);
 		return;
 	}
 
@@ -799,6 +813,7 @@ static void flush_tlb_func(void *info)
 		 * mm_tlb_gen unnecessarily would have negative caching effects
 		 * so avoid it.
 		 */
+		unprotect_inband_mm(flags);
 		return;
 	}
 
@@ -815,11 +830,14 @@ static void flush_tlb_func(void *info)
 		 * be handled can catch us all the way up, leaving no work for
 		 * the second flush.
 		 */
+		unprotect_inband_mm(flags);
 		goto done;
 	}
 
 	WARN_ON_ONCE(local_tlb_gen > mm_tlb_gen);
 	WARN_ON_ONCE(f->new_tlb_gen > mm_tlb_gen);
+
+	unprotect_inband_mm(flags);
 
 	/*
 	 * If we get to this point, we know that our TLB is out of date.
@@ -1194,11 +1212,11 @@ STATIC_NOPV void native_flush_tlb_global(void)
 	 * from interrupts. (Use the raw variant because this code can
 	 * be called from deep inside debugging code.)
 	 */
-	raw_local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	__native_tlb_flush_global(this_cpu_read(cpu_tlbstate.cr4));
 
-	raw_local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 /*
@@ -1206,6 +1224,8 @@ STATIC_NOPV void native_flush_tlb_global(void)
  */
 STATIC_NOPV void native_flush_tlb_local(void)
 {
+	unsigned long flags;
+
 	/*
 	 * Preemption or interrupts must be disabled to protect the access
 	 * to the per CPU variable and to prevent being preempted between
@@ -1213,10 +1233,14 @@ STATIC_NOPV void native_flush_tlb_local(void)
 	 */
 	WARN_ON_ONCE(preemptible());
 
+	flags = hard_cond_local_irq_save();
+
 	invalidate_user_asid(this_cpu_read(cpu_tlbstate.loaded_mm_asid));
 
 	/* If current->mm == NULL then the read_cr3() "borrows" an mm */
 	native_write_cr3(__native_read_cr3());
+
+	hard_cond_local_irq_restore(flags);
 }
 
 void flush_tlb_local(void)
@@ -1287,6 +1311,16 @@ bool nmi_uaccess_okay(void)
 	struct mm_struct *current_mm = current->mm;
 
 	VM_WARN_ON_ONCE(!loaded_mm);
+
+	/*
+	 * There would be no way for the companion core to switch an
+	 * out-of-band task back in-band in order to handle an access
+	 * fault over NMI safely. Tell the caller that uaccess from
+	 * NMI is NOT ok if the preempted task was running
+	 * out-of-band.
+	 */
+	if (running_oob())
+		return false;
 
 	/*
 	 * The condition we want to check is

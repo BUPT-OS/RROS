@@ -163,8 +163,8 @@ static int __init mxc_clocksource_init(struct imx_timer *imxtm)
 	sched_clock_reg = reg;
 
 	sched_clock_register(mxc_read_sched_clock, 32, c);
-	return clocksource_mmio_init(reg, "mxc_timer1", c, 200, 32,
-			clocksource_mmio_readl_up);
+	return clocksource_user_single_mmio_init(reg, "mxc_timer1", c, 200, 32,
+					 clocksource_mmio_readl_up);
 }
 
 /* clock event */
@@ -264,7 +264,7 @@ static irqreturn_t mxc_timer_interrupt(int irq, void *dev_id)
 
 	imxtm->gpt->gpt_irq_acknowledge(imxtm);
 
-	ced->event_handler(ced);
+	clockevents_handle_event(ced);
 
 	return IRQ_HANDLED;
 }
@@ -274,7 +274,7 @@ static int __init mxc_clockevent_init(struct imx_timer *imxtm)
 	struct clock_event_device *ced = &imxtm->ced;
 
 	ced->name = "mxc_timer1";
-	ced->features = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_DYNIRQ;
+	ced->features = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_DYNIRQ | CLOCK_EVT_FEAT_PIPELINE;
 	ced->set_state_shutdown = mxc_shutdown;
 	ced->set_state_oneshot = mxc_set_oneshot;
 	ced->tick_resume = mxc_shutdown;

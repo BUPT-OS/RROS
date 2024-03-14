@@ -105,7 +105,7 @@ extern struct static_key_false context_tracking_key;
 
 static __always_inline bool context_tracking_enabled(void)
 {
-	return static_branch_unlikely(&context_tracking_key);
+	return static_branch_unlikely(&context_tracking_key) && running_inband();
 }
 
 static __always_inline bool context_tracking_enabled_cpu(int cpu)

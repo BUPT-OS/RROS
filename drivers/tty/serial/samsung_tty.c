@@ -2495,6 +2495,10 @@ static struct console s3c24xx_serial_console = {
 	.flags		= CON_PRINTBUFFER,
 	.index		= -1,
 	.write		= s3c24xx_serial_console_write,
+#ifdef CONFIG_RAW_PRINTK
+	/* The common write handler can run from atomic context. */
+	.write_raw	= s3c24xx_serial_console_write,
+#endif
 	.setup		= s3c24xx_serial_console_setup,
 	.data		= &s3c24xx_uart_drv,
 };

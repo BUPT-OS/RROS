@@ -7,6 +7,7 @@
 #include <linux/trace_seq.h>
 #include <linux/percpu.h>
 #include <linux/hardirq.h>
+#include <linux/irqstage.h>
 #include <linux/perf_event.h>
 #include <linux/tracepoint.h>
 
@@ -183,8 +184,9 @@ enum trace_flag_type {
 	TRACE_FLAG_HARDIRQ		= 0x08,
 	TRACE_FLAG_SOFTIRQ		= 0x10,
 	TRACE_FLAG_PREEMPT_RESCHED	= 0x20,
-	TRACE_FLAG_NMI			= 0x40,
+	TRACE_FLAG_NMI			= 0x40, /* Dovetail: hw NMI or oob */
 	TRACE_FLAG_BH_OFF		= 0x80,
+	TRACE_FLAG_IRQS_HARDOFF		= TRACE_FLAG_IRQS_NOSUPPORT,
 };
 
 #ifdef CONFIG_TRACE_IRQFLAGS_SUPPORT
@@ -198,7 +200,7 @@ static inline unsigned int tracing_gen_ctx(void)
 {
 	unsigned long irqflags;
 
-	local_save_flags(irqflags);
+	stage_save_flags(irqflags);
 	return tracing_gen_ctx_flags(irqflags);
 }
 #else

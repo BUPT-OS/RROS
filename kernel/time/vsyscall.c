@@ -69,15 +69,41 @@ static inline void update_vdso_data(struct vdso_data *vdata,
 	vdso_ts->nsec	= tk->tkr_mono.xtime_nsec;
 }
 
+static void update_generic_mmio(struct vdso_data *vdata, struct timekeeper *tk)
+{
+#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+	const struct clocksource *cs = tk->tkr_mono.clock;
+	u16 seq;
+
+	if (cs->vdso_type == (vdata->cs_type_seq >> 16))
+		return;
+
+	seq = vdata->cs_type_seq;
+	if (++seq == 0)
+		seq = 1;
+
+	vdata->cs_type_seq = cs->vdso_type << 16 | seq;
+
+	if (cs->vdso_type >= CLOCKSOURCE_VDSO_MMIO)
+		snprintf(vdata->cs_mmdev, sizeof(vdata->cs_mmdev),
+			"/dev/ucs/%u", cs->vdso_type - CLOCKSOURCE_VDSO_MMIO);
+#endif
+}
+
 void update_vsyscall(struct timekeeper *tk)
 {
 	struct vdso_data *vdata = __arch_get_k_vdso_data();
 	struct vdso_timestamp *vdso_ts;
+	unsigned long flags;
 	s32 clock_mode;
 	u64 nsec;
 
+	flags = hard_cond_local_irq_save();
+
 	/* copy vsyscall data */
 	vdso_write_begin(vdata);
+
+	update_generic_mmio(vdata, tk);
 
 	clock_mode = tk->tkr_mono.clock->vdso_clock_mode;
 	vdata[CS_HRES_COARSE].clock_mode	= clock_mode;
@@ -110,12 +136,15 @@ void update_vsyscall(struct timekeeper *tk)
 	 * If the current clocksource is not VDSO capable, then spare the
 	 * update of the high resolution parts.
 	 */
-	if (clock_mode != VDSO_CLOCKMODE_NONE)
+	if (IS_ENABLED(CONFIG_GENERIC_CLOCKSOURCE_VDSO) ||
+	    clock_mode != VDSO_CLOCKMODE_NONE)
 		update_vdso_data(vdata, tk);
 
 	__arch_update_vsyscall(vdata, tk);
 
 	vdso_write_end(vdata);
+
+	hard_cond_local_irq_restore(flags);
 
 	__arch_sync_vdso_data(vdata);
 }

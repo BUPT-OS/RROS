@@ -539,6 +539,9 @@ struct sock {
 #endif
 	void                    (*sk_destruct)(struct sock *sk);
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
+#ifdef CONFIG_NET_OOB
+	void			*oob_data;
+#endif
 #ifdef CONFIG_BPF_SYSCALL
 	struct bpf_local_storage __rcu	*sk_bpf_storage;
 #endif
@@ -1861,6 +1864,17 @@ void sock_edemux(struct sk_buff *skb);
 void sock_pfree(struct sk_buff *skb);
 #else
 #define sock_edemux sock_efree
+#endif
+
+#ifdef CONFIG_NET_OOB
+static inline void sock_oob_destruct(struct sock *sk)
+{
+	void sock_oob_detach(struct sock *sk);
+	if (sk->oob_data)
+		sock_oob_detach(sk);
+}
+#else
+static inline void sock_oob_destruct(struct sock *sk) { }
 #endif
 
 int sk_setsockopt(struct sock *sk, int level, int optname,

@@ -132,6 +132,11 @@ static const __initconst struct idt_data apic_idts[] = {
 	INTG(CALL_FUNCTION_VECTOR,		asm_sysvec_call_function),
 	INTG(CALL_FUNCTION_SINGLE_VECTOR,	asm_sysvec_call_function_single),
 	INTG(REBOOT_VECTOR,			asm_sysvec_reboot),
+#ifdef CONFIG_IRQ_PIPELINE
+	INTG(TIMER_OOB_VECTOR,			asm_sysvec_timer_oob_ipi),
+	INTG(RESCHEDULE_OOB_VECTOR,		asm_sysvec_reschedule_oob_ipi),
+	INTG(CALL_FUNCTION_OOB_VECTOR,		asm_sysvec_call_function_oob_ipi),
+#endif
 #endif
 
 #ifdef CONFIG_X86_THERMAL_VECTOR

@@ -257,12 +257,15 @@ noinstr bool __kvm_handle_async_pf(struct pt_regs *regs, u32 token)
 {
 	u32 flags = kvm_read_and_reset_apf_flags();
 	irqentry_state_t state;
+	unsigned long irqflags;
 
 	if (!flags)
 		return false;
 
 	state = irqentry_enter(regs);
+	oob_trap_notify(X86_TRAP_PF, regs);
 	instrumentation_begin();
+	irqflags = hard_cond_local_irq_save();
 
 	/*
 	 * If the host managed to inject an async #PF into an interrupt
@@ -281,7 +284,9 @@ noinstr bool __kvm_handle_async_pf(struct pt_regs *regs, u32 token)
 		WARN_ONCE(1, "Unexpected async PF flags: %x\n", flags);
 	}
 
+	hard_cond_local_irq_restore(irqflags);
 	instrumentation_end();
+	oob_trap_unwind(X86_TRAP_PF, regs);
 	irqentry_exit(regs, state);
 	return true;
 }
@@ -446,6 +451,9 @@ static void __init sev_map_percpu_data(void)
 
 static void kvm_guest_cpu_offline(bool shutdown)
 {
+	unsigned long flags;
+
+	flags = hard_cond_local_irq_save();
 	kvm_disable_steal_time();
 	if (kvm_para_has_feature(KVM_FEATURE_PV_EOI))
 		wrmsrl(MSR_KVM_PV_EOI_EN, 0);
@@ -455,15 +463,16 @@ static void kvm_guest_cpu_offline(bool shutdown)
 	if (!shutdown)
 		apf_task_wake_all();
 	kvmclock_disable();
+	hard_cond_local_irq_restore(flags);
 }
 
 static int kvm_cpu_online(unsigned int cpu)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 	kvm_guest_cpu_init();
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 	return 0;
 }
 
@@ -1048,16 +1057,20 @@ static void kvm_wait(u8 *ptr, u8 val)
 	 * in irq spinlock slowpath and no spurious interrupt occur to save us.
 	 */
 	if (irqs_disabled()) {
+		hard_local_irq_disable();
+
 		if (READ_ONCE(*ptr) == val)
 			halt();
+
+		hard_local_irq_enable();
 	} else {
-		local_irq_disable();
+		local_irq_disable_full();
 
 		/* safe_halt() will enable IRQ */
 		if (READ_ONCE(*ptr) == val)
 			safe_halt();
-		else
-			local_irq_enable();
+
+		local_irq_enable_full();
 	}
 }
 

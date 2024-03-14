@@ -80,7 +80,7 @@
 #define for_each_irq_pin(entry, head) \
 	list_for_each_entry(entry, &head, list)
 
-static DEFINE_RAW_SPINLOCK(ioapic_lock);
+static DEFINE_HARD_SPINLOCK(ioapic_lock);
 static DEFINE_MUTEX(ioapic_mutex);
 static unsigned int ioapic_dynirq_base;
 static int ioapic_initialized;
@@ -1632,7 +1632,7 @@ static int __init timer_irq_works(void)
 	if (no_timer_check)
 		return 1;
 
-	local_irq_enable();
+	local_irq_enable_full();
 	if (boot_cpu_has(X86_FEATURE_TSC))
 		delay_with_tsc();
 	else
@@ -1646,7 +1646,7 @@ static int __init timer_irq_works(void)
 	 * least one tick may be lost due to delays.
 	 */
 
-	local_irq_disable();
+	local_irq_disable_full();
 
 	/* Did jiffies advance? */
 	return time_after(jiffies, t1 + 4);
@@ -1717,14 +1717,56 @@ static bool io_apic_level_ack_pending(struct mp_chip_data *data)
 	return false;
 }
 
+static inline void do_prepare_move(struct irq_data *data)
+{
+	if (!irqd_irq_masked(data))
+		mask_ioapic_irq(data);
+}
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+static inline void ioapic_finish_move(struct irq_data *data, bool moveit);
+
+static void ioapic_deferred_irq_move(struct irq_work *work)
+{
+	struct irq_data *data;
+	struct irq_desc *desc;
+	unsigned long flags;
+
+	data = container_of(work, struct irq_data, move_work);
+	desc = irq_data_to_desc(data);
+	raw_spin_lock_irqsave(&desc->lock, flags);
+	do_prepare_move(data);
+	ioapic_finish_move(data, true);
+	raw_spin_unlock_irqrestore(&desc->lock, flags);
+}
+
+static inline bool __ioapic_prepare_move(struct irq_data *data)
+{
+	init_irq_work(&data->move_work, ioapic_deferred_irq_move);
+	irq_work_queue(&data->move_work);
+
+	return false;	/* Postpone ioapic_finish_move(). */
+}
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+static inline bool __ioapic_prepare_move(struct irq_data *data)
+{
+	do_prepare_move(data);
+
+	return true;
+}
+
+#endif
+
 static inline bool ioapic_prepare_move(struct irq_data *data)
 {
 	/* If we are moving the IRQ we need to mask it */
-	if (unlikely(irqd_is_setaffinity_pending(data))) {
-		if (!irqd_irq_masked(data))
-			mask_ioapic_irq(data);
-		return true;
-	}
+	if (irqd_is_setaffinity_pending(data) &&
+		!irqd_is_setaffinity_blocked(data))
+		return __ioapic_prepare_move(data);
+
 	return false;
 }
 
@@ -1823,7 +1865,7 @@ static void ioapic_ack_level(struct irq_data *irq_data)
 	 * We must acknowledge the irq before we move it or the acknowledge will
 	 * not propagate properly.
 	 */
-	apic_eoi();
+	__apic_eoi();
 
 	/*
 	 * Tail end of clearing remote IRR bit (either by delivering the EOI
@@ -1985,7 +2027,8 @@ static struct irq_chip ioapic_chip __read_mostly = {
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 	.irq_get_irqchip_state	= ioapic_irq_get_chip_state,
 	.flags			= IRQCHIP_SKIP_SET_WAKE |
-				  IRQCHIP_AFFINITY_PRE_STARTUP,
+				  IRQCHIP_AFFINITY_PRE_STARTUP |
+				  IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct irq_chip ioapic_ir_chip __read_mostly = {
@@ -1999,7 +2042,8 @@ static struct irq_chip ioapic_ir_chip __read_mostly = {
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
 	.irq_get_irqchip_state	= ioapic_irq_get_chip_state,
 	.flags			= IRQCHIP_SKIP_SET_WAKE |
-				  IRQCHIP_AFFINITY_PRE_STARTUP,
+				  IRQCHIP_AFFINITY_PRE_STARTUP |
+				  IRQCHIP_PIPELINE_SAFE,
 };
 
 static inline void init_IO_APIC_traps(void)
@@ -2046,7 +2090,7 @@ static void unmask_lapic_irq(struct irq_data *data)
 
 static void ack_lapic_irq(struct irq_data *data)
 {
-	apic_eoi();
+	__apic_eoi();
 }
 
 static struct irq_chip lapic_chip __read_mostly = {
@@ -2054,6 +2098,7 @@ static struct irq_chip lapic_chip __read_mostly = {
 	.irq_mask	= mask_lapic_irq,
 	.irq_unmask	= unmask_lapic_irq,
 	.irq_ack	= ack_lapic_irq,
+	.flags		= IRQCHIP_PIPELINE_SAFE,
 };
 
 static void lapic_register_intr(int irq)
@@ -2173,7 +2218,7 @@ static inline void __init check_timer(void)
 	if (!global_clock_event)
 		return;
 
-	local_irq_disable();
+	local_irq_disable_full();
 
 	/*
 	 * get/set the timer IRQ vector:
@@ -2306,7 +2351,7 @@ static inline void __init check_timer(void)
 	panic("IO-APIC + timer doesn't work!  Boot with apic=debug and send a "
 		"report.  Then try booting with the 'noapic' option.\n");
 out:
-	local_irq_enable();
+	local_irq_enable_full();
 }
 
 /*
@@ -3054,10 +3099,10 @@ int mp_irqdomain_alloc(struct irq_domain *domain, unsigned int virq,
 	mp_preconfigure_entry(data);
 	mp_register_handler(virq, data->is_level);
 
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 	if (virq < nr_legacy_irqs())
 		legacy_pic->mask(virq);
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 
 	apic_printk(APIC_VERBOSE, KERN_DEBUG
 		    "IOAPIC[%d]: Preconfigured routing entry (%d-%d -> IRQ %d Level:%i ActiveLow:%i)\n",

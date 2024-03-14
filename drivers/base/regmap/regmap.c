@@ -17,6 +17,7 @@
 #include <linux/delay.h>
 #include <linux/log2.h>
 #include <linux/hwspinlock.h>
+#include <linux/dovetail.h>
 #include <asm/unaligned.h>
 
 #define CREATE_TRACE_POINTS
@@ -485,6 +486,23 @@ __releases(&map->raw_spinlock)
 	raw_spin_unlock_irqrestore(&map->raw_spinlock, map->raw_spinlock_flags);
 }
 
+static void regmap_lock_oob(void *__map)
+__acquires(&map->oob_lock)
+{
+	struct regmap *map = __map;
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&map->oob_lock, flags);
+	map->spinlock_flags = flags;
+}
+
+static void regmap_unlock_oob(void *__map)
+__releases(&map->oob_lock)
+{
+	struct regmap *map = __map;
+	raw_spin_unlock_irqrestore(&map->oob_lock, map->spinlock_flags);
+}
+
 static void dev_get_regmap_release(struct device *dev, void *res)
 {
 	/*
@@ -723,7 +741,13 @@ struct regmap *__regmap_init(struct device *dev,
 	} else {
 		if ((bus && bus->fast_io) ||
 		    config->fast_io) {
-			if (config->use_raw_spinlock) {
+			if (dovetailing() && config->oob_io) {
+				raw_spin_lock_init(&map->oob_lock);
+				map->lock = regmap_lock_oob;
+				map->unlock = regmap_unlock_oob;
+				lockdep_set_class_and_name(&map->oob_lock,
+							lock_key, lock_name);
+			} else if (config->use_raw_spinlock) {
 				raw_spin_lock_init(&map->raw_spinlock);
 				map->lock = regmap_lock_raw_spinlock;
 				map->unlock = regmap_unlock_raw_spinlock;
@@ -736,14 +760,17 @@ struct regmap *__regmap_init(struct device *dev,
 				lockdep_set_class_and_name(&map->spinlock,
 							   lock_key, lock_name);
 			}
-		} else {
+		} else if (!config->oob_io) { /* Catch configuration issue: oob && !fast_io */
 			mutex_init(&map->mutex);
 			map->lock = regmap_lock_mutex;
 			map->unlock = regmap_unlock_mutex;
 			map->can_sleep = true;
 			lockdep_set_class_and_name(&map->mutex,
 						   lock_key, lock_name);
-		}
+		} else {
+			ret = -ENXIO;
+			goto err_name;
+ 		}
 		map->lock_arg = map;
 	}
 

@@ -162,11 +162,11 @@ static irqreturn_t gt_clockevent_interrupt(int irq, void *dev_id)
 	 *	the Global Timer flag _after_ having incremented
 	 *	the Comparator register	value to a higher value.
 	 */
-	if (clockevent_state_oneshot(evt))
+	if (clockevent_is_oob(evt) || clockevent_state_oneshot(evt))
 		gt_compare_set(ULONG_MAX, 0);
 
 	writel_relaxed(GT_INT_STATUS_EVENT_FLAG, gt_base + GT_INT_STATUS);
-	evt->event_handler(evt);
+	clockevents_handle_event(evt);
 
 	return IRQ_HANDLED;
 }
@@ -177,7 +177,7 @@ static int gt_starting_cpu(unsigned int cpu)
 
 	clk->name = "arm_global_timer";
 	clk->features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT |
-		CLOCK_EVT_FEAT_PERCPU;
+		CLOCK_EVT_FEAT_PERCPU | CLOCK_EVT_FEAT_PIPELINE;
 	clk->set_state_shutdown = gt_clockevent_shutdown;
 	clk->set_state_periodic = gt_clockevent_set_periodic;
 	clk->set_state_oneshot = gt_clockevent_shutdown;
@@ -201,11 +201,6 @@ static int gt_dying_cpu(unsigned int cpu)
 	return 0;
 }
 
-static u64 gt_clocksource_read(struct clocksource *cs)
-{
-	return gt_counter_read();
-}
-
 static void gt_resume(struct clocksource *cs)
 {
 	unsigned long ctrl;
@@ -216,13 +211,15 @@ static void gt_resume(struct clocksource *cs)
 		writel(GT_CONTROL_TIMER_ENABLE, gt_base + GT_CONTROL);
 }
 
-static struct clocksource gt_clocksource = {
-	.name	= "arm_global_timer",
-	.rating	= 300,
-	.read	= gt_clocksource_read,
-	.mask	= CLOCKSOURCE_MASK(64),
-	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
-	.resume = gt_resume,
+static struct clocksource_user_mmio gt_clocksource = {
+	.mmio.clksrc = {
+		.name	= "arm_global_timer",
+		.rating	= 300,
+		.read	= clocksource_dual_mmio_readl_up,
+		.mask	= CLOCKSOURCE_MASK(64),
+		.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+		.resume = gt_resume,
+	},
 };
 
 #ifdef CONFIG_CLKSRC_ARM_GLOBAL_TIMER_SCHED_CLOCK
@@ -268,6 +265,8 @@ static void __init gt_delay_timer_init(void)
 
 static int __init gt_clocksource_init(void)
 {
+	struct clocksource_mmio_regs mmr;
+
 	writel(0, gt_base + GT_CONTROL);
 	writel(0, gt_base + GT_COUNTER0);
 	writel(0, gt_base + GT_COUNTER1);
@@ -279,7 +278,13 @@ static int __init gt_clocksource_init(void)
 #ifdef CONFIG_CLKSRC_ARM_GLOBAL_TIMER_SCHED_CLOCK
 	sched_clock_register(gt_sched_clock_read, 64, gt_target_rate);
 #endif
-	return clocksource_register_hz(&gt_clocksource, gt_target_rate);
+	mmr.reg_upper = gt_base + GT_COUNTER1;
+	mmr.reg_lower = gt_base + GT_COUNTER0;
+	mmr.bits_upper = 32;
+	mmr.bits_lower = 32;
+	mmr.revmap = NULL;
+
+	return clocksource_user_mmio_init(&gt_clocksource, &mmr, gt_target_rate);
 }
 
 static int gt_clk_rate_change_cb(struct notifier_block *nb,
@@ -399,8 +404,8 @@ static int __init global_timer_of_register(struct device_node *np)
 		goto out_clk_nb;
 	}
 
-	err = request_percpu_irq(gt_ppi, gt_clockevent_interrupt,
-				 "gt", gt_evt);
+	err = __request_percpu_irq(gt_ppi, gt_clockevent_interrupt,
+				   IRQF_TIMER, "gt", gt_evt);
 	if (err) {
 		pr_warn("global-timer: can't register interrupt %d (%d)\n",
 			gt_ppi, err);

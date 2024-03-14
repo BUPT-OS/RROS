@@ -213,6 +213,8 @@ config ARM64
 		HW_PERF_EVENTS && HAVE_PERF_EVENTS_NMI
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	select HAVE_IOREMAP_PROT
+	select HAVE_IRQ_PIPELINE
+	select HAVE_DOVETAIL
 	select HAVE_IRQ_TIME_ACCOUNTING
 	select HAVE_KVM
 	select HAVE_MOD_ARCH_SPECIFIC
@@ -1441,6 +1443,8 @@ config HW_PERF_EVENTS
 # Supported by clang >= 7.0 or GCC >= 12.0.0
 config CC_HAVE_SHADOW_CALL_STACK
 	def_bool $(cc-option, -fsanitize=shadow-call-stack -ffixed-x18)
+
+source "kernel/Kconfig.dovetail"
 
 config PARAVIRT
 	bool "Enable paravirtualization code"

@@ -801,6 +801,14 @@ static int ___tick_broadcast_oneshot_control(enum tick_broadcast_state state,
 	int ret = 0;
 	ktime_t now;
 
+	/*
+	 * If proxying the hardware timer for high-precision tick
+	 * delivery to the out-of-band stage, the whole broadcast
+	 * dance is a no-go. Deny entering deep idle.
+	 */
+	if (dev->features & CLOCK_EVT_FEAT_PROXY)
+		return -EBUSY;
+
 	raw_spin_lock(&tick_broadcast_lock);
 	bc = tick_broadcast_device.evtdev;
 

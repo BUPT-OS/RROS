@@ -8,6 +8,7 @@
 #include <linux/ftrace_irq.h>
 #include <linux/sched.h>
 #include <linux/vtime.h>
+#include <asm-generic/irq_pipeline.h>
 #include <asm/hardirq.h>
 
 extern void synchronize_irq(unsigned int irq);
@@ -114,6 +115,7 @@ void irq_exit_rcu(void);
 
 #define nmi_enter()						\
 	do {							\
+		irq_pipeline_nmi_enter();			\
 		__nmi_enter();					\
 		lockdep_hardirq_enter();			\
 		ct_nmi_enter();				\
@@ -138,6 +140,22 @@ void irq_exit_rcu(void);
 		ct_nmi_exit();					\
 		lockdep_hardirq_exit();				\
 		__nmi_exit();					\
+		irq_pipeline_nmi_exit();			\
 	} while (0)
+
+static inline bool on_pipeline_entry(void)
+{
+	return irqs_pipelined() && in_pipeline();
+}
+
+static inline bool in_nonmaskable(void)
+{
+	/*
+	 * From the standpoint of tne in-band stage, any oob activity
+	 * stands for a non-maskable event being handled (including
+	 * the pipeline entry context).
+	 */
+	return running_oob() || in_nmi();
+}
 
 #endif /* LINUX_HARDIRQ_H */

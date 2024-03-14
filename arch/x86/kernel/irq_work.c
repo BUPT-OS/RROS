@@ -14,7 +14,8 @@
 #include <linux/interrupt.h>
 
 #ifdef CONFIG_X86_LOCAL_APIC
-DEFINE_IDTENTRY_SYSVEC(sysvec_irq_work)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(IRQ_WORK_VECTOR,
+				 sysvec_irq_work)
 {
 	apic_eoi();
 	trace_irq_work_entry(IRQ_WORK_VECTOR);

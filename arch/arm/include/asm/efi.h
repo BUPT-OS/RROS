@@ -31,7 +31,11 @@ int efi_set_mapping_permissions(struct mm_struct *mm, efi_memory_desc_t *md, boo
 
 static inline void efi_set_pgd(struct mm_struct *mm)
 {
+	unsigned long flags;
+
+	protect_inband_mm(flags);
 	check_and_switch_context(mm, NULL);
+	unprotect_inband_mm(flags);
 }
 
 void efi_virtmap_load(void);

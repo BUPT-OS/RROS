@@ -87,7 +87,7 @@ static struct irq_chip sun4i_irq_chip = {
 	.irq_eoi	= sun4i_irq_ack,
 	.irq_mask	= sun4i_irq_mask,
 	.irq_unmask	= sun4i_irq_unmask,
-	.flags		= IRQCHIP_EOI_THREADED | IRQCHIP_EOI_IF_HANDLED,
+	.flags		= IRQCHIP_EOI_THREADED | IRQCHIP_EOI_IF_HANDLED | IRQCHIP_PIPELINE_SAFE,
 };
 
 static int sun4i_irq_map(struct irq_domain *d, unsigned int virq,

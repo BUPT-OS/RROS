@@ -696,6 +696,48 @@ static int univ8250_console_match(struct console *co, char *name, int idx,
 	return -ENODEV;
 }
 
+#ifdef CONFIG_RAW_PRINTK
+
+static void raw_write_char(struct uart_8250_port *up, int c)
+{
+	unsigned int status, tmout = 10000;
+
+	for (;;) {
+		status = serial_in(up, UART_LSR);
+		up->lsr_saved_flags |= status & LSR_SAVE_FLAGS;
+		if ((status & UART_LSR_THRE) == UART_LSR_THRE)
+			break;
+		if (--tmout == 0)
+			break;
+		cpu_relax();
+	}
+	serial_port_out(&up->port, UART_TX, c);
+}
+
+static void univ8250_console_write_raw(struct console *co, const char *s,
+				       unsigned int count)
+{
+	struct uart_8250_port *up = &serial8250_ports[co->index];
+	unsigned int ier;
+
+        ier = serial_in(up, UART_IER);
+
+        if (up->capabilities & UART_CAP_UUE)
+                serial_out(up, UART_IER, UART_IER_UUE);
+        else
+                serial_out(up, UART_IER, 0);
+
+	while (count-- > 0) {
+		if (*s == '\n')
+			raw_write_char(up, '\r');
+		raw_write_char(up, *s++);
+	}
+
+        serial_out(up, UART_IER, ier);
+}
+
+#endif
+
 static struct console univ8250_console = {
 	.name		= "ttyS",
 	.write		= univ8250_console_write,
@@ -703,6 +745,9 @@ static struct console univ8250_console = {
 	.setup		= univ8250_console_setup,
 	.exit		= univ8250_console_exit,
 	.match		= univ8250_console_match,
+#ifdef CONFIG_RAW_PRINTK
+	.write_raw	= univ8250_console_write_raw,
+#endif
 	.flags		= CON_PRINTBUFFER | CON_ANYTIME,
 	.index		= -1,
 	.data		= &serial8250_reg,

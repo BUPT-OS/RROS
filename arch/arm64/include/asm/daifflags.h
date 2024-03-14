@@ -12,6 +12,12 @@
 #include <asm/cpufeature.h>
 #include <asm/ptrace.h>
 
+/*
+ * irq_pipeline: DAIF masking is only used in contexts where hard
+ * interrupt masking applies, so no need to virtualize for the inband
+ * stage here (the pipeline core does assume this).
+ */
+
 #define DAIF_PROCCTX		0
 #define DAIF_PROCCTX_NOIRQ	(PSR_I_BIT | PSR_F_BIT)
 #define DAIF_ERRCTX		(PSR_A_BIT | PSR_I_BIT | PSR_F_BIT)
@@ -35,7 +41,7 @@ static inline void local_daif_mask(void)
 	if (system_uses_irq_prio_masking())
 		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
 
-	trace_hardirqs_off();
+	trace_hardirqs_off_pipelined();
 }
 
 static inline unsigned long local_daif_save_flags(void)
@@ -72,7 +78,7 @@ static inline void local_daif_restore(unsigned long flags)
 		(read_sysreg(daif) & (PSR_I_BIT | PSR_F_BIT)) != (PSR_I_BIT | PSR_F_BIT));
 
 	if (!irq_disabled) {
-		trace_hardirqs_on();
+		trace_hardirqs_on_pipelined();
 
 		if (system_uses_irq_prio_masking()) {
 			gic_write_pmr(GIC_PRIO_IRQON);
@@ -117,7 +123,7 @@ static inline void local_daif_restore(unsigned long flags)
 	write_sysreg(flags, daif);
 
 	if (irq_disabled)
-		trace_hardirqs_off();
+		trace_hardirqs_off_pipelined();
 }
 
 /*
@@ -129,7 +135,7 @@ static inline void local_daif_inherit(struct pt_regs *regs)
 	unsigned long flags = regs->pstate & DAIF_MASK;
 
 	if (interrupts_enabled(regs))
-		trace_hardirqs_on();
+		trace_hardirqs_on_pipelined();
 
 	if (system_uses_irq_prio_masking())
 		gic_write_pmr(regs->pmr_save);

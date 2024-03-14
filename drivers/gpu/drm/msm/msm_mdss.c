@@ -137,6 +137,7 @@ static struct irq_chip msm_mdss_irq_chip = {
 	.name = "msm_mdss",
 	.irq_mask = msm_mdss_irq_mask,
 	.irq_unmask = msm_mdss_irq_unmask,
+	.flags = IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct lock_class_key msm_mdss_lock_key, msm_mdss_request_key;
@@ -420,6 +421,7 @@ static struct msm_mdss *msm_mdss_init(struct platform_device *pdev, bool is_mdp5
 
 	irq_set_chained_handler_and_data(irq, msm_mdss_irq,
 					 msm_mdss);
+	irq_switch_oob(irq, true);
 
 	pm_runtime_enable(&pdev->dev);
 

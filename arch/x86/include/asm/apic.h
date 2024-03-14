@@ -402,9 +402,15 @@ static __always_inline void apic_write(u32 reg, u32 val)
 	static_call(apic_call_write)(reg, val);
 }
 
-static __always_inline void apic_eoi(void)
+static __always_inline void __apic_eoi(void)
 {
 	static_call(apic_call_eoi)();
+}
+
+static __always_inline void apic_eoi(void)
+{
+	if (!irqs_pipelined())
+		__apic_eoi();
 }
 
 static __always_inline void apic_native_eoi(void)

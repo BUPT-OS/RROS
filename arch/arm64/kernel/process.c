@@ -493,6 +493,10 @@ static void erratum_1418040_thread_switch(struct task_struct *next)
 
 static void erratum_1418040_new_exec(void)
 {
+	/*
+	 * Dovetail: we do not compete with oob on updating this
+	 * register, so inband disable is enough.
+	 */
 	preempt_disable();
 	erratum_1418040_thread_switch(current);
 	preempt_enable();

@@ -32,6 +32,10 @@ config SPI_DEBUG
 	  Say "yes" to enable debug messaging (like dev_dbg and pr_debug),
 	  sysfs, and debugfs support in SPI controller and protocol drivers.
 
+config SPI_OOB
+	def_bool n
+	depends on HAS_DMA && DOVETAIL
+
 #
 # MASTER side ... talking to discrete SPI slave chips including microcontrollers
 #
@@ -171,6 +175,13 @@ config SPI_BCM2835
 	  "universal SPI master", and the regular SPI controller. This driver
 	  is for the regular SPI controller. Slave mode operation is not also
 	  not supported.
+
+config SPI_BCM2835_OOB
+	bool "Out-of-band support for BCM2835 SPI controller"
+	depends on SPI_BCM2835 && DOVETAIL
+	select SPI_OOB
+	help
+	  Enable out-of-band cyclic transfers.
 
 config SPI_BCM2835AUX
 	tristate "BCM2835 SPI auxiliary controller"

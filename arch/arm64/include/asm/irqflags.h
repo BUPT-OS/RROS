@@ -10,6 +10,10 @@
 #include <asm/ptrace.h>
 #include <asm/sysreg.h>
 
+#define IRQMASK_I_BIT	PSR_I_BIT
+#define IRQMASK_I_POS	7
+#define IRQMASK_i_POS	31
+
 /*
  * Aarch64 has flags for masking: Debug, Asynchronous (serror), Interrupts and
  * FIQ exceptions, in the 'daif' register. We mask and unmask them in 'daif'
@@ -47,7 +51,7 @@ static __always_inline void __pmr_local_irq_enable(void)
 	barrier();
 }
 
-static inline void arch_local_irq_enable(void)
+static inline void native_irq_enable(void)
 {
 	if (__irqflags_uses_pmr()) {
 		__pmr_local_irq_enable();
@@ -75,7 +79,7 @@ static __always_inline void __pmr_local_irq_disable(void)
 	barrier();
 }
 
-static inline void arch_local_irq_disable(void)
+static inline void native_irq_disable(void)
 {
 	if (__irqflags_uses_pmr()) {
 		__pmr_local_irq_disable();
@@ -94,10 +98,17 @@ static __always_inline unsigned long __pmr_local_save_flags(void)
 	return read_sysreg_s(SYS_ICC_PMR_EL1);
 }
 
+static inline void native_irq_sync(void)
+{
+	native_irq_enable();
+	isb();
+	native_irq_disable();
+}
+
 /*
  * Save the current interrupt enable state.
  */
-static inline unsigned long arch_local_save_flags(void)
+static inline unsigned long native_save_flags(void)
 {
 	if (__irqflags_uses_pmr()) {
 		return __pmr_local_save_flags();
@@ -116,7 +127,7 @@ static __always_inline bool __pmr_irqs_disabled_flags(unsigned long flags)
 	return flags != GIC_PRIO_IRQON;
 }
 
-static inline bool arch_irqs_disabled_flags(unsigned long flags)
+static inline bool native_irqs_disabled_flags(unsigned long flags)
 {
 	if (__irqflags_uses_pmr()) {
 		return __pmr_irqs_disabled_flags(flags);
@@ -135,7 +146,7 @@ static __always_inline bool __pmr_irqs_disabled(void)
 	return __pmr_irqs_disabled_flags(__pmr_local_save_flags());
 }
 
-static inline bool arch_irqs_disabled(void)
+static inline bool native_irqs_disabled(void)
 {
 	if (__irqflags_uses_pmr()) {
 		return __pmr_irqs_disabled();
@@ -167,7 +178,7 @@ static __always_inline unsigned long __pmr_local_irq_save(void)
 	return flags;
 }
 
-static inline unsigned long arch_local_irq_save(void)
+static inline unsigned long native_irq_save(void)
 {
 	if (__irqflags_uses_pmr()) {
 		return __pmr_local_irq_save();
@@ -194,7 +205,7 @@ static __always_inline void __pmr_local_irq_restore(unsigned long flags)
 /*
  * restore saved IRQ state
  */
-static inline void arch_local_irq_restore(unsigned long flags)
+static inline void native_irq_restore(unsigned long flags)
 {
 	if (__irqflags_uses_pmr()) {
 		__pmr_local_irq_restore(flags);
@@ -202,5 +213,7 @@ static inline void arch_local_irq_restore(unsigned long flags)
 		__daif_local_irq_restore(flags);
 	}
 }
+
+#include <asm/irq_pipeline.h>
 
 #endif /* __ASM_IRQFLAGS_H */

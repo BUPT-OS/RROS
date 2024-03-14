@@ -180,12 +180,16 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
 /*
  * ARCH_WANTS_NO_INSTR archs are expected to have sanitized entry and idle
  * code that disallow any/all tracing/instrumentation when RCU isn't watching.
+ *
+ * IRQ pipeline: we may not depend on RCU for data which may be
+ * manipulated from the out-of-band stage, so rcuidle is meaningless
+ * in this case.
  */
 #ifdef CONFIG_ARCH_WANTS_NO_INSTR
-#define RCUIDLE_COND(rcuidle)	(rcuidle)
+#define RCUIDLE_COND(rcuidle)	(running_inband() && rcuidle)
 #else
 /* srcu can't be used from NMI */
-#define RCUIDLE_COND(rcuidle)	(rcuidle && in_nmi())
+#define RCUIDLE_COND(rcuidle)	(running_inband() && rcuidle && in_nmi())
 #endif
 
 /*
@@ -258,7 +262,8 @@ static inline struct tracepoint *tracepoint_ptr_deref(tracepoint_ptr_t *p)
 			__DO_TRACE(name,				\
 				TP_ARGS(args),				\
 				TP_CONDITION(cond), 0);			\
-		if (IS_ENABLED(CONFIG_LOCKDEP) && (cond)) {		\
+		if (IS_ENABLED(CONFIG_LOCKDEP) &&			\
+			running_inband() && (cond)) {			\
 			WARN_ON_ONCE(!rcu_is_watching());		\
 		}							\
 	}								\

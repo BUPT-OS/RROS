@@ -133,9 +133,9 @@ do {									\
 ({									\
 	typeof(pcp) ___ret;						\
 	unsigned long ___flags;						\
-	raw_local_irq_save(___flags);					\
+	___flags = hard_local_irq_save();				\
 	___ret = raw_cpu_generic_read(pcp);				\
-	raw_local_irq_restore(___flags);				\
+	hard_local_irq_restore(___flags);				\
 	___ret;								\
 })
 
@@ -152,9 +152,9 @@ do {									\
 #define this_cpu_generic_to_op(pcp, val, op)				\
 do {									\
 	unsigned long __flags;						\
-	raw_local_irq_save(__flags);					\
+	__flags = hard_local_irq_save();				\
 	raw_cpu_generic_to_op(pcp, val, op);				\
-	raw_local_irq_restore(__flags);					\
+	hard_local_irq_restore(__flags);				\
 } while (0)
 
 
@@ -162,9 +162,9 @@ do {									\
 ({									\
 	typeof(pcp) __ret;						\
 	unsigned long __flags;						\
-	raw_local_irq_save(__flags);					\
+	__flags = hard_local_irq_save();				\
 	__ret = raw_cpu_generic_add_return(pcp, val);			\
-	raw_local_irq_restore(__flags);					\
+	hard_local_irq_restore(__flags);				\
 	__ret;								\
 })
 
@@ -172,9 +172,9 @@ do {									\
 ({									\
 	typeof(pcp) __ret;						\
 	unsigned long __flags;						\
-	raw_local_irq_save(__flags);					\
+	__flags = hard_local_irq_save();				\
 	__ret = raw_cpu_generic_xchg(pcp, nval);			\
-	raw_local_irq_restore(__flags);					\
+	hard_local_irq_restore(__flags);				\
 	__ret;								\
 })
 
@@ -192,9 +192,9 @@ do {									\
 ({									\
 	typeof(pcp) __ret;						\
 	unsigned long __flags;						\
-	raw_local_irq_save(__flags);					\
+	__flags = hard_local_irq_save();				\
 	__ret = raw_cpu_generic_cmpxchg(pcp, oval, nval);		\
-	raw_local_irq_restore(__flags);					\
+	hard_local_irq_restore(__flags);				\
 	__ret;								\
 })
 

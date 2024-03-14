@@ -106,8 +106,33 @@ struct vdso_data {
 	u32			hrtimer_res;
 	u32			__unused;
 
+#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+	u32			cs_type_seq;
+	char			cs_mmdev[16];
+#endif
+ 
 	struct arch_vdso_data	arch_data;
 };
+
+#if defined(CONFIG_GENERIC_CLOCKSOURCE_VDSO) && !defined(ENABLE_COMPAT_VDSO)
+
+#include <uapi/linux/clocksource.h>
+
+struct clksrc_info;
+
+typedef u64 vdso_read_cycles_t(const struct clksrc_info *info);
+
+struct clksrc_info {
+	vdso_read_cycles_t *read_cycles;
+	struct clksrc_user_mmio_info mmio;
+};
+
+struct vdso_priv {
+	u32 current_cs_type_seq;
+	struct clksrc_info clksrc_info[CLOCKSOURCE_VDSO_MMIO + CLKSRC_USER_MMIO_MAX];
+};
+
+#endif	/* !CONFIG_GENERIC_CLOCKSOURCE_VDSO */
 
 /*
  * We use the hidden visibility to prevent the compiler from generating a GOT

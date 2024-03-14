@@ -539,6 +539,116 @@ struct sk_buff *napi_build_skb(void *data, unsigned int frag_size)
 }
 EXPORT_SYMBOL(napi_build_skb);
 
+#ifdef CONFIG_NET_OOB
+
+struct sk_buff *__netdev_alloc_oob_skb(struct net_device *dev, size_t len,
+				size_t headroom, gfp_t gfp_mask)
+{
+	struct sk_buff *skb;
+
+	headroom = ALIGN(NET_SKB_PAD + headroom, NET_SKB_PAD);
+	skb = __alloc_skb(len + headroom, gfp_mask,
+			SKB_ALLOC_RX, NUMA_NO_NODE);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, headroom);
+	skb->dev = dev;
+	skb->oob = true;
+	skb->oob_clone = false;
+	skb->oob_cloned = false;
+
+	return skb;
+}
+EXPORT_SYMBOL_GPL(__netdev_alloc_oob_skb);
+
+void __netdev_free_oob_skb(struct net_device *dev, struct sk_buff *skb)
+{
+	skb->oob = false;
+	skb->oob_clone = false;
+	skb->oob_cloned = false;
+	dev_kfree_skb(skb);
+}
+EXPORT_SYMBOL_GPL(__netdev_free_oob_skb);
+
+void netdev_reset_oob_skb(struct net_device *dev, struct sk_buff *skb,
+			size_t headroom)
+{
+	unsigned char *data = skb->head; /* Always from kmalloc_reserve(). */
+
+	if (WARN_ON_ONCE(!skb->oob || skb->oob_clone))
+		return;
+
+	memset(skb, 0, offsetof(struct sk_buff, tail));
+	__build_skb_around(skb, data, 0);
+	headroom = ALIGN(NET_SKB_PAD + headroom, NET_SKB_PAD);
+	skb_reserve(skb, headroom);
+	skb->oob = true;
+	skb->oob_clone = false;
+	skb->oob_cloned = false;
+	skb->dev = dev;
+}
+EXPORT_SYMBOL_GPL(netdev_reset_oob_skb);
+
+struct sk_buff *skb_alloc_oob_head(gfp_t gfp_mask)
+{
+	struct sk_buff *skb = kmem_cache_alloc(skbuff_cache, gfp_mask);
+
+	if (!skb)
+		return NULL;
+
+	/*
+	 * skb heads allocated for out-of-band traffic should be
+	 * reserved for clones, so memset is extraneous in the sense
+	 * that skb_morph_oob() should follow the allocation.
+	 */
+	memset(skb, 0, offsetof(struct sk_buff, tail));
+	refcount_set(&skb->users, 1);
+	skb->oob = true;
+	skb->oob_clone = true;
+	skb->oob_cloned = false;
+	skb_set_kcov_handle(skb, kcov_common_handle());
+
+	return skb;
+}
+EXPORT_SYMBOL_GPL(skb_alloc_oob_head);
+
+static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb);
+
+void skb_morph_oob_skb(struct sk_buff *n, struct sk_buff *skb)
+{
+	__skb_clone(n, skb);
+	n->oob = true;
+	n->oob_clone = true;
+	n->oob_cloned = true;
+	skb->oob_cloned = true;
+}
+EXPORT_SYMBOL_GPL(skb_morph_oob_skb);
+
+bool skb_release_oob_skb(struct sk_buff *skb, int *dref)
+{
+	struct skb_shared_info *shinfo = skb_shinfo(skb);
+
+	if (!skb_unref(skb))
+		return false;
+
+	/*
+	 * ->nohdr is never set for oob shells, so we always refcount
+         * the full data (header + payload) when cloned.
+	 */
+	*dref = skb->cloned ? atomic_sub_return(1, &shinfo->dataref) : 0;
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(skb_release_oob_skb);
+
+__weak bool skb_oob_recycle(struct sk_buff *skb)
+{
+	return false;
+}
+
+#endif	/* CONFIG_NET_OOB */
+
 /*
  * kmalloc_reserve is a wrapper around kmalloc_node_track_caller that tells
  * the caller if emergency pfmemalloc reserves are being used. If it is and
@@ -1064,6 +1174,9 @@ static void skb_release_all(struct sk_buff *skb, enum skb_drop_reason reason,
 
 void __kfree_skb(struct sk_buff *skb)
 {
+	if (recycle_oob_skb(skb))
+		return;
+
 	skb_release_all(skb, SKB_DROP_REASON_NOT_SPECIFIED, false);
 	kfree_skbmem(skb);
 }
@@ -1320,12 +1433,18 @@ static void napi_skb_cache_put(struct sk_buff *skb)
 
 void __napi_kfree_skb(struct sk_buff *skb, enum skb_drop_reason reason)
 {
+	if (recycle_oob_skb(skb))
+		return;
+
 	skb_release_all(skb, reason, true);
 	napi_skb_cache_put(skb);
 }
 
 void napi_skb_free_stolen_head(struct sk_buff *skb)
 {
+	if (recycle_oob_skb(skb))
+		return;
+
 	if (unlikely(skb->slow_gro)) {
 		nf_reset_ct(skb);
 		skb_dst_drop(skb);
@@ -1358,6 +1477,9 @@ void napi_consume_skb(struct sk_buff *skb, int budget)
 		return;
 	}
 
+	if (recycle_oob_skb(skb))
+		return;
+
 	skb_release_all(skb, SKB_CONSUMED, !!budget);
 	napi_skb_cache_put(skb);
 }
@@ -1377,6 +1499,7 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	skb_dst_copy(new, old);
 	__skb_ext_copy(new, old);
 	__nf_copy(new, old, false);
+	__skb_oob_copy(new, old);
 
 	/* Note : this field could be in the headers group.
 	 * It is not yet because we do not want to have a 16 bit hole

@@ -200,7 +200,13 @@ struct pt_regs {
 
 	/* Only valid for some EL1 exceptions. */
 	u64 lockdep_hardirqs;
+#ifdef CONFIG_IRQ_PIPELINE
+	u64 exit_rcu : 1,
+		oob_on_entry : 1,
+		stalled_on_entry : 1;
+#else
 	u64 exit_rcu;
+#endif
 };
 
 static inline bool in_syscall(struct pt_regs const *regs)

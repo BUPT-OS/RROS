@@ -14,6 +14,7 @@
 
 #include <linux/typecheck.h>
 #include <linux/cleanup.h>
+#include <asm-generic/irq_pipeline.h>
 #include <asm/irqflags.h>
 #include <asm/percpu.h>
 
@@ -53,7 +54,9 @@ DECLARE_PER_CPU(int, hardirq_context);
 extern void trace_hardirqs_on_prepare(void);
 extern void trace_hardirqs_off_finish(void);
 extern void trace_hardirqs_on(void);
+extern void trace_hardirqs_on_pipelined(void);
 extern void trace_hardirqs_off(void);
+extern void trace_hardirqs_off_pipelined(void);
 
 # define lockdep_hardirq_context()	(raw_cpu_read(hardirq_context))
 # define lockdep_softirq_context(p)	((p)->softirq_context)
@@ -115,7 +118,9 @@ do {						\
 # define trace_hardirqs_on_prepare()		do { } while (0)
 # define trace_hardirqs_off_finish()		do { } while (0)
 # define trace_hardirqs_on()			do { } while (0)
+# define trace_hardirqs_on_pipelined()		do { } while (0)
 # define trace_hardirqs_off()			do { } while (0)
+# define trace_hardirqs_off_pipelined()		do { } while (0)
 # define lockdep_hardirq_context()		0
 # define lockdep_softirq_context(p)		0
 # define lockdep_hardirqs_enabled()		0
@@ -247,6 +252,45 @@ extern void warn_bogus_irq_restore(void);
 #define safe_halt()		do { raw_safe_halt(); } while (0)
 
 #endif /* CONFIG_TRACE_IRQFLAGS */
+
+#ifdef CONFIG_IRQ_PIPELINE
+#define local_irq_enable_full()			\
+	do {					\
+		hard_local_irq_enable();	\
+		local_irq_enable();		\
+	} while (0)
+
+#define local_irq_disable_full()		\
+	do {					\
+		hard_local_irq_disable();	\
+		local_irq_disable();		\
+	} while (0)
+
+#define local_irq_save_full(__flags)					\
+	do {								\
+		bool __was_unstalled = running_inband() && !raw_irqs_disabled(); \
+		(__flags) = test_and_lock_stage(NULL);			\
+		if (__was_unstalled)					\
+			trace_hardirqs_off();				\
+	} while (0)
+
+#define local_irq_restore_full(__flags)					\
+	do {								\
+		if (running_inband()) {					\
+			bool __stalled;					\
+			stage_disabled_flags(__flags, &__stalled);	\
+			if (!__stalled)					\
+				trace_hardirqs_on();			\
+		}							\
+		unlock_stage(__flags);					\
+	} while (0)
+
+#else
+#define local_irq_enable_full()		local_irq_enable()
+#define local_irq_disable_full()	local_irq_disable()
+#define local_irq_save_full(__flags)	local_irq_save(__flags)
+#define local_irq_restore_full(__flags)	local_irq_restore(__flags)
+#endif
 
 #define local_save_flags(flags)	raw_local_save_flags(flags)
 

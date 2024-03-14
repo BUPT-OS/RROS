@@ -1159,7 +1159,7 @@ static struct irq_chip sunxi_pinctrl_edge_irq_chip = {
 	.irq_release_resources = sunxi_pinctrl_irq_release_resources,
 	.irq_set_type	= sunxi_pinctrl_irq_set_type,
 	.irq_set_wake	= sunxi_pinctrl_irq_set_wake,
-	.flags		= IRQCHIP_MASK_ON_SUSPEND,
+	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct irq_chip sunxi_pinctrl_level_irq_chip = {
@@ -1177,7 +1177,8 @@ static struct irq_chip sunxi_pinctrl_level_irq_chip = {
 	.irq_set_wake	= sunxi_pinctrl_irq_set_wake,
 	.flags		= IRQCHIP_EOI_THREADED |
 			  IRQCHIP_MASK_ON_SUSPEND |
-			  IRQCHIP_EOI_IF_HANDLED,
+			  IRQCHIP_EOI_IF_HANDLED |
+			  IRQCHIP_PIPELINE_SAFE,
 };
 
 static int sunxi_pinctrl_irq_of_xlate(struct irq_domain *d,

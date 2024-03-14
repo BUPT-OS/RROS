@@ -38,6 +38,7 @@
 #include <net/netns/bpf.h>
 #include <net/netns/mctp.h>
 #include <net/net_trackers.h>
+#include <net/netoob.h>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
 #include <linux/skbuff.h>
@@ -167,6 +168,8 @@ struct net {
 #endif
 
 	u64			net_cookie; /* written once */
+
+	struct oob_net_state	oob;
 
 #if IS_ENABLED(CONFIG_IP_VS)
 	struct netns_ipvs	*ipvs;

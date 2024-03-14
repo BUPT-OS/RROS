@@ -146,6 +146,102 @@ static void sock_show_fdinfo(struct seq_file *m, struct file *f)
 #define sock_show_fdinfo NULL
 #endif
 
+#ifdef CONFIG_NET_OOB
+
+static inline bool sock_oob_capable(struct socket *sock)
+{
+	return sock->sk && sock->sk->oob_data;
+}
+
+int __weak sock_oob_attach(struct socket *sock)
+{
+	return 0;
+}
+
+void __weak sock_oob_detach(struct sock *sk)
+{
+}
+
+int __weak sock_oob_bind(struct socket *sock, struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+int __weak sock_oob_connect(struct socket *sock, struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+long __weak sock_inband_ioctl_redirect(struct socket *sock,
+				unsigned int cmd, unsigned long arg)
+{
+	return -ENOTTY;
+}
+
+long __weak sock_oob_ioctl(struct file *file,
+			unsigned int cmd, unsigned long arg)
+{
+	return -ENOTTY;
+}
+
+ssize_t __weak sock_oob_write(struct file *filp,
+				const char __user *u_buf, size_t count)
+{
+	return -EOPNOTSUPP;
+}
+
+ssize_t __weak sock_oob_read(struct file *filp,
+			char __user *u_buf, size_t count)
+{
+	return -EOPNOTSUPP;
+}
+
+__poll_t __weak sock_oob_poll(struct file *filp,
+				struct oob_poll_wait *wait)
+{
+	return -EOPNOTSUPP;
+}
+
+#define compat_sock_oob_ioctl compat_ptr_oob_ioctl
+
+#else	/* !CONFIG_NET_OOB */
+
+static inline bool sock_oob_capable(struct socket *sock)
+{
+	return false;
+}
+
+static inline int sock_oob_attach(struct socket *sock)
+{
+	return 0;
+}
+
+static inline int sock_oob_bind(struct socket *sock,
+				struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+static inline int sock_oob_connect(struct socket *sock,
+				struct sockaddr *addr, int len)
+{
+	return 0;
+}
+
+static inline long sock_inband_ioctl_redirect(struct socket *sock,
+					unsigned int cmd, unsigned long arg)
+{
+	return -ENOTTY;
+}
+
+#define sock_oob_ioctl		NULL
+#define sock_oob_write		NULL
+#define sock_oob_read		NULL
+#define sock_oob_poll		NULL
+#define compat_sock_oob_ioctl	NULL
+
+#endif	/* !CONFIG_NET_OOB */
+
 /*
  *	Socket files have a set of 'special' operations as well as the generic file ones. These don't appear
  *	in the operation structures but are done directly via the socketcall() multiplexor.
@@ -158,8 +254,13 @@ static const struct file_operations socket_file_ops = {
 	.write_iter =	sock_write_iter,
 	.poll =		sock_poll,
 	.unlocked_ioctl = sock_ioctl,
+	.oob_ioctl =	sock_oob_ioctl,
+	.oob_write =	sock_oob_write,
+	.oob_read =	sock_oob_read,
+	.oob_poll =	sock_oob_poll,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = compat_sock_ioctl,
+	.compat_oob_ioctl = compat_sock_oob_ioctl,
 #endif
 	.uring_cmd =    io_uring_cmd_sock,
 	.mmap =		sock_mmap,
@@ -218,6 +319,7 @@ static const char * const pf_family_names[] = {
 	[PF_SMC]	= "PF_SMC",
 	[PF_XDP]	= "PF_XDP",
 	[PF_MCTP]	= "PF_MCTP",
+	[PF_OOB]	= "PF_OOB",
 };
 
 /*
@@ -485,7 +587,7 @@ EXPORT_SYMBOL(sock_alloc_file);
 static int sock_map_fd(struct socket *sock, int flags)
 {
 	struct file *newfile;
-	int fd = get_unused_fd_flags(flags);
+	int fd = get_unused_fd_flags(flags), ret;
 	if (unlikely(fd < 0)) {
 		sock_release(sock);
 		return fd;
@@ -493,6 +595,14 @@ static int sock_map_fd(struct socket *sock, int flags)
 
 	newfile = sock_alloc_file(sock, flags, NULL);
 	if (!IS_ERR(newfile)) {
+		if (IS_ENABLED(CONFIG_NET_OOB) && (flags & SOCK_OOB)) {
+			ret = sock_oob_attach(sock);
+			if (ret < 0) {
+				put_unused_fd(fd);
+				sock_release(sock);
+				return ret;
+			}
+		}
 		fd_install(fd, newfile);
 		return fd;
 	}
@@ -1319,6 +1429,11 @@ static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 			break;
 
 		default:
+			if (sock_oob_capable(sock)) {
+				err = sock_inband_ioctl_redirect(sock, cmd, arg);
+				if (!err || err != -ENOIOCTLCMD)
+					break;
+			}
 			err = sock_do_ioctl(net, sock, cmd, arg);
 			break;
 		}
@@ -1632,8 +1747,9 @@ static struct socket *__sys_socket_create(int family, int type, int protocol)
 	BUILD_BUG_ON((SOCK_MAX | SOCK_TYPE_MASK) != SOCK_TYPE_MASK);
 	BUILD_BUG_ON(SOCK_CLOEXEC & SOCK_TYPE_MASK);
 	BUILD_BUG_ON(SOCK_NONBLOCK & SOCK_TYPE_MASK);
+	BUILD_BUG_ON(SOCK_OOB & SOCK_TYPE_MASK);
 
-	if ((type & ~SOCK_TYPE_MASK) & ~(SOCK_CLOEXEC | SOCK_NONBLOCK))
+	if ((type & ~SOCK_TYPE_MASK) & ~(SOCK_CLOEXEC | SOCK_NONBLOCK | SOCK_OOB))
 		return ERR_PTR(-EINVAL);
 	type &= SOCK_TYPE_MASK;
 
@@ -1697,7 +1813,7 @@ int __sys_socket(int family, int type, int protocol)
 	if (SOCK_NONBLOCK != O_NONBLOCK && (flags & SOCK_NONBLOCK))
 		flags = (flags & ~SOCK_NONBLOCK) | O_NONBLOCK;
 
-	return sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK));
+	return sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK | O_OOB));
 }
 
 SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
@@ -1828,6 +1944,9 @@ int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
 			err = security_socket_bind(sock,
 						   (struct sockaddr *)&address,
 						   addrlen);
+			if (sock_oob_capable(sock) && !err)
+				err = sock_oob_bind(sock, (struct sockaddr *)
+						&address, addrlen);
 			if (!err)
 				err = READ_ONCE(sock->ops)->bind(sock,
 						      (struct sockaddr *)
@@ -2029,6 +2148,13 @@ int __sys_connect_file(struct file *file, struct sockaddr_storage *address,
 	    security_socket_connect(sock, (struct sockaddr *)address, addrlen);
 	if (err)
 		goto out;
+
+	if (sock_oob_capable(sock)) {
+		err = sock_oob_connect(sock, (struct sockaddr *)address,
+				addrlen);
+		if (err)
+			goto out;
+	}
 
 	err = READ_ONCE(sock->ops)->connect(sock, (struct sockaddr *)address,
 				addrlen, sock->file->f_flags | file_flags);

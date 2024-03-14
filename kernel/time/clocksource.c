@@ -1167,8 +1167,8 @@ void __clocksource_update_freq_scale(struct clocksource *cs, u32 scale, u32 freq
 
 	clocksource_update_max_deferment(cs);
 
-	pr_info("%s: mask: 0x%llx max_cycles: 0x%llx, max_idle_ns: %lld ns\n",
-		cs->name, cs->mask, cs->max_cycles, cs->max_idle_ns);
+	pr_info("%s: freq: %Lu Hz, mask: 0x%llx max_cycles: 0x%llx, max_idle_ns: %lld ns\n",
+		cs->name, (u64)freq * scale, cs->mask, cs->max_cycles, cs->max_idle_ns);
 }
 EXPORT_SYMBOL_GPL(__clocksource_update_freq_scale);
 
@@ -1437,10 +1437,36 @@ static ssize_t available_clocksource_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(available_clocksource);
 
+/**
+ * vdso_clocksource_show - sysfs interface for vDSO type of
+ *      current clocksource
+ * @dev:	unused
+ * @attr:	unused
+ * @buf:	char buffer to be filled with vDSO type
+ */
+static ssize_t vdso_clocksource_show(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	ssize_t count = 0, type;
+
+	mutex_lock(&clocksource_mutex);
+	type = curr_clocksource->vdso_type;
+	count = snprintf(buf, PAGE_SIZE, "%s\n",
+			type == CLOCKSOURCE_VDSO_NONE ?	"none" :
+			type == CLOCKSOURCE_VDSO_ARCHITECTED ?	"architected" :
+			"mmio");
+	mutex_unlock(&clocksource_mutex);
+
+	return count;
+}
+static DEVICE_ATTR_RO(vdso_clocksource);
+
 static struct attribute *clocksource_attrs[] = {
 	&dev_attr_current_clocksource.attr,
 	&dev_attr_unbind_clocksource.attr,
 	&dev_attr_available_clocksource.attr,
+	&dev_attr_vdso_clocksource.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(clocksource);

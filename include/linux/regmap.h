@@ -420,6 +420,7 @@ struct regmap_config {
 
 	bool fast_io;
 	bool io_port;
+	bool oob_io;
 
 	unsigned int max_register;
 	const struct regmap_access_table *wr_table;

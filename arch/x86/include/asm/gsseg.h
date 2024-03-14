@@ -32,9 +32,9 @@ static inline void native_load_gs_index(unsigned int selector)
 	} else {
 		unsigned long flags;
 
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		asm_load_gs_index(selector);
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 	}
 }
 

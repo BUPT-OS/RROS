@@ -118,6 +118,16 @@ static inline void syscall_get_arguments(struct task_struct *task,
 	}
 }
 
+static inline unsigned long syscall_get_arg0(struct task_struct *task,
+					     struct pt_regs *regs)
+{
+	if (IS_ENABLED(CONFIG_IA32_EMULATION) &&
+	    task->thread_info.status & TS_COMPAT)
+		return regs->bx;
+
+	return regs->di;
+}
+
 static inline int syscall_get_arch(struct task_struct *task)
 {
 	/* x32 tasks should be considered AUDIT_ARCH_X86_64. */

@@ -11,6 +11,7 @@
  */
 
 #include <linux/hardirq.h>
+#include <linux/irq_pipeline.h>
 #include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/irqchip.h>
@@ -30,7 +31,6 @@
 DEFINE_PER_CPU(struct nmi_ctx, nmi_contexts);
 
 DEFINE_PER_CPU(unsigned long *, irq_stack_ptr);
-
 
 DECLARE_PER_CPU(unsigned long *, irq_shadow_call_stack_ptr);
 
@@ -74,7 +74,7 @@ static void init_irq_stacks(void)
 }
 #endif
 
-#ifndef CONFIG_PREEMPT_RT
+#ifdef CONFIG_SOFTIRQ_ON_OWN_STACK
 static void ____do_softirq(struct pt_regs *regs)
 {
 	__do_softirq();

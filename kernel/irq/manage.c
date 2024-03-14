@@ -10,6 +10,7 @@
 
 #include <linux/irq.h>
 #include <linux/kthread.h>
+#include <linux/kconfig.h>
 #include <linux/module.h>
 #include <linux/random.h>
 #include <linux/interrupt.h>
@@ -928,6 +929,50 @@ out_unlock:
 }
 EXPORT_SYMBOL(irq_set_irq_wake);
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+/**
+ *	irq_switch_oob - Control out-of-band setting for a registered IRQ descriptor
+ *	@irq:	interrupt to control
+ *	@on:	enable/disable pipelining
+ *
+ *	Enable/disable out-of-band handling for an IRQ. At least one
+ *	action must have been previously registered for such
+ *	interrupt.
+ *
+ *      The previously registered action(s) need(s) not bearing the
+ *      IRQF_OOB flag for the IRQ to be switched to out-of-band
+ *      handling. This call enables switching pre-installed IRQs from
+ *      in-band to out-of-band handling.
+ *
+ *      NOTE: This routine affects all action handlers sharing the
+ *      IRQ.
+ */
+int irq_switch_oob(unsigned int irq, bool on)
+{
+	struct irq_desc *desc;
+	unsigned long flags;
+	int ret = 0;
+
+	desc = irq_get_desc_lock(irq, &flags, 0);
+	if (!desc)
+		return -EINVAL;
+
+	if (!desc->action)
+		ret = -EINVAL;
+	else if (on)
+		irq_settings_set_oob(desc);
+	else
+		irq_settings_clr_oob(desc);
+
+	irq_put_desc_unlock(desc, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(irq_switch_oob);
+
+#endif /* CONFIG_IRQ_PIPELINE */
+
 /*
  * Internal function that tells the architecture code whether a
  * particular irq has been exclusively allocated or is available
@@ -944,7 +989,8 @@ int can_request_irq(unsigned int irq, unsigned long irqflags)
 
 	if (irq_settings_can_request(desc)) {
 		if (!desc->action ||
-		    irqflags & desc->action->flags & IRQF_SHARED)
+		    ((irqflags & desc->action->flags & IRQF_SHARED) &&
+		     !((irqflags ^ desc->action->flags) & IRQF_OOB)))
 			canrequest = 1;
 	}
 	irq_put_desc_unlock(desc, flags);
@@ -1518,6 +1564,21 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 	new->irq = irq;
 
+	ret = -EINVAL;
+	/*
+	 *  Out-of-band interrupts can be shared but not threaded.  We
+	 *  silently ignore the OOB setting if interrupt pipelining is
+	 *  disabled.
+	 */
+	if (!irqs_pipelined())
+		new->flags &= ~IRQF_OOB;
+	else if (new->flags & IRQF_OOB) {
+		if (new->thread_fn)
+			goto out_mput;
+		new->flags |= IRQF_NO_THREAD;
+		new->flags &= ~IRQF_ONESHOT;
+	}
+
 	/*
 	 * If the trigger type is not specified by the caller,
 	 * then use the default for this interrupt.
@@ -1531,10 +1592,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 */
 	nested = irq_settings_is_nested_thread(desc);
 	if (nested) {
-		if (!new->thread_fn) {
-			ret = -EINVAL;
+		if (!new->thread_fn)
 			goto out_mput;
-		}
 		/*
 		 * Replace the primary handler which was provided from
 		 * the driver for non nested interrupt handling by the
@@ -1618,7 +1677,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		 * the same type (level, edge, polarity). So both flag
 		 * fields must have IRQF_SHARED set and the bits which
 		 * set the trigger type must match. Also all must
-		 * agree on ONESHOT.
+		 * agree on ONESHOT and OOB.
 		 * Interrupt lines used for NMIs cannot be shared.
 		 */
 		unsigned int oldtype;
@@ -1643,7 +1702,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 		if (!((old->flags & new->flags) & IRQF_SHARED) ||
 		    (oldtype != (new->flags & IRQF_TRIGGER_MASK)) ||
-		    ((old->flags ^ new->flags) & IRQF_ONESHOT))
+		    ((old->flags ^ new->flags) & (IRQF_OOB|IRQF_ONESHOT)))
 			goto mismatch;
 
 		/* All handlers must agree on per-cpuness */
@@ -1765,6 +1824,9 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 		if (new->flags & IRQF_ONESHOT)
 			desc->istate |= IRQS_ONESHOT;
+
+		if (new->flags & IRQF_OOB)
+			irq_settings_set_oob(desc);
 
 		/* Exclude IRQ from balancing if requested */
 		if (new->flags & IRQF_NOBALANCING) {
@@ -1914,6 +1976,8 @@ static struct irqaction *__free_irq(struct irq_desc *desc, void *dev_id)
 		irq_settings_clr_disable_unlazy(desc);
 		/* Only shutdown. Deactivate after synchronize_hardirq() */
 		irq_shutdown(desc);
+		/* Turn off OOB handling (after shutdown). */
+		irq_settings_clr_oob(desc);
 	}
 
 #ifdef CONFIG_SMP
@@ -1950,14 +2014,15 @@ static struct irqaction *__free_irq(struct irq_desc *desc, void *dev_id)
 
 #ifdef CONFIG_DEBUG_SHIRQ
 	/*
-	 * It's a shared IRQ -- the driver ought to be prepared for an IRQ
-	 * event to happen even now it's being freed, so let's make sure that
-	 * is so by doing an extra call to the handler ....
+	 * It's a shared IRQ (with in-band handler) -- the driver
+	 * ought to be prepared for an IRQ event to happen even now
+	 * it's being freed, so let's make sure that is so by doing an
+	 * extra call to the handler ....
 	 *
 	 * ( We do this after actually deregistering it, to make sure that a
 	 *   'real' IRQ doesn't run in parallel with our fake. )
 	 */
-	if (action->flags & IRQF_SHARED) {
+	if ((action->flags & (IRQF_SHARED|IRQF_OOB)) == IRQF_SHARED) {
 		local_irq_save(flags);
 		action->handler(irq, dev_id);
 		local_irq_restore(flags);
@@ -2584,7 +2649,7 @@ int setup_percpu_irq(unsigned int irq, struct irqaction *act)
  *	__request_percpu_irq - allocate a percpu interrupt line
  *	@irq: Interrupt line to allocate
  *	@handler: Function to be called when the IRQ occurs.
- *	@flags: Interrupt type flags (IRQF_TIMER only)
+ *	@flags: Interrupt type flags (IRQF_TIMER and/or IRQF_OOB only)
  *	@devname: An ascii name for the claiming device
  *	@dev_id: A percpu cookie passed back to the handler function
  *
@@ -2613,7 +2678,7 @@ int __request_percpu_irq(unsigned int irq, irq_handler_t handler,
 	    !irq_settings_is_per_cpu_devid(desc))
 		return -EINVAL;
 
-	if (flags && flags != IRQF_TIMER)
+	if (flags & ~(IRQF_TIMER|IRQF_OOB))
 		return -EINVAL;
 
 	action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);

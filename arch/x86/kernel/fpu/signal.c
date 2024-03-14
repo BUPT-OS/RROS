@@ -68,15 +68,17 @@ setfx:
  */
 static inline bool save_fsave_header(struct task_struct *tsk, void __user *buf)
 {
+	unsigned long flags;
+
 	if (use_fxsr()) {
 		struct xregs_state *xsave = &tsk->thread.fpu.fpstate->regs.xsave;
 		struct user_i387_ia32_struct env;
 		struct _fpstate_32 __user *fp = buf;
 
-		fpregs_lock();
+		flags = fpregs_lock();
 		if (!test_thread_flag(TIF_NEED_FPU_LOAD))
 			fxsave(&tsk->thread.fpu.fpstate->regs.fxsave);
-		fpregs_unlock();
+		fpregs_unlock(flags);
 
 		convert_from_fxsr(&env, tsk);
 
@@ -190,6 +192,7 @@ bool copy_fpstate_to_sigframe(void __user *buf, void __user *buf_fx, int size)
 	struct task_struct *tsk = current;
 	struct fpstate *fpstate = tsk->thread.fpu.fpstate;
 	bool ia32_fxstate = (buf != buf_fx);
+	unsigned long flags;
 	int ret;
 
 	ia32_fxstate &= (IS_ENABLED(CONFIG_X86_32) ||
@@ -223,14 +226,14 @@ retry:
 	 * userland's stack frame which will likely succeed. If it does not,
 	 * resolve the fault in the user memory and try again.
 	 */
-	fpregs_lock();
+	flags = fpregs_lock();
 	if (test_thread_flag(TIF_NEED_FPU_LOAD))
 		fpregs_restore_userregs();
 
 	pagefault_disable();
 	ret = copy_fpregs_to_sigframe(buf_fx);
 	pagefault_enable();
-	fpregs_unlock();
+	fpregs_unlock(flags);
 
 	if (ret) {
 		if (!__clear_user(buf_fx, fpstate->user_size))
@@ -278,10 +281,11 @@ static bool restore_fpregs_from_user(void __user *buf, u64 xrestore,
 				     bool fx_only, unsigned int size)
 {
 	struct fpu *fpu = &current->thread.fpu;
+	unsigned long flags;
 	int ret;
 
 retry:
-	fpregs_lock();
+	flags = fpregs_lock();
 	/* Ensure that XFD is up to date */
 	xfd_update_state(fpu->fpstate);
 	pagefault_disable();
@@ -303,7 +307,7 @@ retry:
 		 */
 		if (test_thread_flag(TIF_NEED_FPU_LOAD))
 			__cpu_invalidate_fpregs_state();
-		fpregs_unlock();
+		fpregs_unlock(flags);
 
 		/* Try to handle #PF, but anything else is fatal. */
 		if (ret != X86_TRAP_PF)
@@ -327,7 +331,7 @@ retry:
 		os_xrstor_supervisor(fpu->fpstate);
 
 	fpregs_mark_activate();
-	fpregs_unlock();
+	fpregs_unlock(flags);
 	return true;
 }
 
@@ -341,6 +345,7 @@ static bool __fpu_restore_sig(void __user *buf, void __user *buf_fx,
 	union fpregs_state *fpregs;
 	unsigned int state_size;
 	u64 user_xfeatures = 0;
+	unsigned long flags;
 
 	if (use_xsave()) {
 		struct _fpx_sw_bytes fx_sw_user;
@@ -376,7 +381,7 @@ static bool __fpu_restore_sig(void __user *buf, void __user *buf_fx,
 	 * to be loaded again on return to userland (overriding last_cpu avoids
 	 * the optimisation).
 	 */
-	fpregs_lock();
+	flags = fpregs_lock();
 	if (!test_thread_flag(TIF_NEED_FPU_LOAD)) {
 		/*
 		 * If supervisor states are available then save the
@@ -392,7 +397,7 @@ static bool __fpu_restore_sig(void __user *buf, void __user *buf_fx,
 	}
 	__fpu_invalidate_fpregs_state(fpu);
 	__cpu_invalidate_fpregs_state();
-	fpregs_unlock();
+	fpregs_unlock(flags);
 
 	fpregs = &fpu->fpstate->regs;
 	if (use_xsave() && !fx_only) {
@@ -420,7 +425,7 @@ static bool __fpu_restore_sig(void __user *buf, void __user *buf_fx,
 	/* Fold the legacy FP storage */
 	convert_to_fxsr(&fpregs->fxsave, &env);
 
-	fpregs_lock();
+	flags = fpregs_lock();
 	if (use_xsave()) {
 		/*
 		 * Remove all UABI feature bits not set in user_xfeatures
@@ -443,7 +448,7 @@ static bool __fpu_restore_sig(void __user *buf, void __user *buf_fx,
 	if (likely(success))
 		fpregs_mark_activate();
 
-	fpregs_unlock();
+	fpregs_unlock(flags);
 	return success;
 }
 

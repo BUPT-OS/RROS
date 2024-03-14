@@ -27,13 +27,14 @@ smp-flag-$(CONFIG_SMP)			:= SMP
 preempt-flag-$(CONFIG_PREEMPT_BUILD)	:= PREEMPT
 preempt-flag-$(CONFIG_PREEMPT_DYNAMIC)	:= PREEMPT_DYNAMIC
 preempt-flag-$(CONFIG_PREEMPT_RT)	:= PREEMPT_RT
+pipeline-flag-$(CONFIG_IRQ_PIPELINE)	:= IRQ_PIPELINE
 
 build-version = $(or $(KBUILD_BUILD_VERSION), $(build-version-auto))
 build-timestamp = $(or $(KBUILD_BUILD_TIMESTAMP), $(build-timestamp-auto))
 
 # Maximum length of UTS_VERSION is 64 chars
 filechk_uts_version = \
-	utsver=$$(echo '$(pound)'"$(build-version)" $(smp-flag-y) $(preempt-flag-y) "$(build-timestamp)" | cut -b -64); \
+	utsver=$$(echo '$(pound)'"$(build-version)" $(smp-flag-y) $(preempt-flag-y) $(pipeline-flag-y) "$(build-timestamp)" | cut -b -64); \
 	echo '$(pound)'define UTS_VERSION \""$${utsver}"\"
 
 #

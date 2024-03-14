@@ -215,7 +215,7 @@ static struct irq_chip mbi_pmsi_irq_chip = {
 	.name			= "pMSI",
 	.irq_set_type		= irq_chip_set_type_parent,
 	.irq_compose_msi_msg	= mbi_compose_mbi_msg,
-	.flags			= IRQCHIP_SUPPORTS_LEVEL_MSI,
+	.flags			= IRQCHIP_SUPPORTS_LEVEL_MSI | IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct msi_domain_ops mbi_pmsi_ops = {

@@ -38,6 +38,9 @@ static void __used common(void)
 #ifdef CONFIG_STACKPROTECTOR
 	OFFSET(TASK_stack_canary, task_struct, stack_canary);
 #endif
+#ifdef CONFIG_IRQ_PIPELINE
+	DEFINE(OOB_stage_mask, STAGE_MASK);
+#endif
 
 	BLANK();
 	OFFSET(pbe_address, pbe, address);

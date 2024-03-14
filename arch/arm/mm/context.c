@@ -39,7 +39,7 @@
 #define ASID_FIRST_VERSION	(1ULL << ASID_BITS)
 #define NUM_USER_ASIDS		ASID_FIRST_VERSION
 
-static DEFINE_RAW_SPINLOCK(cpu_asid_lock);
+static DEFINE_HARD_SPINLOCK(cpu_asid_lock);
 static atomic64_t asid_generation = ATOMIC64_INIT(ASID_FIRST_VERSION);
 static DECLARE_BITMAP(asid_map, NUM_USER_ASIDS);
 
@@ -237,10 +237,12 @@ static u64 new_context(struct mm_struct *mm, unsigned int cpu)
 void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 {
 	unsigned long flags;
-	unsigned int cpu = smp_processor_id();
+	unsigned int cpu = raw_smp_processor_id();
+	bool need_flush;
 	u64 asid;
 
 	check_vmalloc_seq(mm);
+	WARN_ON_ONCE(dovetail_debug() && !hard_irqs_disabled());
 
 	/*
 	 * We cannot update the pgd and the ASID atomicly with classic
@@ -262,14 +264,15 @@ void check_and_switch_context(struct mm_struct *mm, struct task_struct *tsk)
 		atomic64_set(&mm->context.id, asid);
 	}
 
-	if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending)) {
-		local_flush_bp_all();
-		local_flush_tlb_all();
-	}
-
+	need_flush = cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending);
 	atomic64_set(&per_cpu(active_asids, cpu), asid);
 	cpumask_set_cpu(cpu, mm_cpumask(mm));
 	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
+
+	if (need_flush) {
+		local_flush_bp_all();
+		local_flush_tlb_all();
+	}
 
 switch_mm_fastpath:
 	cpu_switch_mm(mm->pgd, mm);

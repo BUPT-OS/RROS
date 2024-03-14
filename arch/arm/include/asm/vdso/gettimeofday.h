@@ -142,6 +142,66 @@ static __always_inline const struct vdso_data *__arch_get_vdso_data(void)
 	return __get_datapage();
 }
 
+#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+
+extern struct vdso_priv *__get_privpage(void);
+
+static __always_inline struct vdso_priv *__arch_get_vdso_priv(void)
+{
+	return __get_privpage();
+}
+
+static __always_inline long clock_open_device(const char *path, int mode)
+{
+	register u32 r0 asm("r0") = (u32)path;
+	register u32 r1 asm("r1") = (u32)mode;
+	register long ret asm ("r0");
+	register long nr asm("r7") = __NR_open;
+
+	asm volatile(
+		"	swi #0\n"
+		: "=r" (ret)
+		: "r"(r0), "r"(r1), "r"(nr)
+		: "memory");
+
+	return ret;
+}
+
+static __always_inline
+long clock_ioctl_device(int fd, unsigned int cmd, long arg)
+{
+	register u32 r0 asm("r0") = (u32)fd;
+	register u32 r1 asm("r1") = (u32)cmd;
+	register u32 r2 asm("r2") = (u32)arg;
+	register long ret asm ("r0");
+	register long nr asm("r7") = __NR_ioctl;
+
+ 	asm volatile(
+		"	swi #0\n"
+		: "=r" (ret)
+		: "r"(r0), "r"(r1), "r"(r2), "r"(nr)
+		: "memory");
+
+ 	return ret;
+}
+
+static __always_inline long clock_close_device(int fd)
+{
+	register u32 r0 asm("r0") = (u32)fd;
+	register long ret asm ("r0");
+	register long nr asm("r7") = __NR_close;
+
+	asm volatile(
+		"	swi #0\n"
+		: "=r" (ret)
+		: "r"(r0), "r"(nr)
+		: "memory");
+
+	return ret;
+}
+
+#endif	/* CONFIG_GENERIC_CLOCKSOURCE_VDSO */
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* __ASM_VDSO_GETTIMEOFDAY_H */

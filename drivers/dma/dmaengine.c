@@ -579,7 +579,8 @@ int dma_get_slave_caps(struct dma_chan *chan, struct dma_slave_caps *caps)
 
 	/* check if the channel supports slave transactions */
 	if (!(test_bit(DMA_SLAVE, device->cap_mask.bits) ||
-	      test_bit(DMA_CYCLIC, device->cap_mask.bits)))
+	      test_bit(DMA_CYCLIC, device->cap_mask.bits) ||
+	      test_bit(DMA_OOB, device->cap_mask.bits)))
 		return -ENXIO;
 
 	/*
@@ -1177,6 +1178,12 @@ int dma_async_device_register(struct dma_device *device)
 
 	if (!device->device_issue_pending) {
 		dev_err(device->dev, "Device issue_pending is not defined\n");
+		return -EIO;
+	}
+
+	if (dma_has_cap(DMA_OOB, device->cap_mask) && !device->device_pulse_oob) {
+		dev_err(device->dev,
+			"Device claims capability DMA_OOB, but pulse handler is not defined\n");
 		return -EIO;
 	}
 

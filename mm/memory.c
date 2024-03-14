@@ -5888,6 +5888,15 @@ void print_vma_addr(char *prefix, unsigned long ip)
 #if defined(CONFIG_PROVE_LOCKING) || defined(CONFIG_DEBUG_ATOMIC_SLEEP)
 void __might_fault(const char *file, int line)
 {
+	/*
+	 * When running over the oob stage (e.g. some co-kernel's own
+	 * thread), we should only make sure to run with hw IRQs
+	 * enabled before accessing the memory.
+	 */
+	if (running_oob()) {
+		WARN_ON_ONCE(hard_irqs_disabled());
+		return;
+	}
 	if (pagefault_disabled())
 		return;
 	__might_sleep(file, line);

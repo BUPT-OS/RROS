@@ -566,7 +566,7 @@ static const struct intel_pinctrl_soc_data *chv_soc_data[] = {
  * See Intel Atom Z8000 Processor Series Specification Update (Rev. 005),
  * errata #CHT34, for further information.
  */
-static DEFINE_RAW_SPINLOCK(chv_lock);
+static DEFINE_HARD_SPINLOCK(chv_lock);
 
 static u32 chv_pctrl_readl(struct intel_pinctrl *pctrl, unsigned int offset)
 {
@@ -1417,7 +1417,7 @@ static const struct irq_chip chv_gpio_irq_chip = {
 	.irq_mask	= chv_gpio_irq_mask,
 	.irq_unmask	= chv_gpio_irq_unmask,
 	.irq_set_type	= chv_gpio_irq_type,
-	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_IMMUTABLE,
+	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_IMMUTABLE | IRQCHIP_PIPELINE_SAFE,
 	GPIOCHIP_IRQ_RESOURCE_HELPERS,
 };
 

@@ -100,6 +100,48 @@ TRACE_EVENT(irq_handler_exit,
 		  __entry->irq, __entry->ret ? "handled" : "unhandled")
 );
 
+/**
+ * irq_pipeline_entry - called when an external irq enters the pipeline
+ * @irq: irq number
+ */
+TRACE_EVENT(irq_pipeline_entry,
+
+	TP_PROTO(int irq),
+
+	TP_ARGS(irq),
+
+	TP_STRUCT__entry(
+		__field(	int,	irq		)
+	),
+
+	TP_fast_assign(
+		__entry->irq = irq;
+	),
+
+	TP_printk("irq=%d", __entry->irq)
+);
+
+/**
+ * irq_pipeline_exit - called when an external irq leaves the pipeline
+ * @irq: irq number
+ */
+TRACE_EVENT(irq_pipeline_exit,
+
+	TP_PROTO(int irq),
+
+	TP_ARGS(irq),
+
+	TP_STRUCT__entry(
+		__field(	int,	irq		)
+	),
+
+	TP_fast_assign(
+		__entry->irq = irq;
+	),
+
+	TP_printk("irq=%d", __entry->irq)
+);
+
 DECLARE_EVENT_CLASS(softirq,
 
 	TP_PROTO(unsigned int vec_nr),

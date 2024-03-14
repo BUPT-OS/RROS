@@ -10,6 +10,7 @@
 #include <linux/bits.h>
 #include <linux/completion.h>
 #include <linux/device.h>
+#include <linux/dmaengine.h>
 #include <linux/gpio/consumer.h>
 #include <linux/kthread.h>
 #include <linux/mod_devicetable.h>
@@ -25,6 +26,7 @@ struct software_node;
 struct ptp_system_timestamp;
 struct spi_controller;
 struct spi_transfer;
+struct spi_oob_transfer;
 struct spi_controller_mem_ops;
 struct spi_controller_mem_caps;
 struct spi_message;
@@ -398,6 +400,7 @@ extern struct spi_device *spi_new_ancillary_device(struct spi_device *spi, u8 ch
  * @add_lock: mutex to avoid adding devices to the same chipselect
  * @bus_lock_spinlock: spinlock for SPI bus locking
  * @bus_lock_mutex: mutex for exclusion of multiple callers
+ * @bus_oob_lock_sem: semaphore for exclusion during oob operations
  * @bus_lock_flag: indicates that the SPI bus is locked for exclusive use
  * @setup: updates the device mode and clocking records used by a
  *	device's SPI controller; protocol code may call this.  This
@@ -594,6 +597,10 @@ struct spi_controller {
 	spinlock_t		bus_lock_spinlock;
 	struct mutex		bus_lock_mutex;
 
+#ifdef CONFIG_SPI_OOB
+	struct semaphore	bus_oob_lock_sem;
+#endif
+
 	/* Flag indicating that the SPI bus is locked for exclusive use */
 	bool			bus_lock_flag;
 
@@ -694,6 +701,14 @@ struct spi_controller {
 		int (*slave_abort)(struct spi_controller *ctlr);
 		int (*target_abort)(struct spi_controller *ctlr);
 	};
+	int (*prepare_oob_transfer)(struct spi_controller *ctlr,
+				struct spi_oob_transfer *xfer);
+	void (*start_oob_transfer)(struct spi_controller *ctlr,
+				struct spi_oob_transfer *xfer);
+	void (*pulse_oob_transfer)(struct spi_controller *ctlr,
+				struct spi_oob_transfer *xfer);
+	void (*terminate_oob_transfer)(struct spi_controller *ctlr,
+				struct spi_oob_transfer *xfer);
 
 	/*
 	 * These hooks are for drivers that use a generic implementation
@@ -1220,6 +1235,90 @@ static inline void spi_message_free(struct spi_message *m)
 {
 	kfree(m);
 }
+
+struct spi_oob_transfer {
+	struct spi_device *spi;
+	dma_addr_t dma_addr;
+	size_t aligned_frame_len;
+	void *io_buffer;	/* 2 x aligned_frame_len */
+	struct dma_async_tx_descriptor *txd;
+	struct dma_async_tx_descriptor *rxd;
+	u32 effective_speed_hz;
+	/*
+	 * Caller-defined settings for the transfer.
+	 */
+	struct spi_oob_setup {
+		u32 frame_len;
+		u32 speed_hz;
+		u8 bits_per_word;
+		dma_async_tx_callback xfer_done;
+	} setup;
+};
+
+static inline off_t spi_get_oob_rxoff(struct spi_oob_transfer *xfer)
+{
+	/* RX area is in first half of the I/O buffer. */
+	return 0;
+}
+
+static inline off_t spi_get_oob_txoff(struct spi_oob_transfer *xfer)
+{
+	/* TX area is in second half of the I/O buffer. */
+	return xfer->aligned_frame_len;
+}
+
+static inline size_t spi_get_oob_iolen(struct spi_oob_transfer *xfer)
+{
+	return xfer->aligned_frame_len * 2;
+}
+
+#ifdef CONFIG_SPI_OOB
+
+struct vm_area_struct;
+
+int spi_prepare_oob_transfer(struct spi_device *spi,
+			struct spi_oob_transfer *xfer);
+
+void spi_start_oob_transfer(struct spi_oob_transfer *xfer);
+
+int spi_pulse_oob_transfer(struct spi_oob_transfer *xfer);
+
+void spi_terminate_oob_transfer(struct spi_oob_transfer *xfer);
+
+int spi_mmap_oob_transfer(struct vm_area_struct *vma,
+			struct spi_oob_transfer *xfer);
+
+#else
+
+static inline
+int spi_prepare_oob_transfer(struct spi_device *spi,
+			struct spi_oob_transfer *xfer)
+{
+	return -ENOTSUPP;
+}
+
+static inline
+void spi_start_oob_transfer(struct spi_oob_transfer *xfer)
+{ }
+
+static inline
+int spi_pulse_oob_transfer(struct spi_oob_transfer *xfer)
+{
+	return -EIO;
+}
+
+static inline
+void spi_terminate_oob_transfer(struct spi_oob_transfer *xfer)
+{ }
+
+static inline
+int spi_mmap_oob_transfer(struct vm_area_struct *vma,
+			struct spi_oob_transfer *xfer)
+{
+	return -ENXIO;
+}
+
+#endif
 
 extern int spi_setup(struct spi_device *spi);
 extern int spi_async(struct spi_device *spi, struct spi_message *message);

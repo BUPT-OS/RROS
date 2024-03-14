@@ -455,6 +455,11 @@ SYM_CODE_END(\asmsym)
  * If hits in kernel mode then it needs to go through the paranoid
  * entry as the exception can hit any random state. No preemption
  * check on exit to keep the paranoid path simple.
+ *
+ * irq_pipeline: since those events are non-maskable in essence,
+ * we may assume NMI-type restrictions for their handlers, which
+ * means the latter may - and actually have to - run immediately
+ * regardless of the current stage.
  */
 .macro idtentry_mce_db vector asmsym cfunc
 SYM_CODE_START(\asmsym)

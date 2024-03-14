@@ -249,6 +249,11 @@ config FIQ
 config ARCH_MTD_XIP
 	bool
 
+# Limited I-pipe compat (syscall routing only).
+config IPIPE_COMPAT
+	bool
+	select DOVETAIL_LEGACY_SYSCALL_RANGE
+
 config ARM_PATCH_PHYS_VIRT
 	bool "Patch physical to virtual translations at runtime" if !ARCH_MULTIPLATFORM
 	default y
@@ -388,6 +393,8 @@ config ARCH_MULTI_V7
 config ARCH_MULTI_V6_V7
 	bool
 	select MIGHT_HAVE_CACHE_L2X0
+	select HAVE_IRQ_PIPELINE
+	select HAVE_DOVETAIL if CPU_HAS_ASID
 
 config ARCH_MULTI_CPU_AUTO
 	def_bool !(ARCH_MULTI_V4 || ARCH_MULTI_V4T || ARCH_MULTI_V6_V7)
@@ -1039,6 +1046,8 @@ config SCHED_SMT
 	  Improves the CPU scheduler's decision making when dealing with
 	  MultiThreading at a cost of slightly increased overhead in some
 	  places. If unsure say N here.
+
+source "kernel/Kconfig.dovetail"
 
 config HAVE_ARM_SCU
 	bool

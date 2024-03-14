@@ -872,6 +872,29 @@ static void asc_console_write(struct console *co, const char *s, unsigned count)
 		spin_unlock_irqrestore(&port->lock, flags);
 }
 
+#ifdef CONFIG_RAW_PRINTK
+
+static void asc_console_write_raw(struct console *co,
+				  const char *s, unsigned int count)
+{
+	struct uart_port *port = &asc_ports[co->index].port;
+	unsigned long timeout = 1000000;
+	u32 intenable;
+
+	intenable = asc_in(port, ASC_INTEN);
+	asc_out(port, ASC_INTEN, 0);
+	(void)asc_in(port, ASC_INTEN);	/* Defeat bus write posting */
+
+	uart_console_write(port, s, count, asc_console_putchar);
+
+	while (timeout-- && !asc_txfifo_is_empty(port))
+		cpu_relax();	/* wait shorter */
+
+	asc_out(port, ASC_INTEN, intenable);
+}
+
+#endif
+
 static int asc_console_setup(struct console *co, char *options)
 {
 	struct asc_port *ascport;
@@ -904,6 +927,9 @@ static struct console asc_console = {
 	.name		= ASC_SERIAL_NAME,
 	.device		= uart_console_device,
 	.write		= asc_console_write,
+#ifdef CONFIG_RAW_PRINTK
+	.write_raw	= asc_console_write_raw,
+#endif
 	.setup		= asc_console_setup,
 	.flags		= CON_PRINTBUFFER,
 	.index		= -1,

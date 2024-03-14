@@ -92,10 +92,10 @@ static void numachip_send_IPI_one(int cpu, int vector)
 	if (!((apicid ^ local_apicid) >> NUMACHIP_LAPIC_BITS)) {
 		unsigned long flags;
 
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		__default_send_IPI_dest_field(apicid, vector,
 			APIC_DEST_PHYSICAL);
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 		preempt_enable();
 		return;
 	}

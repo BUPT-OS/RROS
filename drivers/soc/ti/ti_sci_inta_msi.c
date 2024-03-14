@@ -43,6 +43,7 @@ static void ti_sci_inta_msi_update_chip_ops(struct msi_domain_info *info)
 	chip->irq_unmask = irq_chip_unmask_parent;
 	chip->irq_mask = irq_chip_mask_parent;
 	chip->irq_ack = irq_chip_ack_parent;
+	chip->flags |= IRQCHIP_PIPELINE_SAFE;
 }
 
 struct irq_domain *ti_sci_inta_msi_create_irq_domain(struct fwnode_handle *fwnode,

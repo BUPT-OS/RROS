@@ -102,21 +102,27 @@
 				   struct lock_class_key *key, short inner);
 
 # define raw_spin_lock_init(lock)					\
+	LOCK_ALTERNATIVES(lock,	spin_lock_init,				\
 do {									\
 	static struct lock_class_key __key;				\
 									\
-	__raw_spin_lock_init((lock), #lock, &__key, LD_WAIT_SPIN);	\
-} while (0)
+	__raw_spin_lock_init(__RAWLOCK(lock), #lock, &__key, LD_WAIT_SPIN); \
+} while (0))
 
 #else
 # define raw_spin_lock_init(lock)				\
-	do { *(lock) = __RAW_SPIN_LOCK_UNLOCKED(lock); } while (0)
+	LOCK_ALTERNATIVES(lock,	spin_lock_init,			\
+	do { *(__RAWLOCK(lock)) = __RAW_SPIN_LOCK_UNLOCKED(__RAWLOCK(lock)); } while (0))
 #endif
 
-#define raw_spin_is_locked(lock)	arch_spin_is_locked(&(lock)->raw_lock)
+#define raw_spin_is_locked(lock)		\
+	LOCK_ALTERNATIVES_RET(lock, spin_is_locked,	\
+	      arch_spin_is_locked(&(__RAWLOCK(lock))->raw_lock))
 
 #ifdef arch_spin_is_contended
-#define raw_spin_is_contended(lock)	arch_spin_is_contended(&(lock)->raw_lock)
+#define raw_spin_is_contended(lock)			\
+	LOCK_ALTERNATIVES_RET(lock, spin_is_contended,	\
+	      arch_spin_is_contended(&(__RAWLOCK(lock))->raw_lock))
 #else
 #define raw_spin_is_contended(lock)	(((void)(lock), 0))
 #endif /*arch_spin_is_contended*/
@@ -212,13 +218,19 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
  * various methods are defined as nops in the case they are not
  * required.
  */
-#define raw_spin_trylock(lock)	__cond_lock(lock, _raw_spin_trylock(lock))
+#define raw_spin_trylock(lock)			\
+	__cond_lock(lock,			\
+		    LOCK_ALTERNATIVES_RET(lock,	\
+		    spin_trylock, _raw_spin_trylock(__RAWLOCK(lock))))
 
-#define raw_spin_lock(lock)	_raw_spin_lock(lock)
+#define raw_spin_lock(lock)	\
+	LOCK_ALTERNATIVES(lock, spin_lock, _raw_spin_lock(__RAWLOCK(lock)))
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
+
 # define raw_spin_lock_nested(lock, subclass) \
-	_raw_spin_lock_nested(lock, subclass)
+	LOCK_ALTERNATIVES(lock, spin_lock_nested, \
+		_raw_spin_lock_nested(__RAWLOCK(lock), subclass), subclass)
 
 # define raw_spin_lock_nest_lock(lock, nest_lock)			\
 	 do {								\
@@ -231,18 +243,20 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
  * warns about set-but-not-used variables when building with
  * CONFIG_DEBUG_LOCK_ALLOC=n and with W=1.
  */
-# define raw_spin_lock_nested(lock, subclass)		\
-	_raw_spin_lock(((void)(subclass), (lock)))
+# define raw_spin_lock_nested(lock, subclass)	\
+	LOCK_ALTERNATIVES(lock, spin_lock_nested, \
+		_raw_spin_lock(((void)(subclass), __RAWLOCK(lock))), subclass)
 # define raw_spin_lock_nest_lock(lock, nest_lock)	_raw_spin_lock(lock)
 #endif
 
 #if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_SPINLOCK)
 
-#define raw_spin_lock_irqsave(lock, flags)			\
-	do {						\
-		typecheck(unsigned long, flags);	\
-		flags = _raw_spin_lock_irqsave(lock);	\
-	} while (0)
+#define raw_spin_lock_irqsave(lock, flags)				\
+	LOCK_ALTERNATIVES(lock, spin_lock_irqsave,			\
+	do {								\
+		typecheck(unsigned long, flags);			\
+		flags = _raw_spin_lock_irqsave(__RAWLOCK(lock));	\
+	} while (0), flags)
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 #define raw_spin_lock_irqsave_nested(lock, flags, subclass)		\
@@ -260,45 +274,55 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 
 #else
 
-#define raw_spin_lock_irqsave(lock, flags)		\
-	do {						\
-		typecheck(unsigned long, flags);	\
-		_raw_spin_lock_irqsave(lock, flags);	\
-	} while (0)
+#define raw_spin_lock_irqsave(lock, flags)			\
+	LOCK_ALTERNATIVES(lock, spin_lock_irqsave,		\
+	do {							\
+		typecheck(unsigned long, flags);		\
+		_raw_spin_lock_irqsave(__RAWLOCK(lock), flags);	\
+	} while (0), flags)
 
 #define raw_spin_lock_irqsave_nested(lock, flags, subclass)	\
 	raw_spin_lock_irqsave(lock, flags)
 
 #endif
 
-#define raw_spin_lock_irq(lock)		_raw_spin_lock_irq(lock)
+#define raw_spin_lock_irq(lock)		       \
+	LOCK_ALTERNATIVES(lock, spin_lock_irq, \
+			  _raw_spin_lock_irq(__RAWLOCK(lock)))
 #define raw_spin_lock_bh(lock)		_raw_spin_lock_bh(lock)
-#define raw_spin_unlock(lock)		_raw_spin_unlock(lock)
-#define raw_spin_unlock_irq(lock)	_raw_spin_unlock_irq(lock)
+#define raw_spin_unlock(lock)		     \
+	LOCK_ALTERNATIVES(lock, spin_unlock, \
+			  _raw_spin_unlock(__RAWLOCK(lock)))
+#define raw_spin_unlock_irq(lock)	\
+	LOCK_ALTERNATIVES(lock, spin_unlock_irq, \
+			  _raw_spin_unlock_irq(__RAWLOCK(lock)))
 
-#define raw_spin_unlock_irqrestore(lock, flags)		\
-	do {							\
-		typecheck(unsigned long, flags);		\
-		_raw_spin_unlock_irqrestore(lock, flags);	\
-	} while (0)
+#define raw_spin_unlock_irqrestore(lock, flags)				\
+	LOCK_ALTERNATIVES(lock, spin_unlock_irqrestore,			\
+	do {								\
+		typecheck(unsigned long, flags);			\
+		_raw_spin_unlock_irqrestore(__RAWLOCK(lock), flags);	\
+	} while (0), flags)
 #define raw_spin_unlock_bh(lock)	_raw_spin_unlock_bh(lock)
 
 #define raw_spin_trylock_bh(lock) \
 	__cond_lock(lock, _raw_spin_trylock_bh(lock))
 
 #define raw_spin_trylock_irq(lock) \
+	LOCK_ALTERNATIVES_RET(lock, spin_trylock_irq, \
 ({ \
 	local_irq_disable(); \
-	raw_spin_trylock(lock) ? \
+	raw_spin_trylock(__RAWLOCK(lock)) ?	\
 	1 : ({ local_irq_enable(); 0;  }); \
-})
+}))
 
 #define raw_spin_trylock_irqsave(lock, flags) \
+	LOCK_ALTERNATIVES_RET(lock, spin_trylock_irqsave, \
 ({ \
 	local_irq_save(flags); \
-	raw_spin_trylock(lock) ? \
+	raw_spin_trylock(__RAWLOCK(lock)) ?	\
 	1 : ({ local_irq_restore(flags); 0; }); \
-})
+}), flags)
 
 #ifndef CONFIG_PREEMPT_RT
 /* Include rwlock functions for !RT */
@@ -314,8 +338,17 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 # include <linux/spinlock_api_up.h>
 #endif
 
+/* Pull the lock types specific to the IRQ pipeline. */
+#ifdef CONFIG_IRQ_PIPELINE
+#include <linux/spinlock_pipeline.h>
+#endif
+
 /* Non PREEMPT_RT kernel, map to raw spinlocks: */
 #ifndef CONFIG_PREEMPT_RT
+
+#ifndef CONFIG_IRQ_PIPELINE
+static inline void check_spinlock_context(void) { }
+#endif
 
 /*
  * Map the spin_lock functions to the raw variants for PREEMPT_RT=n
@@ -323,6 +356,7 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 
 static __always_inline raw_spinlock_t *spinlock_check(spinlock_t *lock)
 {
+	check_spinlock_context();
 	return &lock->rlock;
 }
 

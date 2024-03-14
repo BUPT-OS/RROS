@@ -450,18 +450,22 @@ int trace_print_lat_fmt(struct trace_seq *s, struct trace_entry *entry)
 	int softirq;
 	int bh_off;
 	int nmi;
+	int none;
 
 	nmi = entry->flags & TRACE_FLAG_NMI;
 	hardirq = entry->flags & TRACE_FLAG_HARDIRQ;
 	softirq = entry->flags & TRACE_FLAG_SOFTIRQ;
 	bh_off = entry->flags & TRACE_FLAG_BH_OFF;
+	none = !irqs_pipelined() && (entry->flags & TRACE_FLAG_IRQS_NOSUPPORT) ? 'X' : '.';
 
 	irqs_off =
+		(entry->flags & (TRACE_FLAG_IRQS_OFF|TRACE_FLAG_IRQS_HARDOFF)) ==
+		(TRACE_FLAG_IRQS_OFF|TRACE_FLAG_IRQS_HARDOFF) ? '*' :
+		(entry->flags & TRACE_FLAG_IRQS_HARDOFF) ? '#' :
 		(entry->flags & TRACE_FLAG_IRQS_OFF && bh_off) ? 'D' :
 		(entry->flags & TRACE_FLAG_IRQS_OFF) ? 'd' :
 		bh_off ? 'b' :
-		(entry->flags & TRACE_FLAG_IRQS_NOSUPPORT) ? 'X' :
-		'.';
+		none;
 
 	switch (entry->flags & (TRACE_FLAG_NEED_RESCHED |
 				TRACE_FLAG_PREEMPT_RESCHED)) {
@@ -480,6 +484,7 @@ int trace_print_lat_fmt(struct trace_seq *s, struct trace_entry *entry)
 	}
 
 	hardsoft_irq =
+		irqs_pipelined() && nmi ? '~' :
 		(nmi && hardirq)     ? 'Z' :
 		nmi                  ? 'z' :
 		(hardirq && softirq) ? 'H' :

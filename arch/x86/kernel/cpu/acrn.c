@@ -40,7 +40,8 @@ static bool acrn_x2apic_available(void)
 
 static void (*acrn_intr_handler)(void);
 
-DEFINE_IDTENTRY_SYSVEC(sysvec_acrn_hv_callback)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,
+				 sysvec_acrn_hv_callback)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 

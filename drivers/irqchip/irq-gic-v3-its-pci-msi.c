@@ -28,6 +28,7 @@ static struct irq_chip its_msi_irq_chip = {
 	.irq_unmask		= its_unmask_msi_irq,
 	.irq_mask		= its_mask_msi_irq,
 	.irq_eoi		= irq_chip_eoi_parent,
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int its_pci_msi_vec_count(struct pci_dev *pdev, void *data)

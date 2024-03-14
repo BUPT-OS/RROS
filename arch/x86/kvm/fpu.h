@@ -95,46 +95,48 @@ static inline void _kvm_write_mmx_reg(int reg, const u64 *data)
 	}
 }
 
-static inline void kvm_fpu_get(void)
+static inline unsigned long kvm_fpu_get(void)
 {
-	fpregs_lock();
+	unsigned long flags = fpregs_lock();
 
 	fpregs_assert_state_consistent();
 	if (test_thread_flag(TIF_NEED_FPU_LOAD))
 		switch_fpu_return();
+
+	return flags;
 }
 
-static inline void kvm_fpu_put(void)
+static inline void kvm_fpu_put(unsigned long flags)
 {
-	fpregs_unlock();
+	fpregs_unlock(flags);
 }
 
 static inline void kvm_read_sse_reg(int reg, sse128_t *data)
 {
-	kvm_fpu_get();
+	unsigned long flags = kvm_fpu_get();
 	_kvm_read_sse_reg(reg, data);
-	kvm_fpu_put();
+	kvm_fpu_put(flags);
 }
 
 static inline void kvm_write_sse_reg(int reg, const sse128_t *data)
 {
-	kvm_fpu_get();
+	unsigned long flags = kvm_fpu_get();
 	_kvm_write_sse_reg(reg, data);
-	kvm_fpu_put();
+	kvm_fpu_put(flags);
 }
 
 static inline void kvm_read_mmx_reg(int reg, u64 *data)
 {
-	kvm_fpu_get();
+	unsigned long flags = kvm_fpu_get();
 	_kvm_read_mmx_reg(reg, data);
-	kvm_fpu_put();
+	kvm_fpu_put(flags);
 }
 
 static inline void kvm_write_mmx_reg(int reg, const u64 *data)
 {
-	kvm_fpu_get();
+	unsigned long flags = kvm_fpu_get();
 	_kvm_write_mmx_reg(reg, data);
-	kvm_fpu_put();
+	kvm_fpu_put(flags);
 }
 
 #endif

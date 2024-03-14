@@ -436,6 +436,7 @@ static struct irq_chip brcm_msi_irq_chip = {
 	.irq_ack         = irq_chip_ack_parent,
 	.irq_mask        = pci_msi_mask_irq,
 	.irq_unmask      = pci_msi_unmask_irq,
+	.flags		 = IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct msi_domain_info brcm_msi_domain_info = {
@@ -498,6 +499,7 @@ static struct irq_chip brcm_msi_bottom_irq_chip = {
 	.irq_compose_msi_msg	= brcm_msi_compose_msi_msg,
 	.irq_set_affinity	= brcm_msi_set_affinity,
 	.irq_ack                = brcm_msi_ack_irq,
+	.flags		 	= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int brcm_msi_alloc(struct brcm_msi *msi, unsigned int nr_irqs)

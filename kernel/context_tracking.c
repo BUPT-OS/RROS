@@ -239,7 +239,7 @@ void noinstr ct_nmi_exit(void)
 	ct_kernel_exit_state(RCU_DYNTICKS_IDX);
 	// ... but is no longer watching here.
 
-	if (!in_nmi())
+	if (!in_nonmaskable())
 		rcu_dynticks_task_enter();
 }
 
@@ -273,7 +273,7 @@ void noinstr ct_nmi_enter(void)
 	 */
 	if (rcu_dynticks_curr_cpu_in_eqs()) {
 
-		if (!in_nmi())
+		if (!in_nonmaskable())
 			rcu_dynticks_task_exit();
 
 		// RCU is not watching here ...
@@ -287,7 +287,7 @@ void noinstr ct_nmi_enter(void)
 		instrument_atomic_write(&ct->state, sizeof(ct->state));
 
 		incby = 1;
-	} else if (!in_nmi()) {
+	} else if (!in_nonmaskable()) {
 		instrumentation_begin();
 		rcu_irq_enter_check_tick();
 	} else  {

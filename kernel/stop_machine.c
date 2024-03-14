@@ -232,8 +232,8 @@ static int multi_cpu_stop(void *data)
 			curstate = newstate;
 			switch (curstate) {
 			case MULTI_STOP_DISABLE_IRQ:
-				local_irq_disable();
 				hard_irq_disable();
+				local_irq_disable();
 				break;
 			case MULTI_STOP_RUN:
 				if (is_active)
@@ -254,6 +254,7 @@ static int multi_cpu_stop(void *data)
 		rcu_momentary_dyntick_idle();
 	} while (curstate != MULTI_STOP_EXIT);
 
+	hard_irq_enable();
 	local_irq_restore(flags);
 	return err;
 }
@@ -609,6 +610,7 @@ int stop_machine_cpuslocked(cpu_stop_fn_t fn, void *data,
 		local_irq_save(flags);
 		hard_irq_disable();
 		ret = (*fn)(data);
+		hard_irq_enable();
 		local_irq_restore(flags);
 
 		return ret;

@@ -126,7 +126,7 @@ THUMB(	fpreg	.req	r7	)
 	.if \save
 	stmdb   sp!, {r0-r3, ip, lr}
 	.endif
-	bl	trace_hardirqs_off
+	bl	trace_hardirqs_off_pipelined
 	.if \save
 	ldmia	sp!, {r0-r3, ip, lr}
 	.endif
@@ -142,7 +142,7 @@ THUMB(	fpreg	.req	r7	)
 	.if \save
 	stmdb   sp!, {r0-r3, ip, lr}
 	.endif
-	bl\cond	trace_hardirqs_on
+	bl\cond	trace_hardirqs_on_pipelined
 	.if \save
 	ldmia	sp!, {r0-r3, ip, lr}
 	.endif

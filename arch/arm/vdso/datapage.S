@@ -5,6 +5,8 @@
 	.align 2
 .L_vdso_data_ptr:
 	.long	_start - . - VDSO_DATA_SIZE
+.L_vdso_priv_ptr:
+	.long	_start - . - VDSO_DATA_SIZE - VDSO_PRIV_SIZE
 
 ENTRY(__get_datapage)
 	.fnstart
@@ -14,3 +16,12 @@ ENTRY(__get_datapage)
 	bx	lr
 	.fnend
 ENDPROC(__get_datapage)
+
+ENTRY(__get_privpage)
+	.fnstart
+	adr	r0, .L_vdso_priv_ptr
+	ldr	r1, [r0]
+	add	r0, r0, r1
+	bx	lr
+	.fnend
+ENDPROC(__get_privpage)

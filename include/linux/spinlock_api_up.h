@@ -30,20 +30,32 @@
 #define __LOCK(lock) \
   do { preempt_disable(); ___LOCK(lock); } while (0)
 
+#define __HARD_LOCK(lock) \
+  do { ___LOCK(lock); } while (0)
+
 #define __LOCK_BH(lock) \
   do { __local_bh_disable_ip(_THIS_IP_, SOFTIRQ_LOCK_OFFSET); ___LOCK(lock); } while (0)
 
 #define __LOCK_IRQ(lock) \
   do { local_irq_disable(); __LOCK(lock); } while (0)
 
+#define __HARD_LOCK_IRQ(lock) \
+  do { hard_local_irq_disable(); __HARD_LOCK(lock); } while (0)
+
 #define __LOCK_IRQSAVE(lock, flags) \
   do { local_irq_save(flags); __LOCK(lock); } while (0)
+
+#define __HARD_LOCK_IRQSAVE(lock, flags) \
+  do { flags = hard_local_irq_save(); __HARD_LOCK(lock); } while (0)
 
 #define ___UNLOCK(lock) \
   do { __release(lock); (void)(lock); } while (0)
 
 #define __UNLOCK(lock) \
   do { preempt_enable(); ___UNLOCK(lock); } while (0)
+
+#define __HARD_UNLOCK(lock) \
+  do { ___UNLOCK(lock); } while (0)
 
 #define __UNLOCK_BH(lock) \
   do { __local_bh_enable_ip(_THIS_IP_, SOFTIRQ_LOCK_OFFSET); \
@@ -52,8 +64,14 @@
 #define __UNLOCK_IRQ(lock) \
   do { local_irq_enable(); __UNLOCK(lock); } while (0)
 
+#define __HARD_UNLOCK_IRQ(lock) \
+  do { hard_local_irq_enable(); __HARD_UNLOCK(lock); } while (0)
+
 #define __UNLOCK_IRQRESTORE(lock, flags) \
   do { local_irq_restore(flags); __UNLOCK(lock); } while (0)
+
+#define __HARD_UNLOCK_IRQRESTORE(lock, flags) \
+  do { hard_local_irq_restore(flags); __HARD_UNLOCK(lock); } while (0)
 
 #define _raw_spin_lock(lock)			__LOCK(lock)
 #define _raw_spin_lock_nested(lock, subclass)	__LOCK(lock)

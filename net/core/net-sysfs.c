@@ -389,6 +389,54 @@ static ssize_t tx_queue_len_store(struct device *dev,
 }
 NETDEVICE_SHOW_RW(tx_queue_len, fmt_dec);
 
+#ifdef CONFIG_NET_OOB
+
+__weak int netif_oob_switch_port(struct net_device *dev, bool enabled)
+{
+	return 0;
+}
+
+__weak bool netif_oob_get_port(struct net_device *dev)
+{
+	return false;
+}
+
+__weak ssize_t netif_oob_query_pool(struct net_device *dev, char *buf)
+{
+	return -EIO;
+}
+
+static int switch_oob_port(struct net_device *dev, unsigned long enable)
+{
+	return netif_oob_switch_port(dev, (bool)enable);
+}
+
+static ssize_t oob_port_store(struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t len)
+{
+	return netdev_store(dev, attr, buf, len, switch_oob_port);
+}
+
+static ssize_t oob_port_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+
+	return sprintf(buf, fmt_dec, netif_oob_get_port(netdev));
+}
+static DEVICE_ATTR_RW(oob_port);
+
+static ssize_t oob_pool_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+
+	return netif_oob_query_pool(netdev, buf);
+}
+static DEVICE_ATTR_RO(oob_pool);
+
+#endif
+
 static int change_gro_flush_timeout(struct net_device *dev, unsigned long val)
 {
 	WRITE_ONCE(dev->gro_flush_timeout, val);
@@ -654,6 +702,10 @@ static struct attribute *net_class_attrs[] __ro_after_init = {
 	&dev_attr_carrier_up_count.attr,
 	&dev_attr_carrier_down_count.attr,
 	&dev_attr_threaded.attr,
+#ifdef CONFIG_NET_OOB
+	&dev_attr_oob_port.attr,
+	&dev_attr_oob_pool.attr,
+#endif
 	NULL,
 };
 ATTRIBUTE_GROUPS(net_class);

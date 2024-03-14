@@ -3,6 +3,7 @@
 #define _ASM_X86_FPU_SCHED_H
 
 #include <linux/sched.h>
+#include <linux/dovetail.h>
 
 #include <asm/cpufeature.h>
 #include <asm/fpu/types.h>
@@ -14,6 +15,32 @@ extern void fpu__drop(struct fpu *fpu);
 extern int  fpu_clone(struct task_struct *dst, unsigned long clone_flags, bool minimal,
 		      unsigned long shstk_addr);
 extern void fpu_flush_thread(void);
+
+#ifdef CONFIG_DOVETAIL
+
+static inline void oob_fpu_set_preempt(struct fpu *fpu)
+{
+	fpu->preempted = true;
+}
+
+static inline void oob_fpu_clear_preempt(struct fpu *fpu)
+{
+	fpu->preempted = false;
+}
+
+static inline bool oob_fpu_preempted(struct fpu *old_fpu)
+{
+	return old_fpu->preempted;
+}
+
+#else
+
+static inline bool oob_fpu_preempted(struct fpu *old_fpu)
+{
+	return false;
+}
+
+#endif	/* !CONFIG_DOVETAIL */
 
 /*
  * FPU state switching for scheduling.
@@ -40,7 +67,8 @@ extern void fpu_flush_thread(void);
 static inline void switch_fpu_prepare(struct fpu *old_fpu, int cpu)
 {
 	if (cpu_feature_enabled(X86_FEATURE_FPU) &&
-	    !(current->flags & (PF_KTHREAD | PF_USER_WORKER))) {
+		!(current->flags & (PF_KTHREAD | PF_USER_WORKER)) &&
+		!oob_fpu_preempted(old_fpu)) {
 		save_fpregs_to_fpstate(old_fpu);
 		/*
 		 * The save operation preserved register state, so the

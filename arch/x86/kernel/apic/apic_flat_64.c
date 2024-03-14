@@ -32,9 +32,9 @@ static void _flat_send_IPI_mask(unsigned long mask, int vector)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	__default_send_IPI_dest_field(mask, vector, APIC_DEST_LOGICAL);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static void flat_send_IPI_mask(const struct cpumask *cpumask, int vector)

@@ -254,7 +254,8 @@ static bool x86_init_dev_msi_info(struct device *dev, struct irq_domain *domain,
 	info->chip->irq_ack		= irq_chip_ack_parent;
 	info->chip->irq_retrigger	= irq_chip_retrigger_hierarchy;
 	info->chip->flags		|= IRQCHIP_SKIP_SET_WAKE |
-					   IRQCHIP_AFFINITY_PRE_STARTUP;
+					   IRQCHIP_AFFINITY_PRE_STARTUP |
+					   IRQCHIP_PIPELINE_SAFE;
 
 	info->handler			= handle_edge_irq;
 	info->handler_name		= "edge";
@@ -323,7 +324,8 @@ static struct irq_chip dmar_msi_controller = {
 	.irq_compose_msi_msg	= dmar_msi_compose_msg,
 	.irq_write_msi_msg	= dmar_msi_write_msg,
 	.flags			= IRQCHIP_SKIP_SET_WAKE |
-				  IRQCHIP_AFFINITY_PRE_STARTUP,
+				  IRQCHIP_AFFINITY_PRE_STARTUP |
+				  IRQCHIP_PIPELINE_SAFE,
 };
 
 static int dmar_msi_init(struct irq_domain *domain,

@@ -30,7 +30,7 @@ struct dw_apb_clock_event_device {
 
 struct dw_apb_clocksource {
 	struct dw_apb_timer			timer;
-	struct clocksource			cs;
+	struct clocksource_user_mmio		ummio;
 };
 
 void dw_apb_clockevent_register(struct dw_apb_clock_event_device *dw_ced);

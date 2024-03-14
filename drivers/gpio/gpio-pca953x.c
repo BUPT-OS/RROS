@@ -833,7 +833,7 @@ static const struct irq_chip pca953x_irq_chip = {
 	.irq_set_type		= pca953x_irq_set_type,
 	.irq_shutdown		= pca953x_irq_shutdown,
 	.irq_print_chip		= pca953x_irq_print_chip,
-	.flags			= IRQCHIP_IMMUTABLE,
+	.flags			= IRQCHIP_IMMUTABLE | IRQCHIP_PIPELINE_SAFE,
 	GPIOCHIP_IRQ_RESOURCE_HELPERS,
 };
 

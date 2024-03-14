@@ -16,7 +16,7 @@
 #include "internals.h"
 
 static LIST_HEAD(gc_list);
-static DEFINE_RAW_SPINLOCK(gc_lock);
+static DEFINE_HARD_SPINLOCK(gc_lock);
 
 /**
  * irq_gc_noop - NOOP function

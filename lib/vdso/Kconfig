@@ -30,4 +30,12 @@ config GENERIC_VDSO_TIME_NS
 	  Selected by architectures which support time namespaces in the
 	  VDSO
 
+config GENERIC_CLOCKSOURCE_VDSO
+        select CLKSRC_MMIO
+        depends on ARM || ARM64
+	bool
+	help
+	   Enables access to clocksources via the vDSO based on
+	   generic MMIO operations.
+
 endif

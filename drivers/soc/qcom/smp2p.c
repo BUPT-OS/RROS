@@ -356,6 +356,7 @@ static struct irq_chip smp2p_irq_chip = {
 	.irq_mask       = smp2p_mask_irq,
 	.irq_unmask     = smp2p_unmask_irq,
 	.irq_set_type	= smp2p_set_irq_type,
+	.flags		= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int smp2p_irq_map(struct irq_domain *d,

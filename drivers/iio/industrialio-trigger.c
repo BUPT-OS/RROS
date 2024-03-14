@@ -595,6 +595,7 @@ struct iio_trigger *viio_trigger_alloc(struct device *parent,
 	trig->subirq_chip.name = trig->name;
 	trig->subirq_chip.irq_mask = &iio_trig_subirqmask;
 	trig->subirq_chip.irq_unmask = &iio_trig_subirqunmask;
+	trig->subirq_chip.flags = IRQCHIP_PIPELINE_SAFE;
 	for (i = 0; i < CONFIG_IIO_CONSUMERS_PER_TRIGGER; i++) {
 		irq_set_chip(trig->subirq_base + i, &trig->subirq_chip);
 		irq_set_handler(trig->subirq_base + i, &handle_simple_irq);

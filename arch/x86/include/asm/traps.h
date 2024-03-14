@@ -50,14 +50,22 @@ void __noreturn handle_stack_overflow(struct pt_regs *regs,
 
 static inline void cond_local_irq_enable(struct pt_regs *regs)
 {
-	if (regs->flags & X86_EFLAGS_IF)
-		local_irq_enable();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_inband())
+			local_irq_enable_full();
+		else
+			hard_local_irq_enable();
+	}
 }
 
 static inline void cond_local_irq_disable(struct pt_regs *regs)
 {
-	if (regs->flags & X86_EFLAGS_IF)
-		local_irq_disable();
+	if (regs->flags & X86_EFLAGS_IF) {
+		if (running_inband())
+			local_irq_disable_full();
+		else
+			hard_local_irq_disable();
+	}
 }
 
 #endif /* _ASM_X86_TRAPS_H */

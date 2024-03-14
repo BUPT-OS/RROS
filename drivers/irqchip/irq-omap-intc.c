@@ -211,7 +211,7 @@ static int __init omap_alloc_gc_of(struct irq_domain *d, void __iomem *base)
 		ct->chip.irq_mask = irq_gc_mask_disable_reg;
 		ct->chip.irq_unmask = irq_gc_unmask_enable_reg;
 
-		ct->chip.flags |= IRQCHIP_SKIP_SET_WAKE;
+		ct->chip.flags |= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_PIPELINE_SAFE;
 
 		ct->regs.enable = INTC_MIR_CLEAR0 + 32 * i;
 		ct->regs.disable = INTC_MIR_SET0 + 32 * i;

@@ -176,6 +176,58 @@ __visible noinstr void func(struct pt_regs *regs, unsigned long error_code)
 #define DECLARE_IDTENTRY_IRQ(vector, func)				\
 	DECLARE_IDTENTRY_ERRORCODE(vector, func)
 
+#ifdef CONFIG_IRQ_PIPELINE
+
+struct irq_stage_data;
+
+void arch_pipeline_entry(struct pt_regs *regs, u8 vector);
+
+#define DECLARE_IDTENTRY_SYSVEC_PIPELINED(vector, func)			\
+	DECLARE_IDTENTRY_SYSVEC(vector, func);				\
+	__visible void __##func(struct pt_regs *regs)
+
+#define DEFINE_IDTENTRY_IRQ_PIPELINED(func)				\
+__visible noinstr void func(struct pt_regs *regs,			\
+			    unsigned long error_code)			\
+{									\
+	arch_pipeline_entry(regs, (u8)error_code);			\
+}									\
+static __always_inline void __##func(struct pt_regs *regs, u8 vector)
+
+/*
+ * In a pipelined model, the actual sysvec __handler() is directly
+ * instrumentable, just like it is in fact in the non-pipelined
+ * model. The indirect call via run_on_irqstack_cond() in
+ * DEFINE_IDTENTRY_SYSVEC() happens to hide the noinstr dependency
+ * from objtool in the latter case.
+ */
+#define DEFINE_IDTENTRY_SYSVEC_PIPELINED(vector, func)			\
+__visible noinstr void func(struct pt_regs *regs)			\
+{									\
+	arch_pipeline_entry(regs, vector);				\
+}									\
+									\
+__visible void __##func(struct pt_regs *regs)
+
+#define DEFINE_IDTENTRY_SYSVEC_PIPELINED_NORETURN(vector, func)		\
+__visible noinstr void func(struct pt_regs *regs)			\
+{									\
+	arch_pipeline_entry(regs, vector);				\
+}									\
+									\
+__visible __noreturn void __##func(struct pt_regs *regs)
+
+#define DEFINE_IDTENTRY_SYSVEC_SIMPLE_PIPELINED(vector, func)		\
+	DEFINE_IDTENTRY_SYSVEC_PIPELINED(vector, func)
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+#define DECLARE_IDTENTRY_SYSVEC_PIPELINED(vector, func)		DECLARE_IDTENTRY_SYSVEC(vector, func)
+
+#define DEFINE_IDTENTRY_IRQ_PIPELINED(func)			DEFINE_IDTENTRY_IRQ(func)
+#define DEFINE_IDTENTRY_SYSVEC_PIPELINED(vector, func)		DEFINE_IDTENTRY_SYSVEC(func)
+#define DEFINE_IDTENTRY_SYSVEC_SIMPLE_PIPELINED(vector, func)	DEFINE_IDTENTRY_SYSVEC_SIMPLE(func)
+
 /**
  * DEFINE_IDTENTRY_IRQ - Emit code for device interrupt IDT entry points
  * @func:	Function name of the entry point
@@ -205,6 +257,8 @@ __visible noinstr void func(struct pt_regs *regs,			\
 }									\
 									\
 static noinline void __##func(struct pt_regs *regs, u32 vector)
+
+#endif	/* !CONFIG_IRQ_PIPELINE */
 
 /**
  * DECLARE_IDTENTRY_SYSVEC - Declare functions for system vector entry points
@@ -449,6 +503,9 @@ __visible noinstr void func(struct pt_regs *regs,			\
 #define DECLARE_IDTENTRY_SYSVEC(vector, func)				\
 	idtentry_sysvec vector func
 
+#define DECLARE_IDTENTRY_SYSVEC_PIPELINED(vector, func)			\
+	DECLARE_IDTENTRY_SYSVEC(vector, func)
+
 #ifdef CONFIG_X86_64
 # define DECLARE_IDTENTRY_MCE(vector, func)				\
 	idtentry_mce_db vector asm_##func func
@@ -642,20 +699,25 @@ DECLARE_IDTENTRY_IRQ(X86_TRAP_OTHER,	spurious_interrupt);
 #ifdef CONFIG_X86_LOCAL_APIC
 DECLARE_IDTENTRY_SYSVEC(ERROR_APIC_VECTOR,		sysvec_error_interrupt);
 DECLARE_IDTENTRY_SYSVEC(SPURIOUS_APIC_VECTOR,		sysvec_spurious_apic_interrupt);
-DECLARE_IDTENTRY_SYSVEC(LOCAL_TIMER_VECTOR,		sysvec_apic_timer_interrupt);
-DECLARE_IDTENTRY_SYSVEC(X86_PLATFORM_IPI_VECTOR,	sysvec_x86_platform_ipi);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(LOCAL_TIMER_VECTOR,		sysvec_apic_timer_interrupt);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(X86_PLATFORM_IPI_VECTOR,	sysvec_x86_platform_ipi);
 #endif
 
 #ifdef CONFIG_SMP
-DECLARE_IDTENTRY(RESCHEDULE_VECTOR,			sysvec_reschedule_ipi);
-DECLARE_IDTENTRY_SYSVEC(REBOOT_VECTOR,			sysvec_reboot);
-DECLARE_IDTENTRY_SYSVEC(CALL_FUNCTION_SINGLE_VECTOR,	sysvec_call_function_single);
-DECLARE_IDTENTRY_SYSVEC(CALL_FUNCTION_VECTOR,		sysvec_call_function);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(RESCHEDULE_VECTOR,		sysvec_reschedule_ipi);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(REBOOT_VECTOR,		sysvec_reboot);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(CALL_FUNCTION_SINGLE_VECTOR,	sysvec_call_function_single);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(CALL_FUNCTION_VECTOR,		sysvec_call_function);
+#ifdef CONFIG_IRQ_PIPELINE
+DECLARE_IDTENTRY_SYSVEC(TIMER_OOB_VECTOR,		sysvec_timer_oob_ipi);
+DECLARE_IDTENTRY_SYSVEC(RESCHEDULE_OOB_VECTOR,		sysvec_reschedule_oob_ipi);
+DECLARE_IDTENTRY_SYSVEC(CALL_FUNCTION_OOB_VECTOR,       sysvec_call_function_oob_ipi);
+#endif
 #endif
 
 #ifdef CONFIG_X86_LOCAL_APIC
 # ifdef CONFIG_X86_MCE_THRESHOLD
-DECLARE_IDTENTRY_SYSVEC(THRESHOLD_APIC_VECTOR,		sysvec_threshold);
+DECLARE_IDTENTRY_SYSVEC(THRESHOLD_APIC_VECTOR,	sysvec_threshold);
 # endif
 
 # ifdef CONFIG_X86_MCE_AMD
@@ -667,28 +729,28 @@ DECLARE_IDTENTRY_SYSVEC(THERMAL_APIC_VECTOR,		sysvec_thermal);
 # endif
 
 # ifdef CONFIG_IRQ_WORK
-DECLARE_IDTENTRY_SYSVEC(IRQ_WORK_VECTOR,		sysvec_irq_work);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(IRQ_WORK_VECTOR,	sysvec_irq_work);
 # endif
 #endif
 
 #ifdef CONFIG_HAVE_KVM
-DECLARE_IDTENTRY_SYSVEC(POSTED_INTR_VECTOR,		sysvec_kvm_posted_intr_ipi);
-DECLARE_IDTENTRY_SYSVEC(POSTED_INTR_WAKEUP_VECTOR,	sysvec_kvm_posted_intr_wakeup_ipi);
-DECLARE_IDTENTRY_SYSVEC(POSTED_INTR_NESTED_VECTOR,	sysvec_kvm_posted_intr_nested_ipi);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_VECTOR,		sysvec_kvm_posted_intr_ipi);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_WAKEUP_VECTOR,	sysvec_kvm_posted_intr_wakeup_ipi);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_NESTED_VECTOR,	sysvec_kvm_posted_intr_nested_ipi);
 #endif
 
 #if IS_ENABLED(CONFIG_HYPERV)
-DECLARE_IDTENTRY_SYSVEC(HYPERVISOR_CALLBACK_VECTOR,	sysvec_hyperv_callback);
-DECLARE_IDTENTRY_SYSVEC(HYPERV_REENLIGHTENMENT_VECTOR,	sysvec_hyperv_reenlightenment);
-DECLARE_IDTENTRY_SYSVEC(HYPERV_STIMER0_VECTOR,	sysvec_hyperv_stimer0);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR, sysvec_hyperv_callback);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_REENLIGHTENMENT_VECTOR, sysvec_hyperv_reenlightenment);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERV_STIMER0_VECTOR, sysvec_hyperv_stimer0);
 #endif
 
 #if IS_ENABLED(CONFIG_ACRN_GUEST)
-DECLARE_IDTENTRY_SYSVEC(HYPERVISOR_CALLBACK_VECTOR,	sysvec_acrn_hv_callback);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,	sysvec_acrn_hv_callback);
 #endif
 
 #ifdef CONFIG_XEN_PVHVM
-DECLARE_IDTENTRY_SYSVEC(HYPERVISOR_CALLBACK_VECTOR,	sysvec_xen_hvm_callback);
+DECLARE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,	sysvec_xen_hvm_callback);
 #endif
 
 #ifdef CONFIG_KVM_GUEST

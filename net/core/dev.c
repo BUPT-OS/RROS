@@ -3155,6 +3155,10 @@ void dev_kfree_skb_irq_reason(struct sk_buff *skb, enum skb_drop_reason reason)
 	} else if (likely(!refcount_dec_and_test(&skb->users))) {
 		return;
 	}
+
+	if (recycle_oob_skb(skb))
+		return;
+
 	get_kfree_skb_cb(skb)->reason = reason;
 	local_irq_save(flags);
 	skb->next = __this_cpu_read(softnet_data.completion_queue);
@@ -3536,7 +3540,12 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	unsigned int len;
 	int rc;
 
-	if (dev_nit_active(dev))
+	/*
+	 * Clone-relay outgoing packet to listening taps. Network taps
+	 * interested in out-of-band traffic should be handled by the
+	 * companion core.
+	 */
+	if (dev_nit_active(dev) && !skb_is_oob(skb))
 		dev_queue_xmit_nit(skb, dev);
 
 	len = skb->len;
@@ -5023,6 +5032,73 @@ out_redir:
 }
 EXPORT_SYMBOL_GPL(do_xdp_generic);
 
+#ifdef CONFIG_NET_OOB
+
+__weak bool netif_oob_deliver(struct sk_buff *skb)
+{
+	return false;
+}
+
+__weak int netif_xmit_oob(struct sk_buff *skb)
+{
+	return NET_XMIT_DROP;
+}
+
+bool netif_receive_oob(struct sk_buff *skb)
+{
+	struct net_device *dev = skb->dev;
+
+	if (dev && netif_oob_diversion(dev))
+		return netif_oob_deliver(skb);
+
+	return false;
+}
+
+static bool netif_receive_oob_list(struct list_head *head)
+{
+	struct sk_buff *skb, *next;
+	struct net_device *dev;
+
+	dev = list_first_entry(head, struct sk_buff, list)->dev;
+	if (!dev || !netif_oob_diversion(dev))
+		return false;
+
+	/* Callee dequeues every skb it consumes. */
+	list_for_each_entry_safe(skb, next, head, list)
+		netif_oob_deliver(skb);
+
+	return list_empty(head);
+}
+
+__weak void netif_oob_run(struct net_device *dev)
+{ }
+
+static void napi_complete_oob(struct napi_struct *n)
+{
+	struct net_device *dev = n->dev;
+
+	if (netif_oob_diversion(dev))
+		netif_oob_run(dev);
+}
+
+__weak void skb_inband_xmit_backlog(void)
+{ }
+
+#else
+
+static inline bool netif_receive_oob_list(struct list_head *head)
+{
+	return false;
+}
+
+static inline void napi_complete_oob(struct napi_struct *n)
+{ }
+
+static inline void skb_inband_xmit_backlog(void)
+{ }
+
+#endif
+
 static int netif_rx_internal(struct sk_buff *skb)
 {
 	int ret;
@@ -5114,6 +5190,8 @@ EXPORT_SYMBOL(netif_rx);
 static __latent_entropy void net_tx_action(struct softirq_action *h)
 {
 	struct softnet_data *sd = this_cpu_ptr(&softnet_data);
+
+	skb_inband_xmit_backlog();
 
 	if (sd->completion_queue) {
 		struct sk_buff *clist;
@@ -5777,6 +5855,9 @@ int netif_receive_skb(struct sk_buff *skb)
 {
 	int ret;
 
+	if (netif_receive_oob(skb))
+		return NET_RX_SUCCESS;
+
 	trace_netif_receive_skb_entry(skb);
 
 	ret = netif_receive_skb_internal(skb);
@@ -5801,6 +5882,8 @@ void netif_receive_skb_list(struct list_head *head)
 	struct sk_buff *skb;
 
 	if (list_empty(head))
+		return;
+	if (netif_receive_oob_list(head))
 		return;
 	if (trace_netif_receive_skb_list_entry_enabled()) {
 		list_for_each_entry(skb, head, list)
@@ -6064,6 +6147,8 @@ bool napi_complete_done(struct napi_struct *n, int work_done)
 {
 	unsigned long flags, val, new, timeout = 0;
 	bool ret = true;
+
+	napi_complete_oob(n);
 
 	/*
 	 * 1) Don't let napi dequeue from the cpu poll list

@@ -1976,6 +1976,8 @@ static void pl011_shutdown(struct uart_port *port)
 
 	pl011_disable_uart(uap);
 
+	if (IS_ENABLED(CONFIG_RAW_PRINTK))
+		clk_disable(uap->clk);
 	/*
 	 * Shut down the clock producer
 	 */
@@ -2322,6 +2324,37 @@ static void pl011_console_putchar(struct uart_port *port, unsigned char ch)
 	pl011_write(ch, uap, REG_DR);
 }
 
+#ifdef CONFIG_RAW_PRINTK
+
+static void
+pl011_console_write_raw(struct console *co, const char *s, unsigned int count)
+{
+	struct uart_amba_port *uap = amba_ports[co->index];
+	unsigned int old_cr = 0, new_cr;
+
+	if (!uap->vendor->always_enabled) {
+		old_cr = pl011_read(uap, REG_CR);
+		new_cr = old_cr & ~UART011_CR_CTSEN;
+		new_cr |= UART01x_CR_UARTEN | UART011_CR_TXE;
+		pl011_write(new_cr, uap, REG_CR);
+	}
+
+	while (count-- > 0) {
+		if (*s == '\n')
+			pl011_console_putchar(&uap->port, '\r');
+		pl011_console_putchar(&uap->port, *s++);
+	}
+
+	while ((pl011_read(uap, REG_FR) ^ uap->vendor->inv_fr)
+		& uap->vendor->fr_busy)
+		cpu_relax();
+
+	if (!uap->vendor->always_enabled)
+		pl011_write(old_cr, uap, REG_CR);
+}
+
+#endif  /* !CONFIG_RAW_PRINTK */
+
 static void
 pl011_console_write(struct console *co, const char *s, unsigned int count)
 {
@@ -2451,6 +2484,9 @@ static int pl011_console_setup(struct console *co, char *options)
 			pl011_console_get_options(uap, &baud, &parity, &bits);
 	}
 
+	if (IS_ENABLED(CONFIG_RAW_PRINTK))
+		clk_enable(uap->clk);
+
 	return uart_set_options(&uap->port, co, baud, parity, bits, flow);
 }
 
@@ -2521,6 +2557,9 @@ static struct console amba_console = {
 	.device		= uart_console_device,
 	.setup		= pl011_console_setup,
 	.match		= pl011_console_match,
+#ifdef CONFIG_RAW_PRINTK
+	.write_raw	= pl011_console_write_raw,
+#endif
 	.flags		= CON_PRINTBUFFER | CON_ANYTIME,
 	.index		= -1,
 	.data		= &amba_reg,

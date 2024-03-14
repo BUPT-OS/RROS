@@ -260,6 +260,71 @@ void arch_task_cache_init(void); /* for CONFIG_SH */
 void arch_release_task_struct(struct task_struct *tsk);
 int arch_dup_task_struct(struct task_struct *dst,
 				struct task_struct *src);
+#ifdef ti_local_flags
+/*
+ * If the arch defines a set of per-thread synchronous flags, provide
+ * generic accessors to them.
+ */
+static __always_inline
+void set_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	ti_local_flags(ti) |= mask;
+}
+
+static __always_inline void set_thread_local_flags(unsigned int mask)
+{
+	set_ti_local_flags(current_thread_info(), mask);
+}
+
+static __always_inline
+int test_and_set_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	int old = ti_local_flags(ti) & mask;
+	ti_local_flags(ti) |= mask;
+	return old != 0;
+}
+
+static __always_inline int test_and_set_thread_local_flags(unsigned int mask)
+{
+	return test_and_set_ti_local_flags(current_thread_info(), mask);
+}
+
+static __always_inline
+void clear_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	ti_local_flags(ti) &= ~mask;
+}
+
+static __always_inline
+int test_and_clear_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	int old = ti_local_flags(ti) & mask;
+	ti_local_flags(ti) &= ~mask;
+	return old != 0;
+}
+
+static __always_inline int test_and_clear_thread_local_flags(unsigned int mask)
+{
+	return test_and_clear_ti_local_flags(current_thread_info(), mask);
+}
+
+static __always_inline void clear_thread_local_flags(unsigned int mask)
+{
+	clear_ti_local_flags(current_thread_info(), mask);
+}
+
+static __always_inline
+bool test_ti_local_flags(struct thread_info *ti, unsigned int mask)
+{
+	return (ti_local_flags(ti) & mask) != 0;
+}
+
+static __always_inline bool test_thread_local_flags(unsigned int mask)
+{
+	return test_ti_local_flags(current_thread_info(), mask);
+}
+
+#endif	/* ti_local_flags */
 
 #endif	/* __KERNEL__ */
 

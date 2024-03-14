@@ -20,7 +20,8 @@ static struct irq_chip its_msi_irq_chip = {
 	.irq_mask = irq_chip_mask_parent,
 	.irq_unmask = irq_chip_unmask_parent,
 	.irq_eoi = irq_chip_eoi_parent,
-	.irq_set_affinity = msi_domain_set_affinity
+	.irq_set_affinity = msi_domain_set_affinity,
+	.flags = IRQCHIP_PIPELINE_SAFE,
 };
 
 static u32 fsl_mc_msi_domain_get_msi_id(struct irq_domain *domain,

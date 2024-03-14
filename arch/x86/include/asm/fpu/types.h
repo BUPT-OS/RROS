@@ -460,6 +460,18 @@ struct fpu {
 	 */
 	unsigned int			last_cpu;
 
+#ifdef CONFIG_DOVETAIL
+	/*
+	 * @preempted:
+	 *
+	 * When Dovetail is enabled, this flag is set for the inband
+	 * task context saved when entering a kernel_fpu_begin/end()
+	 * section before the latter got preempted by an out-of-band
+	 * task.
+	 */
+	bool				preempted : 1;
+#endif
+
 	/*
 	 * @avx512_timestamp:
 	 *

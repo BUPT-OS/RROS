@@ -24,7 +24,7 @@
 
 #define IRQ_IN_COMBINER		8
 
-static DEFINE_SPINLOCK(irq_controller_lock);
+static DEFINE_HARD_SPINLOCK(irq_controller_lock);
 
 struct combiner_chip_data {
 	unsigned int hwirq_offset;
@@ -72,9 +72,9 @@ static void combiner_handle_cascade_irq(struct irq_desc *desc)
 
 	chained_irq_enter(chip, desc);
 
-	spin_lock(&irq_controller_lock);
+	raw_spin_lock(&irq_controller_lock);
 	status = readl_relaxed(chip_data->base + COMBINER_INT_STATUS);
-	spin_unlock(&irq_controller_lock);
+	raw_spin_unlock(&irq_controller_lock);
 	status &= chip_data->irq_mask;
 
 	if (status == 0)
@@ -111,6 +111,7 @@ static struct irq_chip combiner_chip = {
 #ifdef CONFIG_SMP
 	.irq_set_affinity	= combiner_set_affinity,
 #endif
+	.flags			= IRQCHIP_PIPELINE_SAFE,
 };
 
 static void __init combiner_cascade_irq(struct combiner_chip_data *combiner_data,

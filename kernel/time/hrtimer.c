@@ -980,6 +980,7 @@ void clock_was_set(unsigned int bases)
 
 out_timerfd:
 	timerfd_clock_was_set();
+	inband_clock_was_set();
 }
 
 static void clock_was_set_work(struct work_struct *work)

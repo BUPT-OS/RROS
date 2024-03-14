@@ -223,6 +223,18 @@ enum desc_state {
 #define DESC0_SV(ct_bits)	DESC_SV(DESC0_ID(ct_bits), desc_reusable)
 
 /*
+ * When interrupt pipelining is enabled, we want the critical sections
+ * to be protected against preemption by out-of-band code.
+ */
+#ifdef CONFIG_IRQ_PIPELINE
+#define prb_irq_save(__flags)		do { (__flags) = hard_local_irq_save(); } while (0)
+#define prb_irq_restore(__flags)	hard_local_irq_restore(__flags)
+#else
+#define prb_irq_save(__flags)		local_irq_save(__flags)
+#define prb_irq_restore(__flags)	local_irq_restore(__flags)
+#endif
+
+/*
  * Define a ringbuffer with an external text data buffer. The same as
  * DEFINE_PRINTKRB() but requires specifying an external buffer for the
  * text data.

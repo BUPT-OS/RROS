@@ -42,6 +42,7 @@ int main(void)
 #endif
   BLANK();
   DEFINE(TI_FLAGS,		offsetof(struct thread_info, flags));
+  DEFINE(TI_LOCAL_FLAGS,	offsetof(struct thread_info, local_flags));
   DEFINE(TI_PREEMPT,		offsetof(struct thread_info, preempt_count));
   DEFINE(TI_CPU,		offsetof(struct thread_info, cpu));
   DEFINE(TI_CPU_DOMAIN,		offsetof(struct thread_info, cpu_domain));
@@ -49,6 +50,7 @@ int main(void)
   DEFINE(TI_ABI_SYSCALL,	offsetof(struct thread_info, abi_syscall));
   DEFINE(TI_TP_VALUE,		offsetof(struct thread_info, tp_value));
   DEFINE(TI_FPSTATE,		offsetof(struct thread_info, fpstate));
+  DEFINE(TI_OOB_MASK,		STAGE_MASK);
 #ifdef CONFIG_VFP
   DEFINE(TI_VFPSTATE,		offsetof(struct thread_info, vfpstate));
 #ifdef CONFIG_SMP
@@ -152,6 +154,7 @@ int main(void)
   BLANK();
 #ifdef CONFIG_VDSO
   DEFINE(VDSO_DATA_SIZE,	sizeof(union vdso_data_store));
+  DEFINE(VDSO_PRIV_SIZE,	PAGE_SIZE);
 #endif
   BLANK();
 #ifdef CONFIG_ARM_MPU

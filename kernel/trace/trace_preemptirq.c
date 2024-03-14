@@ -10,6 +10,7 @@
 #include <linux/module.h>
 #include <linux/ftrace.h>
 #include <linux/kprobes.h>
+#include <linux/irq_pipeline.h>
 #include "trace.h"
 
 #define CREATE_TRACE_POINTS
@@ -94,6 +95,57 @@ void trace_hardirqs_off(void)
 }
 EXPORT_SYMBOL(trace_hardirqs_off);
 NOKPROBE_SYMBOL(trace_hardirqs_off);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+void trace_hardirqs_off_pipelined(void)
+{
+	WARN_ON(irq_pipeline_debug() && !hard_irqs_disabled());
+
+	if (running_inband())
+		trace_hardirqs_off();
+}
+EXPORT_SYMBOL(trace_hardirqs_off_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_off_pipelined);
+
+void trace_hardirqs_on_pipelined(void)
+{
+	WARN_ON(irq_pipeline_debug() && !hard_irqs_disabled());
+
+	/*
+	 * If the in-band stage of the kernel is current but the IRQ
+	 * was not delivered because the latter is stalled, keep the
+	 * tracing logic unaware of the receipt, so that no false
+	 * positive is triggered in lockdep (e.g. IN-HARDIRQ-W ->
+	 * HARDIRQ-ON-W).
+	 */
+	if (running_inband() && !irqs_disabled()) {
+		stall_inband();
+		trace_hardirqs_on();
+		unstall_inband_nocheck();
+	}
+}
+EXPORT_SYMBOL(trace_hardirqs_on_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_on_pipelined);
+
+#else
+
+void trace_hardirqs_off_pipelined(void)
+{
+	trace_hardirqs_off();
+}
+EXPORT_SYMBOL(trace_hardirqs_off_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_off_pipelined);
+
+void trace_hardirqs_on_pipelined(void)
+{
+	trace_hardirqs_on();
+}
+EXPORT_SYMBOL(trace_hardirqs_on_pipelined);
+NOKPROBE_SYMBOL(trace_hardirqs_on_pipelined);
+
+#endif
+
 #endif /* CONFIG_TRACE_IRQFLAGS */
 
 #ifdef CONFIG_TRACE_PREEMPT_TOGGLE

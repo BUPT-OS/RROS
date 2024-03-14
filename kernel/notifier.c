@@ -227,6 +227,9 @@ int atomic_notifier_call_chain(struct atomic_notifier_head *nh,
 {
 	int ret;
 
+	if (!running_inband())
+		return notifier_call_chain(&nh->head, val, v, -1, NULL);
+
 	rcu_read_lock();
 	ret = notifier_call_chain(&nh->head, val, v, -1, NULL);
 	rcu_read_unlock();

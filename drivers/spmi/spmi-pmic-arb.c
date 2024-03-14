@@ -159,7 +159,7 @@ struct spmi_pmic_arb {
 	void __iomem		*cnfg;
 	void __iomem		*core;
 	resource_size_t		core_size;
-	raw_spinlock_t		lock;
+	hard_spinlock_t		lock;
 	u8			channel;
 	int			irq;
 	u8			ee;
@@ -852,7 +852,7 @@ static struct irq_chip pmic_arb_irqchip = {
 	.irq_set_type	= qpnpint_irq_set_type,
 	.irq_set_wake	= qpnpint_irq_set_wake,
 	.irq_get_irqchip_state	= qpnpint_get_irqchip_state,
-	.flags		= IRQCHIP_MASK_ON_SUSPEND,
+	.flags		= IRQCHIP_MASK_ON_SUSPEND|IRQCHIP_PIPELINE_SAFE,
 };
 
 static int qpnpint_irq_domain_translate(struct irq_domain *d,

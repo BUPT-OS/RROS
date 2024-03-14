@@ -25,6 +25,7 @@ config I8253_LOCK
 config OMAP_DM_SYSTIMER
 	bool
 	select TIMER_OF
+	imply GENERIC_CLOCKSOURCE_VDSO
 
 config CLKBLD_I8253
 	def_bool y if CLKSRC_I8253 || CLKEVT_I8253 || I8253_LOCK
@@ -65,6 +66,8 @@ config OMAP_DM_TIMER
 
 config DW_APB_TIMER
 	bool "DW APB timer driver" if COMPILE_TEST
+        select CLKSRC_MMIO
+	imply GENERIC_CLOCKSOURCE_VDSO
 	help
 	  Enables the support for the dw_apb timer.
 
@@ -371,6 +374,7 @@ config SUN50I_ERRATUM_UNKNOWN1
 config ARM_GLOBAL_TIMER
 	bool "Support for the ARM global timer" if COMPILE_TEST
 	select TIMER_OF if OF
+	imply GENERIC_CLOCKSOURCE_VDSO
 	depends on ARM
 	help
 	  This option enables support for the ARM global timer unit.
@@ -435,6 +439,7 @@ config CLKSRC_EXYNOS_MCT
 	bool "Exynos multi core timer driver" if COMPILE_TEST
 	depends on ARM || ARM64
 	depends on ARCH_ARTPEC || ARCH_EXYNOS || COMPILE_TEST
+	imply GENERIC_CLOCKSOURCE_VDSO
 	help
 	  Support for Multi Core Timer controller on Exynos SoCs.
 
@@ -587,7 +592,7 @@ config CLKSRC_PXA
 config CLKSRC_IMX_GPT
 	bool "Clocksource using i.MX GPT" if COMPILE_TEST
 	depends on (ARM || ARM64) && HAVE_CLK
-	select CLKSRC_MMIO
+	imply GENERIC_CLOCKSOURCE_VDSO
 
 config CLKSRC_IMX_TPM
 	bool "Clocksource using i.MX TPM" if COMPILE_TEST
@@ -618,7 +623,7 @@ config CLKSRC_ST_LPC
 	bool "Low power clocksource found in the LPC" if COMPILE_TEST
 	select TIMER_OF if OF
 	depends on HAS_IOMEM
-	select CLKSRC_MMIO
+	imply GENERIC_CLOCKSOURCE_VDSO
 	help
 	  Enable this option to use the Low Power controller timer
 	  as clocksource.

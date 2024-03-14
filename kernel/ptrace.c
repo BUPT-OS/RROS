@@ -862,10 +862,12 @@ static int ptrace_resume(struct task_struct *child, long request,
 		if (unlikely(!arch_has_block_step()))
 			return -EIO;
 		user_enable_block_step(child);
+		inband_ptstep_notify(child);
 	} else if (is_singlestep(request) || is_sysemu_singlestep(request)) {
 		if (unlikely(!arch_has_single_step()))
 			return -EIO;
 		user_enable_single_step(child);
+		inband_ptstep_notify(child);
 	} else {
 		user_disable_single_step(child);
 	}

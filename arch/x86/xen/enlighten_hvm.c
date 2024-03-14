@@ -127,7 +127,8 @@ static void __init init_hvm_pv_info(void)
 		this_cpu_write(xen_vcpu_id, smp_processor_id());
 }
 
-DEFINE_IDTENTRY_SYSVEC(sysvec_xen_hvm_callback)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(HYPERVISOR_CALLBACK_VECTOR,
+				 sysvec_xen_hvm_callback)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 

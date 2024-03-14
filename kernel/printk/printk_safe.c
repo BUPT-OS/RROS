@@ -9,6 +9,7 @@
 #include <linux/cpumask.h>
 #include <linux/printk.h>
 #include <linux/kprobes.h>
+#include <linux/irqstage.h>
 
 #include "internal.h"
 
@@ -38,7 +39,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	 * Use the main logbuf even in NMI. But avoid calling console
 	 * drivers that might have their own locks.
 	 */
-	if (this_cpu_read(printk_context) || in_nmi())
+	if (this_cpu_read(printk_context) || !printk_stage_safe() || in_nmi())
 		return vprintk_deferred(fmt, args);
 
 	/* No obstacles. */

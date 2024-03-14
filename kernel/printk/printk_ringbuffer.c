@@ -1356,12 +1356,12 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e, struct printk_ringbuffer 
 	struct prb_desc *d;
 	unsigned long id;
 
-	local_irq_save(e->irqflags);
+	prb_irq_save(e->irqflags);
 
 	/* Transition the newest descriptor back to the reserved state. */
 	d = desc_reopen_last(desc_ring, caller_id, &id);
 	if (!d) {
-		local_irq_restore(e->irqflags);
+		prb_irq_restore(e->irqflags);
 		goto fail_reopen;
 	}
 
@@ -1500,12 +1500,12 @@ bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
 	 * interrupts during the reserve/commit window in order to minimize
 	 * the likelihood of this happening.
 	 */
-	local_irq_save(e->irqflags);
+	prb_irq_save(e->irqflags);
 
 	if (!desc_reserve(rb, &id)) {
 		/* Descriptor reservation failures are tracked. */
 		atomic_long_inc(&rb->fail);
-		local_irq_restore(e->irqflags);
+		prb_irq_restore(e->irqflags);
 		goto fail;
 	}
 
@@ -1610,7 +1610,7 @@ static void _prb_commit(struct prb_reserved_entry *e, unsigned long state_val)
 	}
 
 	/* Restore interrupts, the reserve/commit window is finished. */
-	local_irq_restore(e->irqflags);
+	prb_irq_restore(e->irqflags);
 }
 
 /**

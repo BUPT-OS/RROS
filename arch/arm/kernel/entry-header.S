@@ -202,15 +202,21 @@
 	.macro	svc_exit, rpsr, irq = 0
 	.if	\irq != 0
 	@ IRQs already off
-#ifdef CONFIG_TRACE_IRQFLAGS
 	@ The parent context IRQs must have been enabled to get here in
 	@ the first place, so there's no point checking the PSR I bit.
+#ifdef CONFIG_IRQ_PIPELINE
+	mov	r0, sp
+	bl	kentry_exit_pipelined
+#elif defined(CONFIG_TRACE_IRQFLAGS)
 	bl	trace_hardirqs_on
 #endif
 	.else
 	@ IRQs off again before pulling preserved data off the stack
 	disable_irq_notrace
-#ifdef CONFIG_TRACE_IRQFLAGS
+#ifdef CONFIG_IRQ_PIPELINE
+	mov	r0, sp
+	bl	kentry_exit_pipelined
+#elif defined(CONFIG_TRACE_IRQFLAGS)
 	tst	\rpsr, #PSR_I_BIT
 	bleq	trace_hardirqs_on
 	tst	\rpsr, #PSR_I_BIT
@@ -412,6 +418,19 @@ ALT_UP_B(.L1_\@)
 	.endif
 	ldrcc	pc, [\table, \nr, lsl #2]	@ call sys_* routine
 #endif
+	.endm
+
+/*
+ * Branch to the exception epilogue, skipping the in-band work
+ * if running over the out-of-band interrupt stage.
+ */
+	.macro ret_to_user_pipelined, tmp
+#ifdef CONFIG_IRQ_PIPELINE
+	ldr	\tmp, [tsk, #TI_LOCAL_FLAGS]
+	tst	\tmp, #_TLF_OOB
+	bne	fast_ret_to_user
+#endif
+	b	ret_to_user
 	.endm
 
 /*

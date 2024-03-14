@@ -14,6 +14,7 @@
 #include <linux/signal.h>
 #include <linux/sched/signal.h>
 #include <linux/smp.h>
+#include <linux/dovetail.h>
 #include <linux/init.h>
 #include <linux/uaccess.h>
 #include <linux/user.h>
@@ -90,6 +91,7 @@ static void vfp_force_reload(unsigned int cpu, struct thread_info *thread)
 static void vfp_thread_flush(struct thread_info *thread)
 {
 	union vfp_state *vfp = &thread->vfpstate;
+	unsigned long flags;
 	unsigned int cpu;
 
 	/*
@@ -100,11 +102,11 @@ static void vfp_thread_flush(struct thread_info *thread)
 	 * Do this first to ensure that preemption won't overwrite our
 	 * state saving should access to the VFP be enabled at this point.
 	 */
-	cpu = get_cpu();
+	cpu = hard_get_cpu(flags);
 	if (vfp_current_hw_state[cpu] == vfp)
 		vfp_current_hw_state[cpu] = NULL;
 	fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
-	put_cpu();
+	hard_put_cpu(flags);
 
 	memset(vfp, 0, sizeof(union vfp_state));
 
@@ -119,11 +121,14 @@ static void vfp_thread_exit(struct thread_info *thread)
 {
 	/* release case: Per-thread VFP cleanup. */
 	union vfp_state *vfp = &thread->vfpstate;
-	unsigned int cpu = get_cpu();
+	unsigned long flags;
+	unsigned int cpu;
+
+	cpu = hard_get_cpu(flags);
 
 	if (vfp_current_hw_state[cpu] == vfp)
 		vfp_current_hw_state[cpu] = NULL;
-	put_cpu();
+	hard_put_cpu(flags);
 }
 
 static void vfp_thread_copy(struct thread_info *thread)
@@ -160,12 +165,14 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 {
 	struct thread_info *thread = v;
 	u32 fpexc;
+	unsigned long flags;
 #ifdef CONFIG_SMP
 	unsigned int cpu;
 #endif
 
 	switch (cmd) {
 	case THREAD_NOTIFY_SWITCH:
+		flags = hard_cond_local_irq_save();
 		fpexc = fmrx(FPEXC);
 
 #ifdef CONFIG_SMP
@@ -185,6 +192,7 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		 * old state.
 		 */
 		fmxr(FPEXC, fpexc & ~FPEXC_EN);
+		hard_cond_local_irq_restore(flags);
 		break;
 
 	case THREAD_NOTIFY_FLUSH:
@@ -248,7 +256,10 @@ static void vfp_raise_exceptions(u32 exceptions, u32 inst, u32 fpscr, struct pt_
 
 	if (exceptions == VFP_EXCEPTION_ERROR) {
 		vfp_panic("unhandled bounce", inst);
-		vfp_raise_sigfpe(FPE_FLTINV, regs);
+		if (mark_cond_trap_entry(ARM_TRAP_VFP, regs)) {
+			vfp_raise_sigfpe(FPE_FLTINV, regs);
+			mark_trap_exit(ARM_TRAP_VFP, regs);
+		}
 		return;
 	}
 
@@ -320,10 +331,15 @@ static u32 vfp_emulate_instruction(u32 inst, u32 fpscr, struct pt_regs *regs)
 
 /*
  * Package up a bounce condition.
+ *
+ * Dovetail: always enters with hard irqs off, bh disabled if running
+ * inband. We make sure to read the fpregs we need before re-enabling
+ * hard irqs, at which point an oob task might preempt. Returns with
+ * hard irqs ON, which matches the converse toggle in vfp_support_entry().
  */
 static void VFP_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 {
-	u32 fpscr, orig_fpscr, fpsid, exceptions;
+	u32 fpscr, orig_fpscr, fpsid, exceptions, next_trigger = 0;
 
 	pr_debug("VFP: bounce: trigger %08x fpexc %08x\n", trigger, fpexc);
 
@@ -353,6 +369,7 @@ static void VFP_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 		/*
 		 * Synchronous exception, emulate the trigger instruction
 		 */
+		hard_cond_local_irq_enable();
 		goto emulate;
 	}
 
@@ -363,13 +380,28 @@ static void VFP_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 		 */
 		trigger = fmrx(FPINST);
 		regs->ARM_pc -= 4;
-	} else if (!(fpexc & FPEXC_DEX)) {
+		if (fpexc & FPEXC_FP2V) {
+			/*
+			 * The barrier() here prevents fpinst2 being read
+			 * before the condition above.
+			 *
+			 * Dovetail: we read fpinst2 early before
+			 * re-enabling hard irqs.
+			 */
+			barrier();
+			next_trigger = fmrx(FPINST2);
+		}
+	}
+
+	hard_cond_local_irq_enable(); /* Matches converse in vfp_support_entry(). */
+
+	if (!(fpexc & (FPEXC_EX | FPEXC_DEX))) {
 		/*
 		 * Illegal combination of bits. It can be caused by an
 		 * unallocated VFP instruction but with FPSCR.IXE set and not
 		 * on VFP subarch 1.
 		 */
-		 vfp_raise_exceptions(VFP_EXCEPTION_ERROR, trigger, fpscr, regs);
+		vfp_raise_exceptions(VFP_EXCEPTION_ERROR, trigger, fpscr, regs);
 		return;
 	}
 
@@ -403,12 +435,7 @@ static void VFP_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 	if ((fpexc & (FPEXC_EX | FPEXC_FP2V)) != (FPEXC_EX | FPEXC_FP2V))
 		return;
 
-	/*
-	 * The barrier() here prevents fpinst2 being read
-	 * before the condition above.
-	 */
-	barrier();
-	trigger = fmrx(FPINST2);
+	trigger = next_trigger;
 
  emulate:
 	exceptions = vfp_emulate_instruction(trigger, orig_fpscr, regs);
@@ -512,9 +539,8 @@ static inline void vfp_pm_init(void) { }
  */
 void vfp_sync_hwstate(struct thread_info *thread)
 {
-	unsigned int cpu = get_cpu();
-
-	local_bh_disable();
+	unsigned long flags;
+	unsigned int cpu = hard_get_cpu(flags);
 
 	if (vfp_state_in_hw(cpu, thread)) {
 		u32 fpexc = fmrx(FPEXC);
@@ -527,18 +553,18 @@ void vfp_sync_hwstate(struct thread_info *thread)
 		fmxr(FPEXC, fpexc);
 	}
 
-	local_bh_enable();
-	put_cpu();
+	hard_put_cpu(flags);
 }
 
 /* Ensure that the thread reloads the hardware VFP state on the next use. */
 void vfp_flush_hwstate(struct thread_info *thread)
 {
-	unsigned int cpu = get_cpu();
+	unsigned long flags;
+	unsigned int cpu = hard_get_cpu(flags);
 
 	vfp_force_reload(cpu, thread);
 
-	put_cpu();
+	hard_put_cpu(flags);
 }
 
 /*
@@ -675,6 +701,7 @@ static int vfp_kmode_exception(struct pt_regs *regs, unsigned int instr)
 static int vfp_support_entry(struct pt_regs *regs, u32 trigger)
 {
 	struct thread_info *ti = current_thread_info();
+	int ret = 0;
 	u32 fpexc;
 
 	if (unlikely(!have_vfp))
@@ -683,7 +710,12 @@ static int vfp_support_entry(struct pt_regs *regs, u32 trigger)
 	if (!user_mode(regs))
 		return vfp_kmode_exception(regs, trigger);
 
-	local_bh_disable();
+	if (running_inband())
+		local_bh_disable();
+
+	/* Dovetail: guard against preemption from oob task. */
+	hard_cond_local_irq_disable();
+
 	fpexc = fmrx(FPEXC);
 
 	/*
@@ -748,6 +780,8 @@ static int vfp_support_entry(struct pt_regs *regs, u32 trigger)
 		 * replay the instruction that trapped.
 		 */
 		fmxr(FPEXC, fpexc);
+
+		hard_cond_local_irq_enable();
 	} else {
 		/* Check for synchronous or asynchronous exceptions */
 		if (!(fpexc & (FPEXC_EX | FPEXC_DEX))) {
@@ -762,18 +796,26 @@ static int vfp_support_entry(struct pt_regs *regs, u32 trigger)
 			if (!(fpscr & FPSCR_IXE)) {
 				if (!(fpscr & FPSCR_LENGTH_MASK)) {
 					pr_debug("not VFP\n");
-					local_bh_enable();
-					return -ENOEXEC;
+					ret = -ENOEXEC;
+					goto out;
 				}
 				fpexc |= FPEXC_DEX;
 			}
 		}
 bounce:		regs->ARM_pc += 4;
-		VFP_bounce(trigger, fpexc, regs);
+		VFP_bounce(trigger, fpexc, regs); /* Returns with hard irqs on. */
 	}
 
-	local_bh_enable();
-	return 0;
+out:
+	/*
+	 * Dovetail: we might have switched from oob to inband context
+	 * in vfp_raise_exceptions(), in which case we did not disable
+	 * bh on entry, so make sure not to spuriously restore it.
+	 */
+	if (running_inband() && softirq_count() == SOFTIRQ_DISABLE_OFFSET)
+		local_bh_enable();
+
+	return ret;
 }
 
 static struct undef_hook neon_support_hook[] = {{

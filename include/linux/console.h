@@ -191,6 +191,7 @@ enum cons_flags {
 struct console {
 	char			name[16];
 	void			(*write)(struct console *co, const char *s, unsigned int count);
+	void			(*write_raw)(struct console *co, const char *, unsigned int count);
 	int			(*read)(struct console *co, char *s, unsigned int count);
 	struct tty_driver	*(*device)(struct console *co, int *index);
 	void			(*unblank)(void);

@@ -1475,6 +1475,7 @@ static int gpmc_setup_irq(struct gpmc_device *gpmc)
 	gpmc->irq_chip.irq_mask = gpmc_irq_mask;
 	gpmc->irq_chip.irq_unmask = gpmc_irq_unmask;
 	gpmc->irq_chip.irq_set_type = gpmc_irq_set_type;
+	gpmc->irq_chip.flags = IRQCHIP_PIPELINE_SAFE;
 
 	gpmc_irq_domain = irq_domain_add_linear(gpmc->dev->of_node,
 						gpmc->nirqs,
@@ -1485,7 +1486,7 @@ static int gpmc_setup_irq(struct gpmc_device *gpmc)
 		return -ENODEV;
 	}
 
-	rc = request_irq(gpmc->irq, gpmc_handle_irq, 0, "gpmc", gpmc);
+	rc = request_irq(gpmc->irq, gpmc_handle_irq, IRQF_OOB, "gpmc", gpmc);
 	if (rc) {
 		dev_err(gpmc->dev, "failed to request irq %d: %d\n",
 			gpmc->irq, rc);

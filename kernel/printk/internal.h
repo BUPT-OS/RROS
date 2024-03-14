@@ -61,6 +61,26 @@ void defer_console_output(void);
 
 u16 printk_parse_prefix(const char *text, int *level,
 			enum printk_info_flags *flags);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+extern bool irq_pipeline_active;
+
+static inline bool printk_stage_safe(void)
+{
+	return running_inband() &&
+		(!hard_irqs_disabled() || !irq_pipeline_active);
+}
+
+#else
+
+static inline bool printk_stage_safe(void)
+{
+	return true;
+}
+
+#endif
+
 #else
 
 #define PRINTK_PREFIX_MAX	0

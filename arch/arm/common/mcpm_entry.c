@@ -206,7 +206,7 @@ int mcpm_cpu_power_up(unsigned int cpu, unsigned int cluster)
 	 * Since this is called with IRQs enabled, and no arch_spin_lock_irq
 	 * variant exists, we need to disable IRQs manually here.
 	 */
-	local_irq_disable();
+	hard_local_irq_disable();
 	arch_spin_lock(&mcpm_lock);
 
 	cpu_is_down = !mcpm_cpu_use_count[cluster][cpu];
@@ -230,7 +230,7 @@ int mcpm_cpu_power_up(unsigned int cpu, unsigned int cluster)
 		ret = platform_ops->cpu_powerup(cpu, cluster);
 
 	arch_spin_unlock(&mcpm_lock);
-	local_irq_enable();
+	hard_local_irq_enable();
 	return ret;
 }
 
@@ -349,7 +349,7 @@ int mcpm_cpu_powered_up(void)
 	mpidr = read_cpuid_mpidr();
 	cpu = MPIDR_AFFINITY_LEVEL(mpidr, 0);
 	cluster = MPIDR_AFFINITY_LEVEL(mpidr, 1);
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	arch_spin_lock(&mcpm_lock);
 
 	cpu_was_down = !mcpm_cpu_use_count[cluster][cpu];
@@ -363,7 +363,7 @@ int mcpm_cpu_powered_up(void)
 		platform_ops->cpu_is_up(cpu, cluster);
 
 	arch_spin_unlock(&mcpm_lock);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	return 0;
 }
@@ -402,7 +402,7 @@ int __init mcpm_loopback(void (*cache_disable)(void))
 	 * infrastructure. Let's play it safe by using cpu_pm_enter()
 	 * in case the CPU init code path resets the VFP or similar.
 	 */
-	local_irq_disable();
+	hard_local_irq_disable();
 	local_fiq_disable();
 	ret = cpu_pm_enter();
 	if (!ret) {
@@ -410,7 +410,7 @@ int __init mcpm_loopback(void (*cache_disable)(void))
 		cpu_pm_exit();
 	}
 	local_fiq_enable();
-	local_irq_enable();
+	hard_local_irq_enable();
 	if (ret)
 		pr_err("%s returned %d\n", __func__, ret);
 	return ret;

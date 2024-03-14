@@ -16,10 +16,11 @@
 #include <linux/module.h>
 #include <linux/random.h>
 #include <linux/interrupt.h>
+#include <linux/irq_pipeline.h>
 
 #include "internals.h"
 
-#ifdef CONFIG_HARDIRQS_SW_RESEND
+#if defined(CONFIG_HARDIRQS_SW_RESEND) && !defined(CONFIG_IRQ_PIPELINE)
 
 /* hlist_head to handle software resend of interrupts: */
 static HLIST_HEAD(irq_resend_list);
@@ -100,7 +101,12 @@ void irq_resend_init(struct irq_desc *desc) {}
 
 static int irq_sw_resend(struct irq_desc *desc)
 {
+#if defined(CONFIG_HARDIRQS_SW_RESEND) && defined(CONFIG_IRQ_PIPELINE)
+	irq_inject_pipeline(irq_desc_get_irq(desc));
+	return 0;
+#else
 	return -EINVAL;
+#endif
 }
 #endif
 

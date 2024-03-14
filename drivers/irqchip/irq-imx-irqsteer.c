@@ -31,7 +31,7 @@ struct irqsteer_data {
 	struct clk		*ipg_clk;
 	int			irq[CHAN_MAX_OUTPUT_INT];
 	int			irq_count;
-	raw_spinlock_t		lock;
+	hard_spinlock_t		lock;
 	int			reg_num;
 	int			channel;
 	struct irq_domain	*domain;
@@ -76,6 +76,7 @@ static const struct irq_chip imx_irqsteer_irq_chip = {
 	.name		= "irqsteer",
 	.irq_mask	= imx_irqsteer_irq_mask,
 	.irq_unmask	= imx_irqsteer_irq_unmask,
+	.flags		= IRQCHIP_PIPELINE_SAFE,
 };
 
 static int imx_irqsteer_irq_map(struct irq_domain *h, unsigned int irq,

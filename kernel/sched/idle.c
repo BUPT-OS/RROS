@@ -85,9 +85,14 @@ void __weak arch_cpu_idle(void)
  * default_idle_call - Default CPU idle routine.
  *
  * To use when the cpuidle framework cannot be used.
+ *
+ * IRQ pipeline: this call is entered with hard irqs off, in-band
+ * stage is stalled and its log is empty. Returns unstalled with hard
+ * irqs on.
  */
 void __cpuidle default_idle_call(void)
 {
+	irq_pipeline_idling_checks();
 	instrumentation_begin();
 	if (!current_clr_polling_and_test()) {
 		trace_cpu_idle(1, smp_processor_id());
@@ -100,7 +105,7 @@ void __cpuidle default_idle_call(void)
 		start_critical_timings();
 		trace_cpu_idle(PWR_EVENT_EXIT, smp_processor_id());
 	}
-	local_irq_enable();
+	local_irq_enable_full();
 	instrumentation_end();
 }
 
@@ -142,6 +147,8 @@ static int call_cpuidle(struct cpuidle_driver *drv, struct cpuidle_device *dev,
  * On architectures that support TIF_POLLING_NRFLAG, is called with polling
  * set, and it returns with polling set.  If it ever stops polling, it
  * must clear the polling bit.
+ *
+ * IRQ pipeline: we enter this code stalled with hard irqs on.
  */
 static void cpuidle_idle_call(void)
 {
@@ -166,8 +173,8 @@ static void cpuidle_idle_call(void)
 
 	if (cpuidle_not_available(drv, dev)) {
 		tick_nohz_idle_stop_tick();
-
-		default_idle_call();
+		if (irq_pipeline_can_idle())
+			default_idle_call();
 		goto exit_idle;
 	}
 
@@ -221,6 +228,13 @@ static void cpuidle_idle_call(void)
 
 exit_idle:
 	__current_set_polling();
+
+	/*
+	 *  Catch mishandling of the CPU's interrupt disable flag when
+	 *  pipelining IRQs.
+	 */
+	if (WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled()))
+		hard_local_irq_enable();
 
 	/*
 	 * It is up to the idle functions to reenable local interrupts
@@ -280,6 +294,7 @@ static void do_idle(void)
 			cpu_idle_poll();
 		} else {
 			cpuidle_idle_call();
+			WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled());
 		}
 		arch_cpu_idle_exit();
 	}

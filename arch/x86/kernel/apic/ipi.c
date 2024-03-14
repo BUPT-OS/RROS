@@ -143,12 +143,15 @@ void apic_mem_wait_icr_idle(void)
  */
 static void __default_send_IPI_shortcut(unsigned int shortcut, int vector)
 {
+	unsigned long flags;
+
 	/*
 	 * Wait for the previous ICR command to complete.  Use
 	 * safe_apic_wait_icr_idle() for the NMI vector as there have been
 	 * issues where otherwise the system hangs when the panic CPU tries
 	 * to stop the others before launching the kdump kernel.
 	 */
+	flags = hard_cond_local_irq_save();
 	if (unlikely(vector == NMI_VECTOR))
 		apic_mem_wait_icr_idle_timeout();
 	else
@@ -156,6 +159,7 @@ static void __default_send_IPI_shortcut(unsigned int shortcut, int vector)
 
 	/* Destination field (ICR2) and the destination mode are ignored */
 	native_apic_mem_write(APIC_ICR, __prepare_ICR(shortcut, vector, 0));
+	hard_cond_local_irq_restore(flags);
 }
 
 /*
@@ -165,7 +169,10 @@ static void __default_send_IPI_shortcut(unsigned int shortcut, int vector)
 void __default_send_IPI_dest_field(unsigned int dest_mask, int vector,
 				   unsigned int dest_mode)
 {
+	unsigned long flags;
+
 	/* See comment in __default_send_IPI_shortcut() */
+	flags = hard_cond_local_irq_save();
 	if (unlikely(vector == NMI_VECTOR))
 		apic_mem_wait_icr_idle_timeout();
 	else
@@ -175,16 +182,17 @@ void __default_send_IPI_dest_field(unsigned int dest_mask, int vector,
 	native_apic_mem_write(APIC_ICR2, __prepare_ICR2(dest_mask));
 	/* Send it with the proper destination mode */
 	native_apic_mem_write(APIC_ICR, __prepare_ICR(0, vector, dest_mode));
+	hard_cond_local_irq_restore(flags);
 }
 
 void default_send_IPI_single_phys(int cpu, int vector)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	__default_send_IPI_dest_field(per_cpu(x86_cpu_to_apicid, cpu),
 				      vector, APIC_DEST_PHYSICAL);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void default_send_IPI_mask_sequence_phys(const struct cpumask *mask, int vector)
@@ -192,12 +200,12 @@ void default_send_IPI_mask_sequence_phys(const struct cpumask *mask, int vector)
 	unsigned long flags;
 	unsigned long cpu;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	for_each_cpu(cpu, mask) {
 		__default_send_IPI_dest_field(per_cpu(x86_cpu_to_apicid,
 				cpu), vector, APIC_DEST_PHYSICAL);
 	}
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void default_send_IPI_mask_allbutself_phys(const struct cpumask *mask,
@@ -206,14 +214,14 @@ void default_send_IPI_mask_allbutself_phys(const struct cpumask *mask,
 	unsigned int cpu, this_cpu = smp_processor_id();
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	for_each_cpu(cpu, mask) {
 		if (cpu == this_cpu)
 			continue;
 		__default_send_IPI_dest_field(per_cpu(x86_cpu_to_apicid,
 				 cpu), vector, APIC_DEST_PHYSICAL);
 	}
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 /*
@@ -245,10 +253,10 @@ void default_send_IPI_mask_sequence_logical(const struct cpumask *mask, int vect
 	unsigned long flags;
 	unsigned int cpu;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	for_each_cpu(cpu, mask)
 		__default_send_IPI_dest_field(1U << cpu, vector, APIC_DEST_LOGICAL);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void default_send_IPI_mask_allbutself_logical(const struct cpumask *mask,
@@ -257,13 +265,13 @@ void default_send_IPI_mask_allbutself_logical(const struct cpumask *mask,
 	unsigned int cpu, this_cpu = smp_processor_id();
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	for_each_cpu(cpu, mask) {
 		if (cpu == this_cpu)
 			continue;
 		__default_send_IPI_dest_field(1U << cpu, vector, APIC_DEST_LOGICAL);
 	}
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void default_send_IPI_mask_logical(const struct cpumask *cpumask, int vector)
@@ -274,10 +282,10 @@ void default_send_IPI_mask_logical(const struct cpumask *cpumask, int vector)
 	if (!mask)
 		return;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	WARN_ON(mask & ~cpumask_bits(cpu_online_mask)[0]);
 	__default_send_IPI_dest_field(mask, vector, APIC_DEST_LOGICAL);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 #ifdef CONFIG_SMP

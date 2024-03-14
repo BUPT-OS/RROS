@@ -1001,6 +1001,7 @@ int arch_set_user_pkey_access(struct task_struct *tsk, int pkey,
 			      unsigned long init_val)
 {
 	u32 old_pkru, new_pkru_bits = 0;
+	unsigned long flags;
 	int pkey_shift;
 
 	/*
@@ -1028,12 +1029,16 @@ int arch_set_user_pkey_access(struct task_struct *tsk, int pkey,
 	pkey_shift = pkey * PKRU_BITS_PER_PKEY;
 	new_pkru_bits <<= pkey_shift;
 
+	flags = hard_cond_local_irq_save();
+
 	/* Get old PKRU and mask off any old bits in place: */
 	old_pkru = read_pkru();
 	old_pkru &= ~((PKRU_AD_BIT|PKRU_WD_BIT) << pkey_shift);
 
 	/* Write old part along with new part: */
 	write_pkru(old_pkru | new_pkru_bits);
+
+	hard_cond_local_irq_restore(flags);
 
 	return 0;
 }
@@ -1499,6 +1504,7 @@ static int fpstate_realloc(u64 xfeatures, unsigned int ksize,
 	struct fpstate *curfps, *newfps = NULL;
 	unsigned int fpsize;
 	bool in_use;
+	unsigned long flags;
 
 	fpsize = ksize + ALIGN(offsetof(struct fpstate, regs), 64);
 
@@ -1526,7 +1532,7 @@ static int fpstate_realloc(u64 xfeatures, unsigned int ksize,
 		guest_fpu->uabi_size = usize;
 	}
 
-	fpregs_lock();
+	flags = fpregs_lock();
 	/*
 	 * If @curfps is in use, ensure that the current state is in the
 	 * registers before swapping fpstate as that might invalidate it
@@ -1556,7 +1562,7 @@ static int fpstate_realloc(u64 xfeatures, unsigned int ksize,
 
 	if (in_use)
 		xfd_update_state(fpu->fpstate);
-	fpregs_unlock();
+	fpregs_unlock(flags);
 
 	/* Only free valloc'ed state */
 	if (curfps && curfps->is_valloc)

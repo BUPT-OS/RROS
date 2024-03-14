@@ -33,7 +33,7 @@ copy_from_user_nmi(void *to, const void __user *from, unsigned long n)
 {
 	unsigned long ret;
 
-	if (!__access_ok(from, n))
+	if (running_oob() || !__access_ok(from, n))
 		return n;
 
 	if (!nmi_uaccess_okay())

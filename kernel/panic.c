@@ -29,6 +29,7 @@
 #include <linux/sysrq.h>
 #include <linux/init.h>
 #include <linux/nmi.h>
+#include <linux/irq_pipeline.h>
 #include <linux/console.h>
 #include <linux/bug.h>
 #include <linux/ratelimit.h>
@@ -56,7 +57,7 @@ static unsigned long tainted_mask =
 	IS_ENABLED(CONFIG_RANDSTRUCT) ? (1 << TAINT_RANDSTRUCT) : 0;
 static int pause_on_oops;
 static int pause_on_oops_flag;
-static DEFINE_SPINLOCK(pause_on_oops_lock);
+static DEFINE_HARD_SPINLOCK(pause_on_oops_lock);
 bool crash_kexec_post_notifiers;
 int panic_on_warn __read_mostly;
 unsigned long panic_on_taint;
@@ -298,8 +299,9 @@ void panic(const char *fmt, ...)
 	 * there is nothing to prevent an interrupt handler (that runs
 	 * after setting panic_cpu) from invoking panic() again.
 	 */
-	local_irq_disable();
+	hard_local_irq_disable();
 	preempt_disable_notrace();
+	irq_pipeline_oops();
 
 	/*
 	 * It's possible to come here directly from a panic-assertion and
@@ -362,9 +364,12 @@ void panic(const char *fmt, ...)
 
 	/*
 	 * Run any panic handlers, including those that might need to
-	 * add information to the kmsg dump output.
+	 * add information to the kmsg dump output. Skip panic
+	 * handlers if running over the oob stage, as they would most
+	 * likely break.
 	 */
-	atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
+	if (running_inband())
+		atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
 
 	panic_print_sys_info(false);
 
@@ -567,7 +572,7 @@ static void do_oops_enter_exit(void)
 	if (!pause_on_oops)
 		return;
 
-	spin_lock_irqsave(&pause_on_oops_lock, flags);
+	raw_spin_lock_irqsave(&pause_on_oops_lock, flags);
 	if (pause_on_oops_flag == 0) {
 		/* This CPU may now print the oops message */
 		pause_on_oops_flag = 1;
@@ -577,21 +582,21 @@ static void do_oops_enter_exit(void)
 			/* This CPU gets to do the counting */
 			spin_counter = pause_on_oops;
 			do {
-				spin_unlock(&pause_on_oops_lock);
+				raw_spin_unlock(&pause_on_oops_lock);
 				spin_msec(MSEC_PER_SEC);
-				spin_lock(&pause_on_oops_lock);
+				raw_spin_lock(&pause_on_oops_lock);
 			} while (--spin_counter);
 			pause_on_oops_flag = 0;
 		} else {
 			/* This CPU waits for a different one */
 			while (spin_counter) {
-				spin_unlock(&pause_on_oops_lock);
+				raw_spin_unlock(&pause_on_oops_lock);
 				spin_msec(1);
-				spin_lock(&pause_on_oops_lock);
+				raw_spin_lock(&pause_on_oops_lock);
 			}
 		}
 	}
-	spin_unlock_irqrestore(&pause_on_oops_lock, flags);
+	raw_spin_unlock_irqrestore(&pause_on_oops_lock, flags);
 }
 
 /*
@@ -621,6 +626,7 @@ void oops_enter(void)
 {
 	tracing_off();
 	/* can't trust the integrity of the kernel anymore: */
+	irq_pipeline_oops();
 	debug_locks_off();
 	do_oops_enter_exit();
 

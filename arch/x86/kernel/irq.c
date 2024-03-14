@@ -4,6 +4,7 @@
  */
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
+#include <linux/irq_pipeline.h>
 #include <linux/kernel_stat.h>
 #include <linux/of.h>
 #include <linux/seq_file.h>
@@ -49,7 +50,7 @@ void ack_bad_irq(unsigned int irq)
 	 * completely.
 	 * But only ack when the APIC is enabled -AK
 	 */
-	apic_eoi();
+	__apic_eoi();
 }
 
 #define irq_stats(x)		(&per_cpu(irq_stat, x))
@@ -243,8 +244,11 @@ static __always_inline void handle_irq(struct irq_desc *desc,
 /*
  * common_interrupt() handles all normal device IRQ's (the special SMP
  * cross-CPU interrupts have their own entry points).
+ *
+ * Compiled out if CONFIG_IRQ_PIPELINE is enabled, replaced by
+ * arch_handle_irq().
  */
-DEFINE_IDTENTRY_IRQ(common_interrupt)
+DEFINE_IDTENTRY_IRQ_PIPELINED(common_interrupt)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 	struct irq_desc *desc;
@@ -276,7 +280,8 @@ void (*x86_platform_ipi_callback)(void) = NULL;
 /*
  * Handler for X86_PLATFORM_IPI_VECTOR.
  */
-DEFINE_IDTENTRY_SYSVEC(sysvec_x86_platform_ipi)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(X86_PLATFORM_IPI_VECTOR,
+				 sysvec_x86_platform_ipi)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
@@ -308,7 +313,8 @@ EXPORT_SYMBOL_GPL(kvm_set_posted_intr_wakeup_handler);
 /*
  * Handler for POSTED_INTERRUPT_VECTOR.
  */
-DEFINE_IDTENTRY_SYSVEC_SIMPLE(sysvec_kvm_posted_intr_ipi)
+DEFINE_IDTENTRY_SYSVEC_SIMPLE_PIPELINED(POSTED_INTR_VECTOR,
+					sysvec_kvm_posted_intr_ipi)
 {
 	apic_eoi();
 	inc_irq_stat(kvm_posted_intr_ipis);
@@ -317,7 +323,8 @@ DEFINE_IDTENTRY_SYSVEC_SIMPLE(sysvec_kvm_posted_intr_ipi)
 /*
  * Handler for POSTED_INTERRUPT_WAKEUP_VECTOR.
  */
-DEFINE_IDTENTRY_SYSVEC(sysvec_kvm_posted_intr_wakeup_ipi)
+DEFINE_IDTENTRY_SYSVEC_PIPELINED(POSTED_INTR_WAKEUP_VECTOR,
+				 sysvec_kvm_posted_intr_wakeup_ipi)
 {
 	apic_eoi();
 	inc_irq_stat(kvm_posted_intr_wakeup_ipis);
@@ -327,7 +334,8 @@ DEFINE_IDTENTRY_SYSVEC(sysvec_kvm_posted_intr_wakeup_ipi)
 /*
  * Handler for POSTED_INTERRUPT_NESTED_VECTOR.
  */
-DEFINE_IDTENTRY_SYSVEC_SIMPLE(sysvec_kvm_posted_intr_nested_ipi)
+DEFINE_IDTENTRY_SYSVEC_SIMPLE_PIPELINED(POSTED_INTR_NESTED_VECTOR,
+					sysvec_kvm_posted_intr_nested_ipi)
 {
 	apic_eoi();
 	inc_irq_stat(kvm_posted_intr_nested_ipis);
@@ -401,6 +409,6 @@ DEFINE_IDTENTRY_SYSVEC(sysvec_thermal)
 	inc_irq_stat(irq_thermal_count);
 	smp_thermal_vector();
 	trace_thermal_apic_exit(THERMAL_APIC_VECTOR);
-	apic_eoi();
+	__apic_eoi();
 }
 #endif

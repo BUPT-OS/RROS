@@ -205,7 +205,9 @@ void ptrace_break(struct pt_regs *regs)
 
 static int break_trap(struct pt_regs *regs, unsigned int instr)
 {
+	mark_trap_entry(ARM_TRAP_BREAK, regs);
 	ptrace_break(regs);
+	mark_trap_exit(ARM_TRAP_BREAK, regs);
 	return 0;
 }
 

@@ -40,6 +40,8 @@ enum vvar_pages {
 	VVAR_NR_PAGES,
 };
 
+#define VPRIV_NR_PAGES __VPRIV_PAGES
+
 struct vdso_abi_info {
 	const char *name;
 	const char *vdso_code_start;
@@ -112,6 +114,9 @@ static int __init __vdso_init(enum vdso_abi abi)
 		vdso_pagelist[i] = pfn_to_page(pfn + i);
 
 	vdso_info[abi].cm->pages = vdso_pagelist;
+#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
+	vdso_data->cs_type_seq = CLOCKSOURCE_VDSO_NONE << 16 | 1;
+#endif
 
 	return 0;
 }
@@ -198,7 +203,8 @@ static int __setup_additional_pages(enum vdso_abi abi,
 
 	vdso_text_len = vdso_info[abi].vdso_pages << PAGE_SHIFT;
 	/* Be sure to map the data page */
-	vdso_mapping_len = vdso_text_len + VVAR_NR_PAGES * PAGE_SIZE;
+	vdso_mapping_len = vdso_text_len + VVAR_NR_PAGES * PAGE_SIZE
+		+ VPRIV_NR_PAGES * PAGE_SIZE;
 
 	vdso_base = get_unmapped_area(NULL, 0, vdso_mapping_len, 0, 0);
 	if (IS_ERR_VALUE(vdso_base)) {
@@ -206,6 +212,26 @@ static int __setup_additional_pages(enum vdso_abi abi,
 		goto up_fail;
 	}
 
+	/*
+	 * Install the vDSO mappings we need:
+	 *
+	 * +----------------+
+	 * |     vpriv      |  PAGE_SIZE (private anon page if GENERIC_CLOCKSOURCE_VDSO)
+	 * |----------------|
+	 * |     vvar       |  PAGE_SIZE (shared)
+	 * |----------------|
+	 * |     text       |  text_pages * PAGE_SIZE (shared)
+	 * |        ...     |
+	 * +----------------+
+	 */
+	if (VPRIV_NR_PAGES > 0 && mmap_region(NULL, vdso_base, PAGE_SIZE,
+			VM_READ | VM_WRITE | VM_MAYREAD | VM_MAYWRITE,
+			0, NULL) != vdso_base) {
+		ret = ERR_PTR(-EINVAL);
+		goto up_fail;
+	}
+
+	vdso_base += VPRIV_NR_PAGES * PAGE_SIZE; /* Skip private area. */
 	ret = _install_special_mapping(mm, vdso_base, VVAR_NR_PAGES * PAGE_SIZE,
 				       VM_READ|VM_MAYREAD|VM_PFNMAP,
 				       vdso_info[abi].dm);

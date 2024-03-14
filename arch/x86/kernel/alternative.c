@@ -8,6 +8,7 @@
 #include <linux/list.h>
 #include <linux/stringify.h>
 #include <linux/highmem.h>
+#include <linux/irq_pipeline.h>
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
 #include <linux/memory.h>
@@ -220,13 +221,16 @@ __optimize_nops(u8 *instr, size_t len, struct insn *insn, int *next, int *prev, 
 	}
 
 	if (insn_is_nop(insn)) {
+		unsigned long flags;
 		int nop = i;
 
 		*next = skip_nops(instr, *next, len);
 		if (*target && *next == *target)
 			nop = *prev;
 
+		flags = hard_local_irq_save();
 		add_nop(instr + nop, *next - nop);
+		hard_local_irq_restore(flags);
 		DUMP_BYTES(ALT, instr, len, "%px: [%d:%d) optimized NOPs: ", instr, nop, *next);
 		return true;
 	}
@@ -1403,6 +1407,10 @@ int alternatives_text_reserved(void *start, void *end)
 /* Use this to add nops to a buffer, then text_poke the whole buffer. */
 static void __init_or_module add_nops(void *insns, unsigned int len)
 {
+	unsigned long flags;
+
+	flags = hard_local_irq_save();
+
 	while (len > 0) {
 		unsigned int noplen = len;
 		if (noplen > ASM_NOP_MAX)
@@ -1411,6 +1419,8 @@ static void __init_or_module add_nops(void *insns, unsigned int len)
 		insns += noplen;
 		len -= noplen;
 	}
+
+	hard_local_irq_restore(flags);
 }
 
 void __init_or_module apply_paravirt(struct paravirt_patch_site *start,
@@ -1418,6 +1428,9 @@ void __init_or_module apply_paravirt(struct paravirt_patch_site *start,
 {
 	struct paravirt_patch_site *p;
 	char insn_buff[MAX_PATCH_LEN];
+	unsigned long flags;
+
+	flags = hard_local_irq_save();
 
 	for (p = start; p < end; p++) {
 		unsigned int used;
@@ -1433,6 +1446,8 @@ void __init_or_module apply_paravirt(struct paravirt_patch_site *start,
 		add_nops(insn_buff + used, p->len - used);
 		text_poke_early(p->instr, insn_buff, p->len);
 	}
+
+	hard_local_irq_restore(flags);
 }
 extern struct paravirt_patch_site __start_parainstructions[],
 	__stop_parainstructions[];
@@ -1668,13 +1683,14 @@ void __init_or_module text_poke_early(void *addr, const void *opcode,
 		 * code cannot be running and speculative code-fetches are
 		 * prevented. Just change the code.
 		 */
+		flags = hard_local_irq_save();
 		memcpy(addr, opcode, len);
+		hard_local_irq_restore(flags);
 	} else {
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		memcpy(addr, opcode, len);
-		local_irq_restore(flags);
 		sync_core();
-
+		hard_local_irq_restore(flags);
 		/*
 		 * Could also do a CLFLUSH here to speed up CPU recovery; but
 		 * that causes hangs on some VIA CPUs.
@@ -1704,6 +1720,7 @@ static inline temp_mm_state_t use_temporary_mm(struct mm_struct *mm)
 	temp_mm_state_t temp_state;
 
 	lockdep_assert_irqs_disabled();
+	WARN_ON_ONCE(irq_pipeline_debug() && !hard_irqs_disabled());
 
 	/*
 	 * Make sure not to be in TLB lazy mode, as otherwise we'll end up
@@ -1811,7 +1828,7 @@ static void *__text_poke(text_poke_f func, void *addr, const void *src, size_t l
 	 */
 	VM_BUG_ON(!ptep);
 
-	local_irq_save(flags);
+	local_irq_save_full(flags);
 
 	pte = mk_pte(pages[0], pgprot);
 	set_pte_at(poking_mm, poking_addr, ptep, pte);
@@ -1864,7 +1881,7 @@ static void *__text_poke(text_poke_f func, void *addr, const void *src, size_t l
 		BUG_ON(memcmp(addr, src, len));
 	}
 
-	local_irq_restore(flags);
+	local_irq_restore_full(flags);
 	pte_unmap_unlock(ptep, ptl);
 	return addr;
 }

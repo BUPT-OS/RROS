@@ -831,6 +831,46 @@ TRACE_EVENT(rros_trace,
 	TP_printk("%s", __get_str(msg))
 );
 
+TRACE_EVENT(rros_latspot,
+	TP_PROTO(int latmax_ns),
+	TP_ARGS(latmax_ns),
+	TP_STRUCT__entry(
+		 __field(int, latmax_ns)
+	),
+	TP_fast_assign(
+		__entry->latmax_ns = latmax_ns;
+	),
+	TP_printk("** latency peak: %d.%.3d us **",
+		  __entry->latmax_ns / 1000,
+		  __entry->latmax_ns % 1000)
+);
+
+TRACE_EVENT(rros_fpu_corrupt,
+	TP_PROTO(unsigned int fp_val),
+	TP_ARGS(fp_val),
+	TP_STRUCT__entry(
+		 __field(unsigned int, fp_val)
+	),
+	TP_fast_assign(
+		__entry->fp_val = fp_val;
+	),
+	TP_printk("** bad FPU context: fp_val = %u **",
+		__entry->fp_val)
+);
+
+/* Basically evl_trace() + trigger point */
+TRACE_EVENT(rros_trigger,
+	TP_PROTO(const char *issuer),
+	TP_ARGS(issuer),
+	TP_STRUCT__entry(
+		__string(issuer, issuer)
+	),
+	TP_fast_assign(
+		__assign_str(issuer, issuer);
+	),
+	TP_printk("%s", __get_str(issuer))
+);
+
 #endif /* _TRACE_RROS_H */
 
 /* This part must be outside protection */

@@ -3,9 +3,9 @@
 #include <uapi/linux/uio.h>
 
 #define copy_on_stack(dst,src) \
-char dst[src.iov_len+1]; \
-strncpy(dst,src.iov_base,src.iov_len); \
-dst[src.iov_len] = 0;
+	char dst[src.iov_len+1]; \
+	strncpy(dst,src.iov_base,src.iov_len); \
+	dst[src.iov_len] = 0;
 
 /**
  * @flags:                      Flags value.

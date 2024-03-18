@@ -1,6 +1,90 @@
 // SPDX-License-Identifier: GPL-2.0
 // TODO: more flexible to use `trace!` macro.
 
+//! # FTRACE USAGE IN RROS
+//!
+//! *[See also the ftrace usage](https://www.kernel.org/doc/html/latest/trace/ftrace.html).*
+//!
+//! ## Kernel Configuration
+//!
+//! 1. **Tracing Support**:
+//!   - Enable `CONFIG_TRACING`. This is the core option for enabling the tracing infrastructure in the Linux kernel, which `ftrace` relies upon.
+//!
+//! 2. **Function Tracer (FTRACE)**:
+//!    - Enable `CONFIG_FUNCTION_TRACER`. This option is the fundamental requirement for `ftrace` to work, as it enables tracing of function calls within the kernel.
+//!
+//! 3. **Tracepoints**:
+//!    - Enable `CONFIG_TRACEPOINTS`. This option enables tracepoints that are statically defined in the kernel, allowing `ftrace` and other tools to hook into these points for detailed event information.
+//!
+//! 4. **Dynamic Ftrace**:
+//!    - Enable `CONFIG_DYNAMIC_FTRACE`. This allows for the dynamic modification of kernel code to insert/remove tracepoints, making `ftrace` more versatile and with minimal overhead.
+//!
+//! 5. **Function Graph Tracer**:
+//!    - Enable `CONFIG_FUNCTION_GRAPH_TRACER`. This option allows for graph tracing of function calls, which is useful for visualizing call stacks and understanding the flow of execution.
+//!
+//! 6. **Additional Tracers**:
+//!    - Depending on your needs, you may also enable additional tracers, such as:
+//!      - `CONFIG_SCHED_TRACER` for scheduling events,
+//!      - `CONFIG_IRQSOFF_TRACER` for tracing periods where interrupts are disabled,
+//!      - `CONFIG_PREEMPT_TRACER` for tracing preempt disable and enable events,
+//!      - and others depending on your specific tracing requirements.
+//!
+//! ## Basic usage in kernel code
+//!
+//! Use FFI helper functions for tracepoints. The `trace_rros_*` functions are used to trace the rros events.
+//!
+//! ```
+//! let rq = this_rros_rq();
+//! ```
+//!
+//! Here we get the `rq` of the current CPU, and then we can use the `rq` to trace the events.
+//! Then we could add the following code to trace the schedule event.
+//!
+//! ```
+//! trace_rros_schedule(&rq);
+//! ```
+//!
+//! ## Basic usage in user space tools
+//!
+//! 1. enable all the rros tracepoints in kernel.
+//!
+//! ```
+//! echo 1 > /sys/kernel/debug/tracing/events/rros/enable
+//! ```
+//!
+//! or enable the only one rros tracepoint.
+//!
+//! ```
+//! echo 1 > /sys/kernel/debug/tracing/events/rros/rros_schedule/enable
+//! ```
+//!
+//! or you could enable any tracepoints group you want.
+//!
+//! 2. start the program to emit the tracepoints.
+//!
+//! ```
+//! ./{test_program}
+//! ```
+//!
+//! 3. cat the trace.
+//!
+//! ```
+//! cat /sys/kernel/debug/tracing/trace | grep rros
+//!
+//! ```
+//!
+//! 4. use the data analysis tools to analyze the trace data.
+//!
+//! You could use the `trace-cmd` to trace the events, and use the `kernelshark` to analyze the trace data.
+//!
+//! # Note
+//!
+//! - You could resize the buffer size of the trace file in `/sys/kernel/debug/tracing/buffer_size_kb` if the trace file is too large.
+//!
+//! ```
+//! echo 1024 > /sys/kernel/debug/tracing/buffer_size_kb
+//! ```
+
 use core::ops::Deref;
 
 use kernel::bindings;

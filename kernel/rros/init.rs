@@ -345,7 +345,7 @@ impl KernelModule for Rros {
             return Err(kernel::Error::EINVAL);
         }
 
-        let cpu_online_mask = unsafe { cpumask::read_cpu_online_mask() };
+        let cpu_online_mask = unsafe { cpumask::CpumaskT::read_cpu_online_mask() };
         // When size_of is 0, align_of is 4, alloc reports an error.
         // unsafe {RROS_MACHINE_CPUDATA =
         //     percpu::alloc_per_cpu(size_of::<RrosMachineCpuData>() as usize,
@@ -356,23 +356,20 @@ impl KernelModule for Rros {
         };
         if str::from_utf8(oobcpus_arg.read())? != "" {
             let res = unsafe {
-                cpumask::cpulist_parse(
-                    CStr::from_bytes_with_nul(oobcpus_arg.read())?.as_char_ptr(),
-                    RROS_OOB_CPUS.as_cpumas_ptr(),
-                )
+                RROS_OOB_CPUS.cpulist_parse(CStr::from_bytes_with_nul(oobcpus_arg.read())?.as_char_ptr())
             };
             match res {
                 Ok(_o) => (pr_info!("load parameters {}\n", str::from_utf8(oobcpus_arg.read())?)),
                 Err(_e) => {
                     pr_warn!("wrong oobcpus_arg");
                     unsafe {
-                        cpumask::cpumask_copy(RROS_OOB_CPUS.as_cpumas_ptr(), &cpu_online_mask);
+                        RROS_OOB_CPUS.cpumask_copy(&cpu_online_mask);
                     }
                 }
             }
         } else {
             unsafe {
-                cpumask::cpumask_copy(RROS_OOB_CPUS.as_cpumas_ptr(), &cpu_online_mask);
+                RROS_OOB_CPUS.cpumask_copy(&cpu_online_mask);
             }
         }
 

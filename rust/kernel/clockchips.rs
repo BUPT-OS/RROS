@@ -244,7 +244,9 @@ pub trait CoreTick {
 
 /// Callback function for trait `CoreTick`.
 pub unsafe extern "C" fn core_tick<T: CoreTick>(dummy: *mut bindings::clock_event_device) {
-    T::core_tick(ClockEventDevice::from_proxy_device(dummy).unwrap());
+    T::core_tick(ClockEventDevice::from_proxy_device(dummy).unwrap_or(ClockEventDevice {
+        ptr: 0 as *mut _,
+    }));
 }
 
 /// A trait to implement functions for `ClockIpiHandle`.

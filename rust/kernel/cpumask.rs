@@ -9,7 +9,10 @@ use crate::{
     error::{Error, Result},
 };
 
-use core::iter::Iterator;
+use core::{
+    iter::Iterator,
+    ops::BitAnd,
+};
 
 extern "C" {
     fn rust_helper_num_possible_cpus() -> u32;
@@ -24,8 +27,13 @@ extern "C" {
         srcp2: *const bindings::cpumask,
     );
     fn rust_helper_cpumask_empty(srcp: *const bindings::cpumask) -> c_types::c_int;
-    fn rust_helper_cpumask_first(srcp: *const bindings::cpumask);
+    fn rust_helper_cpumask_first(srcp: *const bindings::cpumask) -> c_types::c_int;
     fn rust_helper_cpumask_set_cpu(cpu: u32, dstp: *mut bindings::cpumask);
+    fn rust_helper_cpumask_clear(srcp: *mut bindings::cpumask);
+    fn rust_helper_cpumask_test_cpu(cpu: u32, srcp: *const bindings::cpumask) -> c_types::c_int;
+    fn rust_helper_cpumask_of(cpu: u32) -> *const bindings::cpumask;
+    fn rust_helper_cpus_read_lock();
+    fn rust_helper_cpus_read_unlock();
 }
 
 /// An possible CPU index iterator.
@@ -163,6 +171,7 @@ pub fn present_cpus() -> PresentCpusIndexIter {
 // static mut CPU_ONLINE_MASK: bindings::cpumask = unsafe{ bindings::__cpu_online_mask };
 /// The `CpumaskT` struct is a wrapper around the `bindings::cpumask_t` struct from the kernel bindings. It represents a CPU mask in the kernel.
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct CpumaskT(bindings::cpumask_t);
 
 impl CpumaskT {
@@ -177,11 +186,94 @@ impl CpumaskT {
         &mut self.0 as *mut bindings::cpumask_t
     }
 
+    /// The `as_cpumas_const_ptr` method returns a const pointer to the underlying `bindings::cpumask_t`. This can be used to pass the `CpumaskT` to kernel functions that expect a `bindings::cpumask_t`.
+    pub fn as_cpumas_const_ptr(&self) -> *const bindings::cpumask_t {
+        &self.0 as *const bindings::cpumask_t
+    }
+
     /// The `cpu_mask_all` method returns a `CpumaskT` that represents all CPUs. It does this by creating a new `CpumaskT` with all bits set to 1.
-    pub fn cpu_mask_all() -> Self {
+    pub const fn cpu_mask_all() -> Self {
         let c: u64 = u64::MAX;
         Self(bindings::cpumask_t { bits: [c, c, c, c] })
         // Self(bindings::cpumask_t { bits: [c] })
+    }
+
+    /// The `read_cpu_online_mask` function is an unsafe function that reads the CPU online mask from the kernel. It returns a `bindings::cpumask` representing the online CPUs.
+    pub unsafe fn read_cpu_online_mask() -> Self {
+        unsafe {
+            rust_helper_cpus_read_lock();
+            let cpumask = Self {
+                0: bindings::__cpu_online_mask,
+            };
+            rust_helper_cpus_read_unlock();
+            cpumask
+        }
+    }
+
+    /// The `cpulist_parse` function parses a CPU list from a string and stores the result in a `bindings::cpumask`. It takes a pointer to a C-style string and a mutable pointer to a `bindings::cpumask`. If the parsing is successful, it returns `Ok(0)`. Otherwise, it returns an `EINVAL` error.
+    pub fn cpulist_parse(&mut self, buf: *const c_types::c_char) -> Result<usize> {
+        let res = unsafe { rust_helper_cpulist_parse(buf, self.as_cpumas_ptr()) };
+        if res == 0 {
+            return Ok(0);
+        }
+        Err(Error::EINVAL)
+    }
+
+    /// The `cpumask_copy` function copies a `bindings::cpumask` from one location to another. It takes a mutable pointer to the destination `bindings::cpumask` and a constant pointer to the source `bindings::cpumask`.
+    pub fn cpumask_copy(&mut self, src: &CpumaskT) {
+        unsafe { rust_helper_cpumask_copy(self.as_cpumas_ptr(), src.as_cpumas_const_ptr()) }
+    }
+
+    /// The `cpumask_empty` function checks if a `bindings::cpumask` is empty (i.e., all bits are zero). It takes a constant pointer to the `bindings::cpumask`. If the `bindings::cpumask` is empty, it returns `Ok(0)`. Otherwise, it returns an `EINVAL` error.
+    pub fn cpumask_empty(&self) -> Result<usize> {
+        let res = unsafe { rust_helper_cpumask_empty(self.as_cpumas_const_ptr()) };
+        if res == 1 {
+            return Ok(0);
+        }
+        Err(Error::EINVAL)
+    }
+
+    /// The `cpumask_first` function returns the first CPU in a `bindings::cpumask`. It takes a constant pointer to the `bindings::cpumask`.
+    pub fn cpumask_first(&self) -> c_types::c_int {
+        unsafe { rust_helper_cpumask_first(self.as_cpumas_const_ptr()) }
+    }
+
+    /// The `cpumask_set_cpu` function sets a specific CPU in a `bindings::cpumask`. It takes a CPU number and a mutable pointer to a `bindings::cpumask`. It does this by calling the unsafe `rust_helper_cpumask_set_cpu` function with the provided arguments.
+    pub fn cpumask_set_cpu(&mut self, cpu: u32) {
+        unsafe { rust_helper_cpumask_set_cpu(cpu as c_types::c_uint, self.as_cpumas_ptr()) }
+    }
+
+    /// The `cpumask_clear` function clear all cpumasks in a `bindings::cpumask`. It takes a mutable pointer to the `bindings::cpumask`.
+    pub fn cpumask_clear(&mut self) {
+        unsafe { rust_helper_cpumask_clear(self.as_cpumas_ptr()) }
+    }
+
+    /// The `cpumask_test_cpu` function test whether a specific CPU in a `bindings::cpumask`. It takes a CPU number and a const pointer to a `bindings::cpumask`. It does this by calling the unsafe `rust_helper_cpumask_test_cpu` function with the provided arguments.
+    pub fn cpumask_test_cpu(&self, cpu: u32) -> bool {
+        unsafe { rust_helper_cpumask_test_cpu(cpu, self.as_cpumas_const_ptr()) != 0 }
+    }
+
+    /// The `cpumask_of` function returns a specific `bindings::cpumask`.
+    pub fn cpumask_of(cpu: u32) -> *const CpumaskT {
+        unsafe { rust_helper_cpumask_of(cpu) as *const _ }
+    }
+}
+
+impl BitAnd for CpumaskT {
+    type Output = CpumaskT;
+
+    /// Override the `&` operator for `CpumaskT`. This function returns a new `CpumaskT`
+    /// which holds the calculation result (`self` & `rhs`).
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let mut result = Self::from_int(0);
+        unsafe {
+            rust_helper_cpumask_and(
+                result.as_cpumas_ptr(),
+                self.as_cpumas_const_ptr(),
+                rhs.as_cpumas_const_ptr(),
+            );
+        }
+        result
     }
 }
 
@@ -211,54 +303,8 @@ impl CpumaskVarT {
 impl CpumaskVarT {
     // todo: implement for x86_64/x86
 }
-/// The `read_cpu_online_mask` function is an unsafe function that reads the CPU online mask from the kernel. It returns a `bindings::cpumask` representing the online CPUs.
-pub unsafe fn read_cpu_online_mask() -> bindings::cpumask {
-    unsafe { bindings::__cpu_online_mask }
-}
-
-/// The `cpulist_parse` function parses a CPU list from a string and stores the result in a `bindings::cpumask`. It takes a pointer to a C-style string and a mutable pointer to a `bindings::cpumask`. If the parsing is successful, it returns `Ok(0)`. Otherwise, it returns an `EINVAL` error.
-pub fn cpulist_parse(buf: *const c_types::c_char, dstp: *mut bindings::cpumask) -> Result<usize> {
-    let res = unsafe { rust_helper_cpulist_parse(buf, dstp) };
-    if res == 0 {
-        return Ok(0);
-    }
-    Err(Error::EINVAL)
-}
-
-/// The `cpumask_copy` function copies a `bindings::cpumask` from one location to another. It takes a mutable pointer to the destination `bindings::cpumask` and a constant pointer to the source `bindings::cpumask`.
-pub fn cpumask_copy(dstp: *mut bindings::cpumask, srcp: *const bindings::cpumask) {
-    unsafe { rust_helper_cpumask_copy(dstp, srcp) }
-}
-
-/// The `cpumask_and` function performs a bitwise AND operation on two `bindings::cpumask`s and stores the result in a third `bindings::cpumask`. It takes a mutable pointer to the destination `bindings::cpumask` and constant pointers to the source `bindings::cpumask`s.
-pub fn cpumask_and(
-    dstp: *mut bindings::cpumask,
-    srcp1: *const bindings::cpumask,
-    srcp2: *const bindings::cpumask,
-) {
-    unsafe { rust_helper_cpumask_and(dstp, srcp1, srcp2) }
-}
-
-/// The `cpumask_empty` function checks if a `bindings::cpumask` is empty (i.e., all bits are zero). It takes a constant pointer to the `bindings::cpumask`. If the `bindings::cpumask` is empty, it returns `Ok(0)`. Otherwise, it returns an `EINVAL` error.
-pub fn cpumask_empty(srcp: *const bindings::cpumask) -> Result<usize> {
-    let res = unsafe { rust_helper_cpumask_empty(srcp) };
-    if res == 1 {
-        return Ok(0);
-    }
-    Err(Error::EINVAL)
-}
-
-/// The `cpumask_first` function returns the first CPU in a `bindings::cpumask`. It takes a constant pointer to the `bindings::cpumask`.
-pub fn cpumask_first(srcp: *const bindings::cpumask) {
-    unsafe { rust_helper_cpumask_first(srcp) }
-}
 
 /// The `num_possible_cpus` function returns the number of possible CPUs. It does this by calling the unsafe `rust_helper_num_possible_cpus` function.
 pub fn num_possible_cpus() -> u32 {
     unsafe { rust_helper_num_possible_cpus() }
-}
-
-/// The `cpumask_set_cpu` function sets a specific CPU in a `bindings::cpumask`. It takes a CPU number and a mutable pointer to a `bindings::cpumask`. It does this by calling the unsafe `rust_helper_cpumask_set_cpu` function with the provided arguments.
-pub fn cpumask_set_cpu(cpu: u32, dstp: *mut bindings::cpumask) {
-    unsafe { rust_helper_cpumask_set_cpu(cpu as c_types::c_uint, dstp) }
 }

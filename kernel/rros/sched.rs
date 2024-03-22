@@ -250,10 +250,7 @@ pub fn rros_set_resched(rq_op: Option<*mut rros_rq>) {
         unsafe {
             (*rq).add_flags(RQ_SCHED);
             (*this_rq).add_local_flags(RQ_SCHED);
-            cpumask::cpumask_set_cpu(
-                rros_rq_cpu(rq) as u32,
-                (*this_rq).resched_cpus.as_cpumas_ptr(),
-            );
+            (*this_rq).resched_cpus.cpumask_set_cpu(rros_rq_cpu(rq) as u32);
         }
     }
 }

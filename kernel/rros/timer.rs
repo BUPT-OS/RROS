@@ -420,27 +420,17 @@ pub fn rros_percpu_timers(clock: &RrosClock, cpu: i32) -> *mut RrosTimerbase {
 }
 
 #[cfg(CONFIG_SMP)]
-fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
-    return 0;
-    // unsafe{
-    //     if (rust_helper_cpumask_test_cpu(cpu, clock.affinity.as_mut() as *mut bindings::cpumask)) {
-
-    //     }
-    // }
-    // if (cpumask_test_cpu(cpu, &clock->affinity))
-    // return cpu;
-
-    // return cpumask_first(&clock->affinity);
+pub fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
+    if clock.affinity.as_ref().unwrap().cpumask_test_cpu(cpu as u32) {
+        return cpu;
+    }
+    clock.affinity.as_ref().unwrap().cpumask_first()
 }
 
 #[cfg(not(CONFIG_SMP))]
-fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
+pub fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
     return 0;
 }
-
-// fn get_clock_cpu(clock: &RrosClock, cpu:i32) ->i32{
-//     return 0;
-// }
 
 use alloc::rc::Rc;
 use core::borrow::BorrowMut;
@@ -463,12 +453,13 @@ pub fn rros_init_timer_on_rq(
         timer.lock().set_handler(handler.unwrap());
     }
     timer.lock().set_interval(RROS_INFINITE);
-    let mut cpu = 0;
-    // if rq.clone().borrow().is_some(){ // Smp related
-    //     cpu = unsafe{get_clock_cpu(clock,rros_rq_cpu(&rq.clone().borrow()))};
-    // }else{
-    //     //cpumask_first(&RROS_CPU_AFFINITY);
-    // }
+
+    let cpu = if rq.is_null() {
+        unsafe { RROS_CPU_AFFINITY.cpumask_first() }
+    } else {
+        unsafe { get_clock_cpu(&(*(clock.get_master())), rros_rq_cpu(rq)) }
+    };
+
     #[cfg(CONFIG_SMP)]
     timer.lock().set_rq(rros_cpu_rq(cpu));
 

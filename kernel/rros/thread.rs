@@ -1,6 +1,6 @@
 use crate::{
     clock::{self, rros_read_clock},
-    factory,
+    factory::{self, rros_init_element, RrosElement, RrosFactory},
     fifo::{self, RROS_SCHED_FIFO},
     file::RrosFileBinding,
     idle,
@@ -19,6 +19,7 @@ use core::{
     clone::Clone,
     ops::DerefMut,
     result::Result::{Err, Ok},
+    ptr,
 };
 
 #[warn(unused_mut)]
@@ -29,7 +30,7 @@ use kernel::{
     cred,
     device::DeviceType,
     dovetail,
-    error::from_kernel_err_ptr,
+    error::{from_kernel_err_ptr, Error},
     file::File,
     file_operations::FileOperations,
     fs,
@@ -48,10 +49,9 @@ use kernel::{
 };
 
 extern "C" {
-    fn rust_helper_kthread_run_on_cpu(
+    fn rust_helper_kthread_run(
         threadfn: Option<unsafe extern "C" fn(*mut c_types::c_void) -> c_types::c_int>,
         data: *mut c_types::c_void,
-        cpu: i32,
         namefmt: *const c_types::c_char,
         ...
     ) -> *mut c_types::c_void;
@@ -274,14 +274,12 @@ pub fn rros_init_thread(
     // rq_s: Rc<RefCell<rros_rq>>,
     // iattr: Rc<RefCell<RrosInitThreadAttr>>,
     iattr: RrosInitThreadAttr,
-    rq: *mut rros_rq,
+    mut rq: *mut rros_rq,
     _fmt: &'static CStr,
     // args:fmt::Arguments<'_>
 ) -> Result<usize> {
     let iattr_ptr = iattr;
     let mut flags = iattr_ptr.flags & (!T_SUSP as i32);
-    let _affinity: *mut bindings::cpumask;
-    let _gravity: i32;
 
     if flags & (T_ROOT as i32) == 0x0 {
         pr_info!("called timesssss");
@@ -295,18 +293,17 @@ pub fn rros_init_thread(
         flags |= T_OBSERV as i32;
     }
 
+    if rq.is_null() {
+        let affinity = unsafe { (*iattr_ptr.affinity).clone() & RROS_CPU_AFFINITY.clone() };
+        if affinity.cpumask_empty().is_err() {
+            rq = rros_cpu_rq(affinity.cpumask_first());
+        }
+        if rq.is_null() {
+            return Err(Error::EINVAL);
+        }
+    }
+
     // pr_debug!("hello world flags {}", flags);
-    // TODO: add the support for the affinity, this can be related to the `pin_to_initial_cpu()` function
-    // if rq.is_none(){
-    //     if (!alloc_cpumask_var(&affinity, GFP_KERNEL))
-    // 		return -ENOMEM;
-    // 	cpumask_and(affinity, iattr->affinity, &rros_cpu_affinity);
-    // 	if (!cpumask_empty(affinity))
-    // 		rq = rros_cpu_rq(cpumask_first(affinity));
-    // 	free_cpumask_var(affinity);
-    // 	if (!rq)
-    // 		return -EINVAL;
-    // }
     // va_start(args,fmt);
     // pr_debug!("yinyongcishu is {}", Arc::strong_count(&thread.clone().unwrap()));
     let thread_clone = thread.clone();
@@ -318,7 +315,10 @@ pub fn rros_init_thread(
     // if thread_lock.name == " "{
     //     return Err(kernel::Error::ENOMEM);
     // }
-    // cpumask_and(&thread->affinity, iattr->affinity, &rros_cpu_affinity);
+
+    unsafe {
+        (*thread_unwrap.locked_data().get()).affinity = (*iattr_ptr.affinity).clone() & RROS_CPU_AFFINITY.clone();
+    }
 
     thread_unwrap.lock().rq = Some(rq);
     thread_unwrap.lock().state = flags as u32;
@@ -503,10 +503,9 @@ fn __rros_run_kthread(kthread: &mut RrosKthread, _clone_flags: i32) -> Result<us
     data = kthread as *mut RrosKthread as *mut c_types::c_void;
     // TODO: tmp hack without migrate_threaed
     let p = unsafe {
-        kthread_run_on_cpu(
+        kthread_run(
             Some(kthread_trampoline),
             data,
-            0,
             c_str!("%s").as_char_ptr(),
             format_args!("{}", (*thread.locked_data().get()).name),
         )
@@ -743,53 +742,28 @@ unsafe extern "C" fn wakeup_kthread_parent(irq_work: *mut IrqWork) {
     }
 }
 
-// fn pin_to_initial_cpu(thread: Arc<SpinLock<RrosThread>>) {
-// //  static void pin_to_initial_cpu(struct RrosThread *thread)
-// // {
-//     let p = Task::current();
-// // 	struct task_struct *p = current;
-// // 	unsigned long flags;
-// // 	struct rros_rq *rq;
-// // 	int cpu;
+pub fn pin_to_initial_cpu(thread: Arc<SpinLock<RrosThread>>) {
+    let current_ptr = task::Task::current_ptr();
 
-// // 	/*
-// // 	 * @thread is the RROS extension of the current in-band
-// // 	 * task. If the current CPU is part of the affinity mask of
-// // 	 * this thread, pin the latter on this CPU. Otherwise pin it
-// // 	 * to the first CPU of that mask.
-// // 	 */
-//     let mut cpu = p::cpu();
-// // 	cpu = task_cpu(p);
-//     if CpumaskT::cpumask_test_cpu(cpu, (*thread.locked_data().get()).affinity) {
-//         cpu = CpumaskT::cpumaks_first((*thread.locked_data().get()).affinity)
-//     }
-// // 	if (!cpumask_test_cpu(cpu, &thread->affinity))
-// // 		cpu = cpumask_first(&thread->affinity);
+    let mut cpu: u32 = task::Task::task_cpu(current_ptr as *const _);
+    if unsafe { (*thread.locked_data().get()).affinity.cpumask_test_cpu(cpu) } == false {
+        cpu = unsafe { (*thread.locked_data().get()).affinity.cpumask_first() as u32 };
+    }
 
-//     p::set_cpus(CpumaskT::cpumaks_of(cpu));
-// // 	set_cpus_allowed_ptr(p, cpumask_of(cpu));
-// // 	/*
-// // 	 * @thread is still unstarted RROS-wise, we are in the process
-// // 	 * of mapping the current in-band task to it. Therefore
-// // 	 * rros_migrate_thread() can be called for pinning it on an
-// // 	 * out-of-band CPU.
-// // 	 */
-//     let rq = rros_cpu_rq(cpu);
-// // 	rq = rros_cpu_rq(cpu);
-// // 	raw_spin_lock_irqsave(&thread->lock, flags);
-// // 	rros_migrate_thread(thread, rq);
-// // 	raw_spin_unlock_irqrestore(&thread->lock, flags);
-// // }
+    unsafe { bindings::set_cpus_allowed_ptr(current_ptr, CpumaskT::cpumask_of(cpu) as *const _); }
 
-// }
+    let rq = rros_cpu_rq(cpu as i32);
+    let flags: u64 = unsafe { (*thread.locked_data().get()).lock.raw_spin_lock_irqsave() };
+    rros_migrate_thread(thread.clone(), rq);
+    unsafe { (*thread.locked_data().get()).lock.raw_spin_unlock_irqrestore(flags); }
+}
 
 fn map_kthread_self(kthread: &mut RrosKthread) -> Result<usize> {
     let thread = kthread.thread.clone().unwrap();
 
     pr_debug!("map_kthread_self:in");
 
-    // TODO: add the support of the pin_to_initial_cpu
-    // pin_to_initial_cpu(thread.clone());
+    pin_to_initial_cpu(thread.clone());
 
     let ret;
     unsafe {
@@ -1066,18 +1040,16 @@ pub fn set_oob_mminfo(thread: Arc<SpinLock<RrosThread>>) {
     }
 }
 
-pub fn kthread_run_on_cpu(
+pub fn kthread_run(
     threadfn: Option<unsafe extern "C" fn(*mut c_types::c_void) -> c_types::c_int>,
     data: *mut c_types::c_void,
-    cpu: i32,
     namefmt: *const c_types::c_char,
     msg: fmt::Arguments<'_>,
 ) -> *mut c_types::c_void {
     unsafe {
-        rust_helper_kthread_run_on_cpu(
+        rust_helper_kthread_run(
             threadfn,
             data,
-            cpu,
             namefmt,
             &msg as *const _ as *const c_types::c_void,
         )
@@ -1105,9 +1077,7 @@ pub fn rros_run_kthread(kthread: &mut RrosKthread, fmt: &'static CStr) -> Result
         (*sched_param.locked_data().get()).weak.prio = prio;
         (*sched_param.locked_data().get()).tp.prio = 1;
         iattr.sched_param = Some(sched_param);
-        // kthread.borrow_mut().done.init_completion();
         kthread.done.init_completion();
-        // Completion::init_completion(&mut kthread.borrow_mut().done);
 
         // kthread.borrow_mut().thread.clone().unwrap().lock().state |= sched::T_READY;
         // pr_debug!("fkkkkk {}", kthread.thread.clone().unwrap().lock().state);
@@ -1187,14 +1157,12 @@ pub fn rros_set_thread_schedparam_locked(
 pub fn rros_sleep(delay: ktime::KtimeT) -> Result<usize> {
     let end: ktime::KtimeT =
         unsafe { ktime::ktime_add(clock::rros_read_clock(&clock::RROS_MONO_CLOCK), delay) };
-    // KtimeT end = ktime_add(clock::rros_read_clock(&rros_mono_clock), delay);
     rros_sleep_until(end)?;
     Ok(0)
 }
 
 #[allow(dead_code)]
 fn rros_sleep_until(timeout: ktime::KtimeT) -> Result<usize> {
-    // let
     let res = unsafe {
         rros_delay(
             timeout,
@@ -1245,10 +1213,6 @@ pub fn rros_sleep_on(
     let _ret = rros_sleep_on_locked(timeout, timeout_mode, clock, wchan);
     let _ret = rros_put_thread_rq(Some(thread.clone()), rq, flags);
 }
-
-// fn rros_current() -> Result<u64> {
-//     Ok(0)
-// }
 
 pub fn rros_sleep_on_locked(
     timeout: ktime::KtimeT,
@@ -1522,10 +1486,6 @@ fn uninit_thread(thread: Arc<SpinLock<RrosThread>>) {
     // let name = thread.lock().name as *const c_types::c_void;
     // bindings::kfree(name);
 }
-
-use crate::factory::{rros_init_element, RrosElement, RrosFactory};
-use core::ptr;
-use kernel::error::Error;
 
 pub static mut UTHREAD: Option<Arc<SpinLock<RrosThread>>> = None;
 
@@ -1861,8 +1821,7 @@ fn map_uthread_self(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // TODO: add the support of u_window
     // 	thread->u_window = u_window;
 
-    // TODO: add the support of pin_to_initial_cpu. This can be omitted as shown in the map_kthread_self
-    // 	pin_to_initial_cpu(thread);
+    pin_to_initial_cpu(thread.clone());
     // TODO: add the trace function
     // 	trace_rros_thread_map(thread);
 

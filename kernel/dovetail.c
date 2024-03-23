@@ -295,13 +295,13 @@ void inband_event_notify(enum inband_event_type event, void *data)
 		handle_inband_event(event, data);
 }
 
-extern void rust_resume_oob_task(void *ptr);
+extern void rust_resume_oob_task(void *ptr, int cpu);
 
 void __weak resume_oob_task(struct task_struct *p)
 {
 	void *thread = p->thread_info.oob_state.thread;
 	pr_info("the passed thread ptr is %px", thread);
-	rust_resume_oob_task(thread);
+	rust_resume_oob_task(thread, task_cpu(p));
 }
 
 static void finalize_oob_transition(void) /* hard IRQs off */

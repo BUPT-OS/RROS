@@ -12,7 +12,7 @@
 //! Importing necessary features and modules
 
 use kernel::{
-    bindings, c_types, chrdev, cpumask, dovetail, irqstage, percpu, prelude::*, str::CStr, task,
+    bindings, c_types, chrdev, cpumask::CpumaskT, dovetail, irqstage, percpu, prelude::*, str::CStr,
 };
 
 use core::str;
@@ -62,7 +62,7 @@ mod fifo_test;
 mod uapi;
 use factory::rros_early_init_factories;
 
-use crate::sched::this_rros_rq;
+use crate::sched::{this_rros_rq, RROS_CPU_AFFINITY};
 use kernel::memory_rros::rros_init_memory;
 mod crossing;
 mod file;
@@ -92,7 +92,7 @@ module! {
     license: b"GPL v2",
     params: {
         oobcpus_arg: str {
-            default: b"0\0",
+            default: b"0-1\0",
             permissions: 0o444,
             description: b"which cpus in the oob",
         },
@@ -142,7 +142,7 @@ static RUN_FLAG: AtomicU8 = AtomicU8::new(0);
 static SCHED_FLAG: AtomicU8 = AtomicU8::new(0);
 // static RUN_FLAG: AtomicU8 = AtomicU8::new(0);
 static RROS_RUNSTATE: AtomicU8 = AtomicU8::new(RrosRunStates::RrosStateWarmup as u8);
-static mut RROS_OOB_CPUS: cpumask::CpumaskT = cpumask::CpumaskT::from_int(1 as u64);
+static mut RROS_OOB_CPUS: CpumaskT = CpumaskT::from_int(1 as u64);
 
 fn setup_init_state(init_state_var: &'static str) {
     let warn_bad_state: &str = "invalid init state '{}'\n";
@@ -332,10 +332,6 @@ fn test_lantency() {
 }
 impl KernelModule for Rros {
     fn init() -> Result<Self> {
-        let curr = task::Task::current_ptr();
-        unsafe {
-            bindings::set_cpus_allowed_ptr(curr, cpumask::CpumaskT::from_int(1).as_cpumas_ptr());
-        }
         pr_info!("Hello world from rros!\n");
         let init_state_arg_str = str::from_utf8(init_state_arg.read())?;
         setup_init_state(init_state_arg_str);
@@ -345,11 +341,8 @@ impl KernelModule for Rros {
             return Err(kernel::Error::EINVAL);
         }
 
-        let cpu_online_mask = unsafe { cpumask::CpumaskT::read_cpu_online_mask() };
+        let cpu_online_mask = unsafe { CpumaskT::read_cpu_online_mask() };
         // When size_of is 0, align_of is 4, alloc reports an error.
-        // unsafe {RROS_MACHINE_CPUDATA =
-        //     percpu::alloc_per_cpu(size_of::<RrosMachineCpuData>() as usize,
-        //                   align_of::<RrosMachineCpuData>() as usize) as *mut RrosMachineCpuData};
         unsafe {
             RROS_MACHINE_CPUDATA =
                 percpu::alloc_per_cpu(4 as usize, 4 as usize) as *mut RrosMachineCpuData
@@ -372,6 +365,8 @@ impl KernelModule for Rros {
                 RROS_OOB_CPUS.cpumask_copy(&cpu_online_mask);
             }
         }
+
+        unsafe { RROS_CPU_AFFINITY.cpumask_copy(&RROS_OOB_CPUS); }
 
         let res = init_core(); //*sysheap_size_arg.read()
         let fac_reg;

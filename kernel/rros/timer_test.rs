@@ -413,7 +413,7 @@ pub fn test_rros_destroy_timer() -> Result<usize> {
         rros_destroy_timer(xx.clone());
         let xx_lock_rq = xx.lock().get_rq();
         let xx_lock_base = xx.lock().get_base();
-        if xx_lock_rq == 0 as *mut RrosRq {
+        if xx_lock_rq.is_null() {
             pr_debug!("xx rq is none");
         }
         if xx_lock_base == 0 as *mut RrosTimerbase {

@@ -7,7 +7,7 @@ use crate::{
     lock::*,
     monitor::{CLOCK_MONOTONIC, CLOCK_REALTIME},
     poll::RrosPollHead,
-    sched::{self, rros_cpu_rq, rros_get_thread_rq, rros_rq, rros_rq_cpu, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
+    sched::{self, is_rros_cpu, rros_cpu_rq, rros_get_thread_rq, rros_rq, rros_rq_cpu, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
     thread::{rros_current, rros_delay, T_ROOT, T_SYSRST},
     tick::{self, *},
     timeout::{RrosTmode, RROS_INFINITE},
@@ -33,21 +33,19 @@ use kernel::{
     c_types::{self, c_void},
     chrdev::Cdev,
     clockchips,
-    cpumask::{self, CpumaskT},
+    cpumask::{self, CpumaskT, online_cpus},
     device::DeviceType,
     double_linked_list::*,
     file::File,
     file_operations::{FileOpener, FileOperations, IoctlCommand},
-    io_buffer::IoBufferReader,
-    io_buffer::IoBufferWriter,
+    io_buffer::{IoBufferReader, IoBufferWriter},
     ioctl,
     ktime::*,
     percpu,
     prelude::*,
     premmpt, spinlock_init,
     str::CStr,
-    sync::Lock,
-    sync::SpinLock,
+    sync::{Lock, SpinLock},
     sysfs,
     task::Task,
     timekeeping,
@@ -78,8 +76,6 @@ extern "C" {
     fn rust_helper_minor(dev: bindings::dev_t) -> u32;
     fn rust_helper_rcu_read_lock();
     fn rust_helper_rcu_read_unlock();
-    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
 }
 
 #[derive(Default)]
@@ -339,42 +335,57 @@ pub fn adjust_timer(
     rros_enqueue_timer(timer.clone(), tq);
 }
 
-pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) {
-    // Adjust all timers in the List in each CPU tmb of the current clock.
-    // raw_spin_lock_irqsave(&tmb->lock, flags);
-    let cpu = 0;
-    // for_each_online_cpu(cpu) {
-    let rq = rros_cpu_rq(cpu);
-    let tmb = rros_percpu_timers(clock, cpu);
-    let tq = unsafe { &mut (*tmb).q };
+pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) -> Result {
+    for cpu in online_cpus() {
+        let rq: *mut rros_rq = rros_cpu_rq(cpu as i32);
+        let tmb = rros_percpu_timers(clock, cpu as i32);
+        let tq = unsafe { &mut (*tmb).q };
 
-    for i in 1..=tq.len() {
-        let timer = tq.get_by_index(i).unwrap().value.clone();
-        let get_clock = timer.lock().get_clock();
-        if get_clock == clock as *mut RrosClock {
+        let flags: u64 = unsafe { (*tmb).lock.irq_lock_noguard() };
+
+        let mut timers_adjust: Vec<Arc<SpinLock<RrosTimer>>> = Vec::try_with_capacity(tq.len() as usize)?;
+
+        while !tq.is_empty() {
+            let timer = tq.get_by_index(0).unwrap().value.clone();
             rros_dequeue_timer(timer.clone(), tq);
-            adjust_timer(clock, timer.clone(), tq, delta);
+            timers_adjust.try_push(timer)?;
         }
-    }
 
-    if rq != this_rros_rq() {
-        rros_program_remote_tick(clock, rq);
-    } else {
-        rros_program_local_tick(clock);
+        while let Some(timer) = timers_adjust.pop() {
+            let get_clock = timer.lock().get_clock();
+            if get_clock == clock as *mut RrosClock {
+                adjust_timer(clock, timer, tq, delta)
+            } else {
+                rros_enqueue_timer(timer, tq)
+            }
+        }
+
+        if rq != this_rros_rq() {
+            rros_program_remote_tick(clock, rq);
+        } else {
+            rros_program_local_tick(clock);
+        }
+
+        unsafe { (*tmb).lock.irq_unlock_noguard(flags); }
     }
-    //}
+    Ok(())
 }
 
 pub fn rros_stop_timers(clock: &RrosClock) {
-    let cpu = 0;
-    let mut tmb = rros_percpu_timers(&clock, cpu);
-    let tq = unsafe { &mut (*tmb).q };
-    while tq.is_empty() == false {
-        //raw_spin_lock_irqsave(&tmb->lock, flags);
-        pr_debug!("rros_stop_timers: 213");
-        let timer = tq.get_head().unwrap().value.clone();
-        rros_timer_deactivate(timer);
-        //raw_spin_unlock_irqrestore(&tmb->lock, flags);
+    for cpu in online_cpus() {
+        if !is_rros_cpu(cpu as i32) {
+            continue;
+        }
+
+        let mut tmb = rros_percpu_timers(clock, cpu as i32);
+        let flags = unsafe { (*tmb).lock.irq_lock_noguard() };
+        let tq = unsafe { &mut (*tmb).q };
+        while !tq.is_empty() {
+            pr_debug!("rros_stop_timers: 213");
+            let timer = tq.get_head().unwrap().value.clone();
+            rros_timer_deactivate(timer);
+        }
+        unsafe { (*tmb).lock.irq_unlock_noguard(flags); }
     }
 }
 
@@ -413,11 +424,9 @@ fn set_realtime_clock(clock: &mut RrosClock, time: KtimeT) -> i32 {
 }
 
 fn adjust_realtime_clock(clock: &mut RrosClock) {
-    // let old_offset: KtimeT = clock.offset;
-    // unsafe {
-    //     clock.offset = RROS_REALTIME_CLOCK.read() - RROS_MONO_CLOCK.read();
-    // }
-    // rros_adjust_timers(clock, clock.offset - old_offset)
+    let old_offset: KtimeT = clock.offset;
+    clock.offset = rros_read_clock(clock) - unsafe { RROS_MONO_CLOCK.read() };
+    rros_adjust_timers(clock, clock.offset - old_offset);
 }
 
 /**
@@ -1217,10 +1226,9 @@ fn rros_init_clock(clock: &mut RrosClock, affinity: &CpumaskT) -> Result<usize> 
     }
     clock.timerdata = tmb;
 
-    let mut tmb = rros_percpu_timers(clock, 0);
-
-    unsafe {
-        raw_spin_lock_init(&mut (*tmb).lock);
+    for cpu in online_cpus() {
+        let mut tmb = rros_percpu_timers(clock, cpu as i32);
+        unsafe { raw_spin_lock_init(&mut (*tmb).lock); }
     }
 
     clock.offset = 0;

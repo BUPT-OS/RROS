@@ -92,7 +92,7 @@ pub fn test_rros_adjust_timers() -> Result<usize> {
         (*tmb).q.add_head(yy.clone());
 
         pr_debug!("before adjust_timer");
-        rros_adjust_timers(&mut RROS_MONO_CLOCK, 100);
+        rros_adjust_timers(&mut RROS_MONO_CLOCK, 100)?;
         pr_debug!("len of tmb is {}", (*tmb).q.len());
     }
     pr_debug!("~~~test_rros_adjust_timers end~~~");

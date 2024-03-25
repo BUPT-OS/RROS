@@ -42,7 +42,8 @@ use crate::{
     timeout::RROS_INFINITE,
     timer::*,
     tp,
-    wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO}, RROS_MACHINE_CPUDATA,
+    wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO},
+    RROS_MACHINE_CPUDATA, RROS_OOB_CPUS,
 };
 
 extern "C" {
@@ -269,6 +270,11 @@ pub fn is_threading_cpu(cpu: i32) -> bool {
 #[cfg(not(CONFIG_SMP))]
 pub fn is_threading_cpu(cpu: i32) -> bool {
     return true;
+}
+
+#[cfg(CONFIG_SMP)]
+pub fn is_rros_cpu(cpu: i32) -> bool {
+    unsafe { RROS_OOB_CPUS.cpumask_test_cpu(cpu as u32) }
 }
 
 #[cfg(not(CONFIG_SMP))]

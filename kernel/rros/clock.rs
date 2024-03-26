@@ -639,14 +639,14 @@ pub fn rros_move_timer(timer: Arc<SpinLock<RrosTimer>>, clock: *mut RrosClock, m
     let old_base = lock_timer_base(timer.clone(), &mut flags);
     
     if rros_timer_on_rq(timer.clone(), rq) && clock == unsafe { (*timer.locked_data().get()).get_clock() } {
-        unlock_timer_base(timer.clone(), flags);
+        unlock_timer_base(old_base, flags);
         return;
     }
     let new_base = rros_percpu_timers(unsafe { &(*(*clock).get_master()) }, cpu);
     if unsafe { (*timer.locked_data().get()).get_status() & RROS_TIMER_RUNNING } != 0 {
         stop_timer_locked(timer.clone());
-        unlock_timer_base(timer.clone(), flags);
-        let flags: u64 = raw_spin_lock_irqsave();
+        unlock_timer_base(old_base, flags);
+        let flags: u64 = hard_local_irq_save();
         double_timer_base_lock(old_base, new_base);
         
         unsafe {
@@ -661,7 +661,7 @@ pub fn rros_move_timer(timer: Arc<SpinLock<RrosTimer>>, clock: *mut RrosClock, m
             rros_program_remote_tick(clock, rq);
         }
         double_timer_base_unlock(old_base, new_base);
-        raw_spin_unlock_irqrestore(flags);
+        hard_local_irq_restore(flags);
     } else {
         unsafe {
             #[cfg(CONFIG_SMP)]
@@ -670,20 +670,20 @@ pub fn rros_move_timer(timer: Arc<SpinLock<RrosTimer>>, clock: *mut RrosClock, m
             (*timer.locked_data().get()).set_base(new_base);
             (*timer.locked_data().get()).set_clock(clock);
         }
-        unlock_timer_base(timer.clone(), flags);
+        unlock_timer_base(old_base, flags);
     }
 }
 
 #[cfg(CONFIG_SMP)]
 fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {
-    let flags = raw_spin_lock_irqsave();
+    let flags = hard_local_irq_save();
 
     let this_rq = rros_current_rq();
     if unsafe { (*timer.locked_data().get()).get_rq() != this_rq } {
         rros_move_timer(timer.clone(), unsafe { (*timer.locked_data().get()).get_clock() }, this_rq);
     }
 
-    raw_spin_unlock_irqrestore(flags);
+    hard_local_irq_restore(flags);
 }
 
 #[cfg(not(CONFIG_SMP))]

@@ -19,7 +19,7 @@ use crate::{
     arch::arm64::syscall::*,
     clock::{rros_read_clock, RROS_MONO_CLOCK, RROS_REALTIME_CLOCK},
     file::rros_get_file,
-    is_clock_gettime, is_clock_gettime64, lock, oob_arg1, oob_arg2, oob_arg3,
+    is_clock_gettime, is_clock_gettime64, oob_arg1, oob_arg2, oob_arg3,
     sched::{rros_is_inband, rros_switch_inband, RrosThread},
     thread::*,
     uapi::rros::syscall::*,
@@ -174,8 +174,7 @@ fn prepare_for_signal(
     // * @curr->lock (i.e. @curr cannot go away under out feet).
     // */
     // [TODO: use the curr rq lock to make smp work]
-    flags = lock::raw_spin_lock_irqsave();
-    // raw_spin_lock_irqsave(&curr->rq->lock, flags);
+    flags = unsafe { (*(*(*curr).locked_data().get()).rq.unwrap()).lock.raw_spin_lock_irqsave() };
 
     // /*
     // * We are called from out-of-band mode only to act upon a
@@ -198,7 +197,7 @@ fn prepare_for_signal(
         }
     }
 
-    lock::raw_spin_unlock_irqrestore(flags);
+    unsafe { (*(*(*curr).locked_data().get()).rq.unwrap()).lock.raw_spin_unlock_irqrestore(flags); }
 
     rros_test_cancel();
 

@@ -4,7 +4,7 @@ use crate::{
     fifo::{self, RROS_SCHED_FIFO},
     file::RrosFileBinding,
     idle,
-    lock::{self, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
+    lock,
     sched::*,
     timeout,
     timer::{self, program_timer, rros_dequeue_timer, rros_stop_timer, rros_update_timer_date},
@@ -56,6 +56,14 @@ extern "C" {
         ...
     ) -> *mut c_types::c_void;
     fn rust_helper_unstall_oob();
+    fn rust_helper_hard_local_irq_enable();
+    #[allow(dead_code)]
+    fn rust_helper_preempt_enable();
+    #[allow(dead_code)]
+    fn rust_helper_preempt_disable();
+    fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
+    fn rust_helper_hard_local_irq_restore(flags: c_types::c_ulong);
+    // fn rust_helper_doveail_mm_state() -> *mut bindings::oob_mm_state;
 }
 
 pub const SIGDEBUG: i32 = 24;
@@ -802,14 +810,6 @@ fn map_kthread_self(kthread: &mut RrosKthread) -> Result<usize> {
     return ret;
 }
 
-extern "C" {
-    fn rust_helper_hard_local_irq_enable();
-    #[allow(dead_code)]
-    fn rust_helper_preempt_enable();
-    #[allow(dead_code)]
-    fn rust_helper_preempt_disable();
-}
-
 pub fn rros_current() -> *mut SpinLock<RrosThread> {
     dovetail::dovetail_current_state().thread() as *mut SpinLock<RrosThread>
 }
@@ -934,11 +934,6 @@ pub fn rros_switch_oob() -> Result<usize> {
     Ok(0)
 }
 
-extern "C" {
-    fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
-    fn rust_helper_hard_local_irq_restore(flags: c_types::c_ulong);
-    // fn rust_helper_doveail_mm_state() -> *mut bindings::oob_mm_state;
-}
 // pub fn finish_rq_switch_from_inband() {
 //     bindings::_raw_spin_unlock_irq()
 // }
@@ -1445,13 +1440,13 @@ fn do_cleanup_current(curr: Arc<SpinLock<RrosThread>>) -> Result<usize> {
 #[allow(dead_code)]
 fn dequeue_old_thread(_thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     // fn dequeue_old_thread(thread: &mut SpinLock<RrosThread>) -> Result<usize> {
-    let flags = lock::raw_spin_lock_irqsave();
+    let flags = lock::hard_local_irq_save();
     // kernel corrupted bug is here: next is 0 at initialization, but uses * to get its value
     // let next = unsafe{&mut *thread.lock().next};
     // next.remove();
 
     // 	rros_nrthreads--;
-    lock::raw_spin_unlock_irqrestore(flags);
+    lock::hard_local_irq_restore(flags);
     Ok(0)
 }
 
@@ -2503,8 +2498,8 @@ pub fn rros_set_period(
     // if (period < rros_get_clock_gravity(clock, kernel))
     //     return -EINVAL;
 
-    let flags = raw_spin_lock_irqsave();
-    // raw_spin_lock_irqsave(&curr->lock, flags);
+    // TODO: we should use a guard to avoid manully locking and releasing of locks.
+    let flags = thread.irq_lock_noguard();
 
     timer::rros_prepare_timed_wait(
         timer.clone(),
@@ -2519,8 +2514,7 @@ pub fn rros_set_period(
     timer::rros_start_timer(timer.clone(), idate, period);
     // rros_start_timer(&curr->ptimer, idate, period);
 
-    raw_spin_unlock_irqrestore(flags);
-    // raw_spin_unlock_irqrestore(&curr->lock, flags);
+    thread.irq_unlock_noguard(flags);
 
     // return ret;
     // }
@@ -2624,7 +2618,6 @@ fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32
     let now = rros_read_clock(unsafe { &*(clock as *const clock::RrosClock) });
     // 	now = rros_read_clock(timer->clock);
     let tmb = timer::lock_timer_base(timer.clone(), &mut flags);
-    // 	base = lock_timer_base(timer, &flags);
 
     let next_date = timer::rros_get_timer_next_date(timer.clone());
     let delta = ktime_sub(now, next_date);
@@ -2639,8 +2632,7 @@ fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32
         }
         // 	timer->pexpect_ticks++;
 
-        timer::unlock_timer_base(timer.clone(), flags);
-        // 	unlock_timer_base(base, flags);
+        timer::unlock_timer_base(tmb, flags);
 
         // 	/*
         // 	 * Hide overruns due to the most recent ptracing session from
@@ -2676,8 +2668,7 @@ fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32
         }
         // 	timer->pexpect_ticks++;
 
-        timer::unlock_timer_base(timer.clone(), flags);
-        // 	unlock_timer_base(base, flags);
+        timer::unlock_timer_base(tmb, flags);
 
         // 	/*
         // 	 * Hide overruns due to the most recent ptracing session from
@@ -2730,8 +2721,7 @@ fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32
     }
     // 	timer->pexpect_ticks++;
 
-    timer::unlock_timer_base(timer.clone(), flags);
-    // 	unlock_timer_base(base, flags);
+    timer::unlock_timer_base(tmb, flags);
 
     // 	/*
     // 	 * Hide overruns due to the most recent ptracing session from

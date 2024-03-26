@@ -130,8 +130,8 @@ pub struct XbufRing {
     pub wroff: u32,
     pub wrrsvd: u32,
     pub wrpending: i32,
-    pub lock: Option<fn(&XbufRing) -> u32>,
-    pub unlock: Option<fn(&XbufRing, flags: u32)>,
+    pub lock: Option<fn(&XbufRing) -> u64>,
+    pub unlock: Option<fn(&XbufRing, flags: u64)>,
     pub wait_input: Option<fn(&XbufRing, len: usize, avail: usize) -> i32>,
     pub signal_input: Option<fn(&XbufRing, sigpoll: bool)>,
     pub wait_output: Option<fn(&XbufRing, len: usize) -> i32>,
@@ -159,14 +159,14 @@ impl XbufRing {
         })
     }
 
-    fn lock(&self) -> u32 {
+    fn lock(&self) -> u64 {
         if self.lock.is_some() {
             return self.lock.unwrap()(&self);
         }
         0
     }
 
-    fn unlock(&self, flags: u32) {
+    fn unlock(&self, flags: u64) {
         if self.unlock.is_some() {
             self.unlock.unwrap()(&self, flags);
         }
@@ -383,7 +383,7 @@ pub fn read_from_kernel(wd: &mut XbufWdesc, dst: *mut c_char, len: usize) -> i32
 
 pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i32 {
     let sigpoll: bool;
-    let mut flags: u32;
+    let mut flags: u64;
     let mut avail: u32;
     let mut ret: i32;
     let mut rbytes: i32;
@@ -492,7 +492,7 @@ pub fn do_xbuf_read(ring: &mut XbufRing, rd: &mut XbufRdesc, f_flags: i32) -> i3
 
 pub fn do_xbuf_write(ring: &mut XbufRing, wd: &mut XbufWdesc, f_flags: i32) -> i32 {
     let sigpoll: bool;
-    let mut flags: u32;
+    let mut flags: u64;
     let mut avail: u32;
     let mut ret: i32;
     let mut wbytes: i32;
@@ -589,25 +589,27 @@ pub fn do_xbuf_write(ring: &mut XbufRing, wd: &mut XbufWdesc, f_flags: i32) -> i
     ret
 }
 
-pub fn inbound_lock(_ring: &XbufRing) -> u32 {
-    raw_spin_lock_irqsave().try_into().unwrap()
+pub fn inbound_lock(ring: &XbufRing) -> u64 {
+    let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
+    unsafe { (*xbuf).ibnd.lock.irq_lock_noguard() }
 }
 
-pub fn inbound_unlock(_ring: &XbufRing, flags: u32) {
-    raw_spin_unlock_irqrestore(flags.into());
+pub fn inbound_unlock(ring: &XbufRing, flags: u64) {
+    let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
+    unsafe { (*xbuf).ibnd.lock.irq_unlock_noguard(flags); }
 }
 
 pub fn inbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
     let ibnd: &mut XbufInbound = unsafe { &mut (*xbuf).ibnd };
-    let flags: u32;
+    let flags: u64;
     let o_blocked: bool;
 
     if avail > 0 {
-        flags = raw_spin_lock_irqsave().try_into().unwrap();
+        flags = ibnd.o_event.wait.lock.raw_spin_lock_irqsave();
 
         o_blocked = ibnd.o_event.wait.wake_up_head().is_some();
-        raw_spin_unlock_irqrestore(flags.into());
+        ibnd.o_event.wait.lock.raw_spin_unlock_irqrestore(flags);
         if o_blocked {
             return -(bindings::EAGAIN as i32);
         }
@@ -717,12 +719,14 @@ pub fn xbuf_oob_ioctl(_filp: &File, _cmd: u32, _arg: u32) -> i32 {
     -(bindings::ENOTTY as i32)
 }
 
-pub fn outbound_lock(_ring: &XbufRing) -> u32 {
-    raw_spin_lock_irqsave().try_into().unwrap()
+pub fn outbound_lock(ring: &XbufRing) -> u64 {
+    let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
+    unsafe { (*xbuf).obnd.i_event.lock.raw_spin_lock_irqsave() }
 }
 
-pub fn outbound_unlock(_ring: &XbufRing, flags: u32) {
-    raw_spin_unlock_irqrestore(flags.into());
+pub fn outbound_unlock(ring: &XbufRing, flags: u64) {
+    let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
+    unsafe { (*xbuf).obnd.i_event.lock.raw_spin_unlock_irqrestore(flags); }
 }
 
 pub fn outbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
@@ -836,7 +840,7 @@ fn xbuf_oob_poll(filp: &File, wait: *mut bindings::oob_poll_wait) -> Result<u32>
     let xbuf: &mut RrosXbuf = unsafe { &mut *((*((*fbind).element)).pointer as *mut RrosXbuf) };
     let obnd = &xbuf.obnd;
     let ibnd = &xbuf.ibnd;
-    let mut flags: u32;
+    let mut flags: u64;
     let mut ready: u32 = 0;
     let rwait = unsafe { &mut *(wait as *mut OobPollWait) };
 

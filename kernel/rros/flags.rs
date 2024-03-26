@@ -1,6 +1,5 @@
 use crate::{
     clock::{RrosClock, RROS_MONO_CLOCK},
-    lock::{raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
     sched::rros_schedule,
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
@@ -100,10 +99,9 @@ impl RrosFlag {
 
     #[inline]
     pub fn flush_nosched(&mut self, reason: i32) {
-        let flags: u64;
-        flags = raw_spin_lock_irqsave();
+        let flags: u64 = self.wait.lock.raw_spin_lock_irqsave();
         self.wait.flush_locked(reason);
-        raw_spin_unlock_irqrestore(flags);
+        self.wait.lock.raw_spin_unlock_irqrestore(flags);
     }
 }
 

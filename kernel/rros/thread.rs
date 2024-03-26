@@ -2454,7 +2454,7 @@ impl KthreadRunner {
 }
 
 pub fn rros_set_period(
-    _clock: &mut clock::RrosClock,
+    clock: &mut clock::RrosClock,
     idate: ktime::KtimeT,
     period: ktime::KtimeT,
     flag: i32,
@@ -2506,8 +2506,11 @@ pub fn rros_set_period(
     let flags = raw_spin_lock_irqsave();
     // raw_spin_lock_irqsave(&curr->lock, flags);
 
-    // TODO: when add the real smp function, we nned to add the move
-    // rros_prepare_timed_wait(&curr->ptimer, clock, rros_thread_rq(curr));
+    timer::rros_prepare_timed_wait(
+        timer.clone(),
+        clock,
+        unsafe { (*thread.locked_data().get()).rq.unwrap() }
+    );
 
     // TODO: add this function
     // if (timeout_infinite(idate))

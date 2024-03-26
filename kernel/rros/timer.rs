@@ -598,10 +598,18 @@ pub fn rros_abs_timeout(timer: Arc<SpinLock<RrosTimer>>, delta: KtimeT) -> Ktime
     unsafe { ktime_add((*(*timer.locked_data().get()).get_clock()).read(), delta) }
 }
 
-// fn rros_prepare_timed_wait(timer: rros_timer, clock: rros_clock, rq: rros_rq) {
-/* We may change the reference clock before waiting. */
-// if (rq != timer->rq || clock != timer->clock) {
-// rros_move_timer(timer, clock, rq);
-// }
+#[cfg(CONFIG_SMP)]
+pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut RrosClock, rq: *mut rros_rq) {
+    let f: bool = unsafe { (*timer.locked_data().get()).get_clock() != clock as *mut RrosClock };
+    let s: bool = unsafe { (*timer.locked_data().get()).get_rq() != rq };
+    if f || s {
+        rros_move_timer(timer, clock, rq);
+    }
+}
 
-// }
+#[cfg(not(CONFIG_SMP))]
+pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut RrosClock, rq: *mut rros_rq) {
+    if unsafe { (*timer.locked_data().get()).get_clock() != clock as *mut RrosClock } {
+        rros_move_timer(timer, clock, rq);
+    }
+}

@@ -1,0 +1,17 @@
+# Rros real-time core
+config HAVE_ARCH_RROS
+	bool
+
+menuconfig Rros
+	bool "BUPT real-time core"
+	depends on HAVE_ARCH_RROS
+	select DOVETAIL
+	select DEVTMPFS
+	help
+
+	  The Rros core is a real-time component of the Linux kernel,
+	  which delivers very short and bounded response time to
+	  interrupt and task events.  Rros runs asynchronously to the
+	  common kernel services, on the high-priority, out-of-band
+	  stage managed by the Dovetail layer.
+

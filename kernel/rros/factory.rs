@@ -73,10 +73,10 @@ const RROS_MUTEX_FLCEIL: FundleT = 0x40000000;
 const RROS_HANDLE_INDEX_MASK: FundleT = RROS_MUTEX_FLCEIL | RROS_MUTEX_FLCLAIM;
 
 pub struct RrosIndex {
-    #[allow(dead_code)]
-    rbroot: rbtree::RBTree<u32, u32>, // TODO: modify the u32.
-    lock: SpinLock<i32>,
-    #[allow(dead_code)]
+    // #[allow(dead_code)]
+    rbtree: SpinLock<rbtree::RBTree<FundleT, Rc<RefCell<RrosElement>>>>, // TODO: modify the u32.
+    // lock: SpinLock<i32>,
+    // #[allow(dead_code)]
     generator: FundleT,
 }
 
@@ -906,11 +906,10 @@ fn rros_create_factory(
             }
 
             let mut index = RrosIndex {
-                rbroot: rbtree::RBTree::new(),
-                lock: unsafe { SpinLock::new(0) },
+                rbtree: unsafe { SpinLock::new(rbtree::RBTree::new()) },
                 generator: RROS_NO_HANDLE,
             };
-            let pinned = unsafe { Pin::new_unchecked(&mut index.lock) };
+            let pinned = unsafe { Pin::new_unchecked(&mut index.rbtree) };
             spinlock_init!(pinned, "value");
             inside.index = Some(index);
 
@@ -1437,4 +1436,24 @@ pub fn rros_element_name(e: &RrosElement) -> *const c_types::c_char {
         return e.devname.as_ref().unwrap().get_name();
     }
     0 as *const c_types::c_char
+}
+
+fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
+    unsafe {
+        let map = (*e.borrow_mut().factory.locked_data().get())
+            .inside
+            .as_ref()
+            .unwrap()
+            .index
+            .as_ref()
+            .unwrap();
+        let flag = map.rbtree.irq_lock_noguard();
+        (*map.rbtree.locked_data().get()).remove(&e.borrow().fundle);
+        map.rbtree.irq_unlock_noguard(flag);
+    }
+}
+
+fn rros_destroy_element(e: Rc<RefCell<RrosElement>>) {
+    // `clear_bit` is unnecessary because minor_map is a u64 type in rros.
+    // `putname` is implemented automatically in `drop` function.
 }

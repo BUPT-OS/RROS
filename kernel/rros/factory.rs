@@ -10,20 +10,20 @@ use alloc::rc::Rc;
 use kernel::{
     bindings,
     bitmap::{self, bitmap_zalloc},
-    c_str, c_types, chrdev, class, device,
-    device::DeviceType,
+    c_str, c_types, chrdev, class,
+    device::{self, DeviceType},
     file::{self, fd_install, File},
-    file_operations::FileOperations,
-    file_operations::{FileOpener, IoctlCommand},
+    file_operations::{FileOpener, FileOperations, IoctlCommand},
     fs::{self, Filename},
     io_buffer::IoBufferWriter,
     irq_work, kernelh,
     prelude::*,
-    rbtree, spinlock_init,
+    rbtree::{self},
+    spinlock_init,
     str::CStr,
     sync::{Lock, SpinLock},
-    sysfs, types, uidgid,
-    uidgid::{KgidT, KuidT},
+    sysfs, types,
+    uidgid::{self, KgidT, KuidT},
     workqueue, ThisModule,
 };
 
@@ -1222,9 +1222,6 @@ impl RrosCloneReq {
     }
 }
 
-#[allow(dead_code)]
-fn rros_index_factory_element() {}
-
 extern "C" {
     pub fn rust_helper_copy_from_user(
         to: *mut c_types::c_void,
@@ -1438,6 +1435,65 @@ pub fn rros_element_name(e: &RrosElement) -> *const c_types::c_char {
     0 as *const c_types::c_char
 }
 
+#[allow(dead_code)]
+fn rros_index_element(map: &mut RrosIndex, e: Rc<RefCell<RrosElement>>) {
+    let mut fundle: FundleT;
+    let mut guard: FundleT = 0;
+    let mut flags: u64;
+
+    loop {
+        if rros_get_index({
+            guard = guard + 1;
+            guard
+        }) == 0
+        {
+            e.borrow_mut().fundle = RROS_NO_HANDLE;
+            return;
+        }
+
+        flags = map.rbtree.irq_lock_noguard();
+        fundle = rros_get_index({
+            map.generator += 1;
+            map.generator
+        });
+        if !fundle != 0 {
+            map.generator = 1;
+            fundle = map.generator;
+        }
+
+        let ret = unsafe { (*map.rbtree.locked_data().get()).get(&fundle) };
+        let mut ok = Err(Error::EEXIST);
+        if ret.is_none() {
+            // `try_insert`` always return Ok
+            ok = unsafe { (*map.rbtree.locked_data().get()).try_insert(fundle, e.clone()) };
+        }
+
+        map.rbtree.irq_unlock_noguard(flags);
+
+        if ok.is_ok() {
+            break;
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[inline]
+pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
+    unsafe {
+        rros_index_element(
+            (*e.borrow_mut().factory.locked_data().get())
+                .inside
+                .as_mut()
+                .unwrap()
+                .index
+                .as_mut()
+                .unwrap(),
+            e.clone(),
+        )
+    }
+}
+
+#[allow(dead_code)]
 fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     unsafe {
         let map = (*e.borrow_mut().factory.locked_data().get())
@@ -1453,7 +1509,31 @@ fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     }
 }
 
-fn rros_destroy_element(e: Rc<RefCell<RrosElement>>) {
+// Example of using the `rros_get_element_by_fundle` function
+// let e = rros_get_element_by_fundle((*thread::RROS_THREAD_FACTORY.locked_data().get()).inside.as_mut().unwrap().index.as_mut().unwrap(), fundle);
+// let element: *mut T; // T means the type of the element.
+// if e.is_some() {
+//      let e = e.unwrap();
+//      let e = e.borrow_mut();
+//      element = e.pointer as *mut T;
+// }
+//
+#[allow(dead_code)]
+pub fn rros_get_element_by_fundle(
+    map: &mut RrosIndex,
+    fundle: FundleT,
+) -> Option<&Rc<RefCell<RrosElement>>> {
+    let flags = map.rbtree.irq_lock_noguard();
+
+    let e = unsafe { (*map.rbtree.locked_data().get()).get(&fundle) };
+
+    map.rbtree.irq_unlock_noguard(flags);
+
+    return e;
+}
+
+#[allow(dead_code)]
+fn rros_destroy_element(_e: Rc<RefCell<RrosElement>>) {
     // `clear_bit` is unnecessary because minor_map is a u64 type in rros.
     // `putname` is implemented automatically in `drop` function.
 }

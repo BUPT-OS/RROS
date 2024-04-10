@@ -210,7 +210,7 @@ pub struct XbufInbound {
 impl XbufInbound {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            i_event: waitqueue::WaitQueueHead::default(),
+            i_event: waitqueue::WaitQueueHead::new(),
             o_event: RrosFlag::new(),
             irq_work: IrqWork::new(),
             ring: XbufRing::new()?,
@@ -235,7 +235,7 @@ impl XbufOutbound {
                     RROS_WAIT_PRIO as i32,
                 )
             },
-            o_event: waitqueue::WaitQueueHead::default(),
+            o_event: waitqueue::WaitQueueHead::new(),
             irq_work: IrqWork::new(),
             ring: XbufRing::new()?,
         })

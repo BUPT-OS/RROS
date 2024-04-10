@@ -60,12 +60,15 @@
 #include <linux/spinlock.h>
 #include <linux/spinlock_types.h>
 
+#include <linux/wait.h>
 #include <net/sock.h>
 #include <linux/jhash.h>
 #include <linux/bottom_half.h>
 #include <linux/if_vlan.h>
 #include <linux/skbuff.h>
 #include <linux/hashtable.h>
+#include <linux/kdev_t.h>
+#include <linux/sched.h>
 void rust_helper_BUG(void)
 {
 	BUG();
@@ -687,6 +690,11 @@ unsigned long rust_helper_IRQF_OOB(void) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_IRQF_OOB);
 
+void rust_helper_dovetail_send_mayday(struct task_struct *castaway){
+	dovetail_send_mayday(castaway);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dovetail_send_mayday);
+
 struct oob_thread_state *rust_helper_dovetail_current_state(void) {
 	return dovetail_current_state();
 }
@@ -1025,6 +1033,24 @@ void rust_helper_init_work(struct work_struct*work,void (*rust_helper_work_func)
 	INIT_WORK(work,rust_helper_work_func);
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_work);
+
+//NOTE: rust_helper for stax
+unsigned long rust_helper_spin_lock_irqsave(spinlock_t *lock) {
+	unsigned long flags;
+	spin_lock_irqsave(lock, flags);
+	return flags;
+}
+EXPORT_SYMBOL_GPL(rust_helper_spin_lock_irqsave);
+
+bool rust_helper_waitqueue_active(struct wait_queue_head *wq_head) {
+	return !!waitqueue_active(wq_head);
+}
+EXPORT_SYMBOL_GPL(rust_helper_waitqueue_active);
+
+void rust_helper_init_waitqueue_head(struct wait_queue_head *wq_head) {
+	init_waitqueue_head(wq_head);
+}
+EXPORT_SYMBOL_GPL(rust_helper_init_waitqueue_head);
 
 #ifdef CONFIG_NET_OOB
 void rust_helper__vlan_hwaccel_put_tag(struct sk_buff *skb, __be16 vlan_proto, __u16 vlan_tci) {

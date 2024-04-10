@@ -42,7 +42,7 @@ use kernel::{
     sched::sched_setscheduler,
     spinlock_init,
     str::CStr,
-    sync::{Lock, SpinLock},
+    sync::{Guard, Lock, SpinLock},
     task::{self, Task},
     types,
 };
@@ -132,6 +132,7 @@ pub const RROS_HMDIAG_LKDEPEND: i32 = 5;
 pub const RROS_HMDIAG_LKIMBALANCE: i32 = 6;
 #[allow(dead_code)]
 pub const RROS_HMDIAG_LKSLEEP: i32 = 7;
+pub const RROS_HMDIAG_STAGEX: u32 = 8;
 
 #[allow(dead_code)]
 pub const RROS_THRIOC_SET_SCHEDPARAM: u32 = 1;
@@ -1007,7 +1008,7 @@ pub fn rros_release_thread_locked(thread: Arc<SpinLock<RrosThread>>, mask: u32, 
     }
 }
 
-fn rros_hold_thread(kthread: &mut RrosKthread, mask: u32) {
+pub fn rros_hold_thread(kthread: &mut RrosKthread, mask: u32) {
     // rros_hold_thread(kthread.thread.clone().unwrap(), T_DORMANT);
     // as_mut().unwrap()
     let thread = kthread.thread.clone().unwrap();
@@ -2787,4 +2788,58 @@ fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32
     // 	return overruns;
     // }
     // EXPORT_SYMBOL_GPL(rros_get_timer_overruns);
+}
+
+pub fn rros_kick_thread(thread: Arc<SpinLock<RrosThread>>, mut info: u32) {
+    let mut flags = 0u64;
+    let rq = rros_get_thread_rq(Some(thread.clone()), &mut flags);
+    loop {
+        let mut guard: Guard<'_, SpinLock<RrosThread>> = thread.lock();
+        if guard.state & T_INBAND != 0 {
+            break;
+        }
+
+        if (info & T_PTSIG == 0) && (guard.info & T_KICKED != 0) {
+            break;
+        }
+
+        rros_wakeup_thread_locked(
+            thread.clone(),
+            T_DELAY | T_PEND | T_WAIT,
+            (T_KICKED | T_BREAK) as i32,
+        );
+
+        if guard.info & T_PTSTOP != 0 {
+            if guard.info & T_PTJOIN != 0 {
+                guard.info &= !T_PTJOIN;
+            } else {
+                info &= !T_PTJOIN;
+            }
+        }
+
+        rros_release_thread_locked(thread.clone(), T_SUSP | T_HALT | T_PTSYNC, T_KICKED);
+
+        if guard.state & T_USER != 0 {
+            match this_rros_rq_thread() {
+                Some(_) => {
+                    dovetail::dovetail_send_mayday(guard.altsched.0.task);
+                }
+                None => {}
+            }
+        }
+
+        guard.info |= T_KICKED;
+
+        if guard.state & T_READY != 0 {
+            rros_force_thread(thread.clone());
+            rros_set_resched(guard.rq);
+        }
+
+        if info != 0 {
+            guard.info |= info;
+        }
+        break;
+    }
+
+    rros_put_thread_rq(Some(thread.clone()), rq, flags).unwrap();
 }

@@ -18,8 +18,7 @@ use kernel::{
     io_buffer::IoBufferWriter,
     irq_work, kernelh,
     prelude::*,
-    rbtree::{self},
-    spinlock_init,
+    rbtree, spinlock_init,
     str::CStr,
     sync::{Lock, SpinLock},
     sysfs, types,
@@ -1494,7 +1493,7 @@ pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
 }
 
 #[allow(dead_code)]
-fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
+pub fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     unsafe {
         let map = (*e.borrow_mut().factory.locked_data().get())
             .inside

@@ -2199,51 +2199,6 @@ pub fn rros_track_thread_policy(
     }
 }
 
-// NOTE: unused function
-// #[allow(dead_code)]
-// pub fn thread_oob_ioctl(filp: &File, cmd: u32, arg: u32) -> Result<usize> {
-//     let __fbind = unsafe { (*filp.get_ptr()).private_data as *mut RrosFileBinding };
-//     let thread = unsafe {
-//         let __fbind = (*_file.get_ptr()).private_data as *mut RrosFileBinding;
-//         Arc::increment_strong_count((*(*__fbind).element).pointer as *const SpinLock<RrosThread>);
-//         Arc::from_raw((*(*__fbind).element).pointer as *mut SpinLock<RrosThread>)
-//     };
-
-//     // let curr = rros_current();
-
-//     unsafe {
-//         if thread.lock().state & T_ZOMBIE != 0 {
-//             return Err(kernel::Error::ESTALE);
-//         }
-//     }
-
-//     // switch (cmd) {
-//     // case RROS_THRIOC_SWITCH_OOB:
-//     // 	if (thread == curr)
-//     // 		ret = 0;	/* Already there. */
-//     // 	break;
-//     // case RROS_THRIOC_SWITCH_INBAND:
-//     // 	if (thread == curr) {
-//     // 		rros_switch_inband(RROS_HMDIAG_NONE);
-//     // 		ret = 0;
-//     // 	}
-//     // 	break;
-//     // case RROS_THRIOC_SIGNAL:
-//     // 	ret = raw_get_user(monfd, (__u32 *)arg);
-//     // 	if (ret)
-//     // 		return -EFAULT;
-//     // 	ret = rros_signal_monitor_targeted(thread, monfd);
-//     // 	break;
-//     // case RROS_THRIOC_YIELD:
-//     // 	rros_release_thread(curr, 0, 0);
-//     // 	rros_schedule();
-//     // 	ret = 0;
-//     // 	break;
-//     // default:
-//     return thread_common_ioctl(thread, cmd, arg);
-//     // }
-// }
-
 fn update_mode(
     thread: Arc<SpinLock<RrosThread>>,
     mask: u32,
@@ -2257,14 +2212,14 @@ fn update_mode(
     }
 
     if set {
+        let thread = thread.deref().locked_data().get();
         unsafe {
-            let thread = thread.deref().locked_data().get();
             if (mask & T_HMOBS) != 0 && (*thread).observable.is_none() {
                 return Err(Error::EINVAL);
             }
-            if (!(mask & (T_HMSIG | T_HMOBS))) != 0 {
-                mask |= T_HMSIG;
-            }
+        }
+        if (!(mask & (T_HMSIG | T_HMOBS))) != 0 {
+            mask |= T_HMSIG;
         }
     }
 

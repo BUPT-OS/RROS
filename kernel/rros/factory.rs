@@ -1384,7 +1384,7 @@ pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
 }
 
 #[allow(dead_code)]
-fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
+pub fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     let mut e_refmut = e.deref().borrow_mut();
     let e_ref = e_refmut.deref_mut();
     let map = unsafe {

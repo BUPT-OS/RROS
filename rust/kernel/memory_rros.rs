@@ -84,7 +84,6 @@ pub fn __rros_shared_heap_alloc(size: usize, _align: usize) -> *mut u8 {
     unsafe { RROS_SHARED_HEAP.rros_alloc_chunk(size).unwrap() }
 }
 
-
 /// `__rros_shared_heap_dealloc`: This function deallocates a chunk of memory used for the shared heap.
 #[no_mangle]
 pub fn __rros_shared_heap_dealloc(ptr: *mut u8, _size: usize, _align: usize) {

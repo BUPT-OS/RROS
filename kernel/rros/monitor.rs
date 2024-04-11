@@ -34,13 +34,14 @@ use crate::{
     clock::{rros_get_clock_by_fd, RrosClock},
     factory::{
         self, CloneData, FundleT, RrosElement, RrosElementIds, RrosFactory,
-        __rros_get_element_by_fundle, rros_get_index, rros_index_factory_element, RrosFactoryType,
+        __rros_get_element_by_fundle, rros_get_index, rros_index_factory_element,
+        rros_unindex_factory_element, RrosFactoryType,
     },
     fifo::RROS_FIFO_MAX_PRIO,
     file::{rros_get_file, rros_put_file, RrosFile, RrosFileBinding},
     mutex::{
         atomic_cmpxchg, atomic_dec_return, atomic_inc, atomic_inc_return, atomic_read, atomic_set,
-        RrosMutex, __rros_unlock_mutex, rros_commit_mutex_ceiling,
+        RrosMutex, __rros_unlock_mutex, rros_commit_mutex_ceiling, rros_destroy_mutex,
         rros_init_mutex_pi, rros_init_mutex_pp, rros_lock_mutex_timeout, rros_trylock_mutex,
         RROS_NO_HANDLE,
     },
@@ -142,7 +143,6 @@ struct RrosMonitorStateGate {
 impl RrosMonitorStateGate {
     #[allow(dead_code)]
     fn recursive(&self) -> u32 {
-
         self.recursive_nesting & 0b1
     }
 
@@ -407,7 +407,7 @@ impl RrosMonitorGate {
         if fundle == *pp_pending {
             *pp_pending = RROS_NO_HANDLE;
         }
-        
+
         let mutex = Arc::as_ptr(&self.mutex) as *mut RrosMutex;
         __rros_unlock_mutex(mutex).unwrap();
     }
@@ -428,8 +428,7 @@ impl RrosMonitorGate {
             return Err(Error::EPERM);
         }
 
-        let flags =
-            raw_spin_lock_irqsave(&mut self.lock as *mut bindings::hard_spinlock_t);
+        let flags = raw_spin_lock_irqsave(&mut self.lock as *mut bindings::hard_spinlock_t);
         self.__exit_monitor(fundle, curr);
         // FIXME: hack_self
         let hack_self = self as *mut RrosMonitorGate;
@@ -543,7 +542,7 @@ impl RrosMonitorEvent {
         list: &mut List<Arc<RefCellEventWrapper>>,
         arc_self: Arc<RefCellEventWrapper>,
     ) {
-        let state = &mut *state ;
+        let state = &mut *state;
         let bcast = state.flags & RROS_MONITOR_BROADCAST;
 
         if self.wait_queue.is_active() {
@@ -650,7 +649,6 @@ struct RrosMonitor {
     pub core: RrosMonitorCore,
     #[allow(dead_code)]
     pub e_pointer: *mut RrosElement,
-
 }
 
 impl RrosMonitor {
@@ -809,7 +807,70 @@ fn monitor_factory_build(
     return e;
 }
 
-fn monitor_factory_dispose(_ele: factory::RrosElement) {}
+fn monitor_factory_dispose(ele: factory::RrosElement) {
+    // TODO: monitor_factory_dispose
+    let mut monitor = unsafe { Box::from_raw(ele.pointer as *mut RrosMonitor) };
+    let e = Rc::try_new(RefCell::new(ele)).unwrap();
+    rros_unindex_factory_element(e.clone());
+    match monitor.type_foo {
+        RROS_MONITOR_EVENT => {
+            let event_core = if let RrosMonitorCore::Event(event) = &mut monitor.core {
+                event.clone()
+            } else {
+                panic!("invalid RrosMonitorCore value");
+            };
+            event_core
+                .deref()
+                .inner
+                .borrow_mut()
+                .deref_mut()
+                .wait_queue
+                .destory();
+            if (event_core
+                .deref()
+                .inner
+                .borrow_mut()
+                .deref_mut()
+                .gate
+                .is_some())
+            {
+                let (mut gate, _) = get_monitor_by_fd(
+                    event_core
+                        .deref()
+                        .inner
+                        .borrow_mut()
+                        .deref_mut()
+                        .gate
+                        .unwrap() as i32,
+                )
+                .unwrap();
+                let gate_core = if let RrosMonitorCore::Gate(gate_core) = &mut gate.core {
+                    gate_core
+                } else {
+                    panic!("invalid RrosMonitorCore value");
+                };
+                let flags = raw_spin_lock_irqsave(&mut gate_core.lock);
+                unsafe {
+                    gate_core.events.remove(&event_core);
+                }
+                raw_spin_unlock_irqrestore(&mut gate_core.lock, flags)
+            }
+        }
+        RROS_MONITOR_GATE => {
+            let gate_core = if let RrosMonitorCore::Gate(gate_core) = &mut monitor.core {
+                gate_core
+            } else {
+                panic!("invalid RrosMonitorCore value");
+            };
+            rros_destroy_mutex(Arc::as_ptr(&gate_core.mutex) as *mut RrosMutex);
+        }
+        _ => {
+            panic!("invalid monitor type");
+        }
+    }
+
+    // rros_destroy_element();
+}
 
 pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
     SpinLock::new(factory::RrosFactory {
@@ -996,7 +1057,6 @@ fn wait_monitor_ungated(
     return ret;
 }
 
-
 fn wait_monitor(
     event_ref: &mut RrosMonitor,
     _file: &File,
@@ -1074,9 +1134,7 @@ fn wait_monitor(
         panic!("invalid RrosMonitorCore value");
     };
 
-    flags = {
-        raw_spin_lock_irqsave(&mut gate_core_ref.lock as *mut bindings::hard_spinlock_t)
-    };
+    flags = { raw_spin_lock_irqsave(&mut gate_core_ref.lock as *mut bindings::hard_spinlock_t) };
     event_core
         .deref()
         .inner
@@ -1327,9 +1385,11 @@ impl FileOperations for MonitorOps {
         bind.set_type_foo(monitor.type_foo as u32);
         bind.set_protocol(monitor.protocol as u32);
         bind.eids
-            .set_minor(monitor.element.deref().borrow().deref().minor as u32).unwrap();
+            .set_minor(monitor.element.deref().borrow().deref().minor as u32)
+            .unwrap();
         bind.eids
-            .set_fundle(monitor.element.deref().borrow().deref().fundle as u32).unwrap();
+            .set_fundle(monitor.element.deref().borrow().deref().fundle as u32)
+            .unwrap();
         u_bind = _cmd.arg as *mut RrosMonitorBinding;
 
         let mut writer = unsafe {
@@ -1386,8 +1446,7 @@ impl FileOperations for MonitorOps {
             }
             u_uts = wreq.timeout_ptr as *mut RrosTimeSpec;
             let mut reader = unsafe {
-                UserSlicePtr::new(u_uts as *mut c_types::c_void, size_of::<RrosTimeSpec>())
-                    .reader()
+                UserSlicePtr::new(u_uts as *mut c_types::c_void, size_of::<RrosTimeSpec>()).reader()
             };
             let res = reader.read::<RrosTimeSpec>();
             match res {

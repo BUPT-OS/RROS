@@ -31,7 +31,6 @@ pub const RROS_MUTEX_CEILING: u32 = 8;
 pub const RROS_MUTEX_FLCLAIM: u32 = 0x80000000;
 pub const RROS_MUTEX_FLCEIL: u32 = 0x40000000;
 
-
 type KtimeT = i64;
 
 // static mut RROS_NIL: RrosValue = RrosValue::Lval(0);
@@ -618,7 +617,8 @@ pub fn rros_detect_boost_drop() {
                         (*Arc::into_raw(waiter)).locked_data().get(),
                         RROS_HMDIAG_LKDEPEND as u32,
                         RrosValue::Lval(0),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 cursor.move_next();
             }
@@ -675,7 +675,8 @@ pub fn flush_mutex_locked(mutex: *mut RrosMutex, reason: u32) -> Result<usize> {
                     mutex,
                     (*mutex).owner.clone().unwrap(),
                     RROS_MUTEX_CLAIMED as i32,
-                ).unwrap();
+                )
+                .unwrap();
             }
         }
     }
@@ -1140,7 +1141,8 @@ pub fn rros_lock_mutex_timeout(
                     timeout_mode,
                     &(*((*mutex).clock)),
                     &mut (*mutex).wchan as *mut RrosWaitChannel,
-                ).unwrap();
+                )
+                .unwrap();
                 curr_rq_lock.raw_spin_unlock();
                 curr_lock.raw_spin_unlock();
                 lock::raw_spin_unlock_irqrestore(flags);
@@ -1312,7 +1314,7 @@ pub fn rros_unlock_mutex(mutex: *mut RrosMutex) -> Result<usize> {
         // h = evl_get_index(atomic_read(mutex->fastlock));
         // if (EVL_WARN_ON_ONCE(CORE, h != currh))
         // 	return;
-        if h != currh{
+        if h != currh {
             return Ok(0);
         }
 
@@ -1554,8 +1556,7 @@ pub fn rros_commit_mutex_ceiling(mutex: *mut RrosMutex) -> Result<i32> {
             .borrow()
             .deref()
             .fundle;
-        if !rros_is_mutex_owner(lockp, fundle)
-            || ((*mutex).flags & RROS_MUTEX_CEILING as i32) != 0
+        if !rros_is_mutex_owner(lockp, fundle) || ((*mutex).flags & RROS_MUTEX_CEILING as i32) != 0
         {
             lock::raw_spin_unlock_irqrestore(flags);
             return Ok(0);

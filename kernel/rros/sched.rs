@@ -1369,7 +1369,6 @@ pub union UAPIRrosSchedParam {
     pub tp: UAPITPParam,
 }
 
-
 impl Default for UAPIRrosSchedParam {
     fn default() -> Self {
         Self {
@@ -1391,7 +1390,6 @@ pub enum UAPIRrosSchedParamRef<'a> {
 pub struct UAPIRrosRRParam {
     pub __sched_rr_quantum: RrosTimeSpec,
 }
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Default)]

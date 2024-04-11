@@ -330,9 +330,9 @@ pub fn rros_reorder_wait(
             if prio <= (*cur).get_wprio() {
                 let cur = NonNull::new(cur as *const _ as *mut RrosThreadWithLock).unwrap();
                 unsafe {
-                    wq.wchan.wait_list.insert_after(cur, 
-                        RrosThreadWithLock::transmute_to_self(waiter.clone())
-                    )
+                    wq.wchan
+                        .wait_list
+                        .insert_after(cur, RrosThreadWithLock::transmute_to_self(waiter.clone()))
                 };
                 stop_flag = true;
                 break;

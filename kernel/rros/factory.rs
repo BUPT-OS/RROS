@@ -1521,14 +1521,18 @@ pub fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
 pub fn rros_get_element_by_fundle(
     map: &mut RrosIndex,
     fundle: FundleT,
-) -> Option<&Rc<RefCell<RrosElement>>> {
+) -> Option<Rc<RefCell<RrosElement>>> {
     let flags = map.rbtree.irq_lock_noguard();
 
-    let e = unsafe { (*map.rbtree.locked_data().get()).get(&fundle) };
+    let e = unsafe {
+        (*map.rbtree.locked_data().get())
+            .get(&fundle)
+            .map(|e| e.clone())
+    };
 
     map.rbtree.irq_unlock_noguard(flags);
 
-    return e;
+    e
 }
 
 #[allow(dead_code)]

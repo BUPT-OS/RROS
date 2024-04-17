@@ -12,6 +12,8 @@ struct oob_thread_state {
 
     void *thread;
     // struct rros_thread *thread;
+    void *subscriber;
+    // struct rros_subscriber *subscriber;
 };
 
 #endif /* !_DOVETAIL_THREAD_INFO_H */

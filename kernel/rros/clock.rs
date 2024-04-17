@@ -1161,6 +1161,6 @@ pub fn rros_read_clock(clock: &RrosClock) -> KtimeT {
     clock.ops.read.unwrap()(&clock)
 }
 
-fn rros_ktime_monotonic() -> KtimeT {
+pub fn rros_ktime_monotonic() -> KtimeT {
     timekeeping::ktime_get_mono_fast_ns()
 }

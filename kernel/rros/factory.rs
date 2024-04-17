@@ -3,7 +3,7 @@ use core::{
     result::Result::Ok,
 };
 
-use crate::{clock, control, file::RrosFileBinding, poll, proxy, thread, xbuf, observable};
+use crate::{clock, control, file::RrosFileBinding, observable, poll, proxy, thread, xbuf};
 
 use alloc::rc::Rc;
 
@@ -40,7 +40,7 @@ pub enum RrosFactoryType {
     CLONE = 1,
     SINGLE = 2,
 }
-pub const RROS_OBSERVABLE_CLONE_FLAGS: i32 = 
+pub const RROS_OBSERVABLE_CLONE_FLAGS: i32 =
     RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
 pub const RROS_THREAD_CLONE_FLAGS: i32 =
     RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
@@ -872,12 +872,8 @@ fn rros_create_factory(
                             .register::<proxy::ProxyOps>()?;
                     }
                     Ok("observable") => {
-                        // unimplemented!();
-                        pr_info!("[observable] in function: rros_create_factory");
                         let ele_chrdev_reg: Pin<
-                            Box<
-                                chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>,
-                            >,
+                            Box<chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>>,
                         > = chrdev::Registration::new_pinned(name, 0, this_module)?;
                         inside.register = Some(ele_chrdev_reg);
                         inside
@@ -1392,7 +1388,9 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
         create_element_device(e.clone(), unsafe { &mut proxy::RROS_PROXY_FACTORY })
     } else if fdname == "observable" {
         pr_debug!("ioctl_clone_device: observable element create");
-        create_element_device(e.clone(), unsafe { &mut observable::RROS_OBSERVABLE_FACTORY })
+        create_element_device(e.clone(), unsafe {
+            &mut observable::RROS_OBSERVABLE_FACTORY
+        })
     } else {
         pr_debug!("maybe a thread");
         create_element_device(e.clone(), unsafe { &mut thread::RROS_THREAD_FACTORY })

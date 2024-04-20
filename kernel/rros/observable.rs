@@ -13,16 +13,18 @@ use crate::{
 };
 use core::{cell::RefCell, default::Default, mem::size_of};
 use kernel::{
-    c_types, device, dovetail,
+    c_types, device,
+    dovetail::{self, DovetailSubscriber},
     file::File,
     file_operations::{FileOpener, FileOperations, IoctlCommand},
-    io_buffer::{IoBufferReader, IoBufferWriter},
+    io_buffer::{IoBufferReader, IoBufferWriter, ReadableFromBytes, WritableToBytes},
     irq_work::IrqWork,
     ktime::{self, KtimeT},
     linked_list::{GetLinks, Links, List},
     prelude::*,
     premmpt::running_inband,
-    rbtree, spinlock_init,
+    rbtree::RBTree,
+    spinlock_init,
     str::CStr,
     sync::{HardSpinlock, Lock, SpinLock},
     task,
@@ -74,22 +76,30 @@ impl RrosNotice {
     }
 }
 
+unsafe impl ReadableFromBytes for RrosNotice {}
+
 pub struct RrosSubscriber {
-    pub subscriptions: SpinLock<rbtree::RBTree<u32, Arc<RrosObserver>>>,
+    pub subscriptions: SpinLock<RBTree<u32, Arc<RrosObserver>>>,
 }
 
 impl RrosSubscriber {
-    pub fn new() -> Self {
-        Self {
-            subscriptions: unsafe { SpinLock::new(rbtree::RBTree::new()) },
-        }
-    }
-
-    pub fn init(&mut self) {
+    pub fn new_and_init() -> Self {
+        let mut s = Self {
+            subscriptions: unsafe { SpinLock::new(RBTree::new()) },
+        };
         spinlock_init!(
-            unsafe { Pin::new_unchecked(&mut self.subscriptions) },
+            unsafe { Pin::new_unchecked(&mut s.subscriptions) },
             "RrosSubscriber"
         );
+        s
+    }
+}
+
+// impl `DovetailSubscriber` trait for `RrosSubscriber` so that it can be used in dovetail_current_state().subscriber() and dovetail_current_state().set_subscriber()
+impl DovetailSubscriber for RrosSubscriber {
+    type Node = RBTree<u32, Arc<RrosObserver>>;
+    fn get(&self) -> &mut Self::Node {
+        unsafe { &mut *(self.subscriptions.locked_data().get()) }
     }
 }
 
@@ -153,6 +163,8 @@ pub struct __RrosNotification {
     pub event: ObservableValue,
     pub date: ktime::Timespec64,
 }
+
+unsafe impl WritableToBytes for __RrosNotification {}
 
 pub struct RrosNotificationRecord {
     pub tag: u32,
@@ -233,16 +245,12 @@ fn add_subscription(
         return Err(kernel::Error::EINVAL);
     }
     if sbr == 0 as *mut RrosSubscriber {
-        match Box::try_new(RrosSubscriber::new()) {
+        match Box::try_new(RrosSubscriber::new_and_init()) {
             Ok(s) => sbr = Box::into_raw(s),
             Err(_) => return Err(kernel::Error::ENOMEM),
         }
 
-        let mut box_sbr = unsafe { Box::from_raw(sbr) };
-        box_sbr.as_mut().init();
-        sbr = Box::into_raw(box_sbr);
-
-        dovetail::dovetail_current_state().set_subscriber(sbr as *mut _);
+        dovetail::dovetail_current_state().set_subscriber(sbr);
     }
 
     // rros_get_element();
@@ -282,9 +290,7 @@ fn add_subscription(
 
     let subscriber = unsafe { &mut (*sbr) };
     let flags = subscriber.subscriptions.irq_lock_noguard();
-    let ret = unsafe {
-        (*(subscriber.subscriptions.locked_data().get())).try_insert(fundle, observer.clone())
-    };
+    let ret = subscriber.get().try_insert(fundle, observer.clone());
     subscriber.subscriptions.irq_unlock_noguard(flags);
 
     match ret {
@@ -303,9 +309,17 @@ fn add_subscription(
         }
     }
 
+    /*
+    Make the new observer visible to the observable. We need
+    the observer and writability tracking to be atomically
+    updated, so nested locking is required. Observers are
+    linked to the observable's list by order of subscription
+    (FIFO) in case users make such assumption for master mode
+    (which undergoes round-robin).
+     */
     let flags = observable.lock.raw_spin_lock_irqsave();
     observable.observers.push_back(observer);
-
+    // TODO: We can try using `Arc` to replace the `writable_observers` implementation
     observable.oob_wait.lock.raw_spin_lock();
     observable.writable_observers += 1;
     observable.oob_wait.lock.raw_spin_unlock();
@@ -535,17 +549,17 @@ fn rros_write_observable<T: IoBufferReader>(
 
     let mut len = 0_usize;
     let mut xlen = 0_usize;
-    let mut ntc = RrosNotice::new();
+    let mut ntc;
     let mut ret = Ok(0_usize);
     let now: KtimeT = rros_ktime_monotonic();
 
     while xlen < count {
-        if unsafe {
-            data.read_raw(&mut ntc as *mut _ as *mut u8, size_of::<RrosNotice>())
-                .is_err()
-        } {
-            ret = Err(kernel::Error::EFAULT);
-            break;
+        match data.read::<RrosNotice>() {
+            Ok(read) => ntc = read,
+            Err(_) => {
+                ret = Err(kernel::Error::EFAULT);
+                break;
+            }
         }
 
         if ntc.tag < RROS_NOTICE_USER {
@@ -655,12 +669,7 @@ fn pull_notification<T: IoBufferWriter>(
         date: ktime::ktime_to_timespec64(nfr.date),
     };
 
-    let ret = unsafe {
-        data.write_raw(
-            &nf as *const _ as *const u8,
-            size_of::<__RrosNotification>(),
-        )
-    };
+    let ret = data.write::<__RrosNotification>(&nf);
 
     flags = observable.oob_wait.lock.raw_spin_lock_irqsave();
 
@@ -678,13 +687,13 @@ fn pull_notification<T: IoBufferWriter>(
 
             Ok(0_usize)
         }
-        Err(error) => {
+        Err(_) => {
             unsafe {
                 Arc::get_mut_unchecked(observer)
                     .pending_list
                     .push_front(nfr);
             }
-            Err(error)
+            Err(kernel::Error::EFAULT)
         }
     };
 
@@ -714,7 +723,7 @@ pub fn rros_read_observable<T: IoBufferWriter>(
 
     let target = observable.element.clone().borrow().fundle;
 
-    let observer = unsafe { (*(*sbr).subscriptions.locked_data().get()).get_mut(&target) };
+    let observer = unsafe { (*sbr).get().get_mut(&target) };
 
     if observer.is_none() {
         return Err(kernel::Error::ENXIO);

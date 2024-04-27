@@ -3,18 +3,17 @@ use core::{
     result::Result::Ok,
 };
 
-use crate::{clock, control, file::RrosFileBinding, poll, proxy, thread, xbuf};
+use crate::{clock, control, file::RrosFileBinding, observable, poll, proxy, thread, xbuf};
 
 use alloc::rc::Rc;
 
 use kernel::{
     bindings,
     bitmap::{self, bitmap_zalloc},
-    c_str, c_types, chrdev, class, device,
-    device::DeviceType,
+    c_str, c_types, chrdev, class,
+    device::{self, DeviceType},
     file::{self, fd_install, File},
-    file_operations::FileOperations,
-    file_operations::{FileOpener, IoctlCommand},
+    file_operations::{FileOpener, FileOperations, IoctlCommand},
     fs::{self, Filename},
     io_buffer::IoBufferWriter,
     irq_work, kernelh,
@@ -22,8 +21,8 @@ use kernel::{
     rbtree, spinlock_init,
     str::CStr,
     sync::{Lock, SpinLock},
-    sysfs, types, uidgid,
-    uidgid::{KgidT, KuidT},
+    sysfs, types,
+    uidgid::{self, KgidT, KuidT},
     workqueue, ThisModule,
 };
 
@@ -40,6 +39,8 @@ pub enum RrosFactoryType {
     CLONE = 1,
     SINGLE = 2,
 }
+pub const RROS_OBSERVABLE_CLONE_FLAGS: i32 =
+    RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
 pub const RROS_THREAD_CLONE_FLAGS: i32 =
     RROS_CLONE_PUBLIC | RROS_CLONE_OBSERVABLE | RROS_CLONE_MASTER;
 pub const RROS_CLONE_PUBLIC: i32 = 1 << 16;
@@ -375,6 +376,13 @@ fn rros_element_is_public(e: Rc<RefCell<RrosElement>>) -> bool {
     let e_borrow = e_clone.borrow();
 
     (e_borrow.clone_flags & RROS_CLONE_PUBLIC) == RROS_CLONE_PUBLIC
+}
+
+pub fn rros_element_is_observable(e: Rc<RefCell<RrosElement>>) -> bool {
+    let e_clone = e.clone();
+    let e_borrow = e_clone.borrow();
+
+    (e_borrow.clone_flags & RROS_CLONE_OBSERVABLE) == RROS_CLONE_OBSERVABLE
 }
 
 #[allow(dead_code)]
@@ -863,20 +871,16 @@ fn rros_create_factory(
                             .register::<proxy::ProxyOps>()?;
                     }
                     Ok("observable") => {
-                        unimplemented!();
-                        // pr_info!("[observable] in function: rros_create_factory");
-                        // let mut ele_chrdev_reg: Pin<
-                        //     Box<
-                        //         chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>,
-                        //     >,
-                        // > = chrdev::Registration::new_pinned(name, 0, this_module)?;
-                        // inside.register = Some(ele_chrdev_reg);
-                        // inside
-                        //     .register
-                        //     .as_mut()
-                        //     .unwrap()
-                        //     .as_mut()
-                        //     .register::<observable::ObservableOps>()?;
+                        let ele_chrdev_reg: Pin<
+                            Box<chrdev::Registration<{ observable::CONFIG_RROS_NR_OBSERVABLE }>>,
+                        > = chrdev::Registration::new_pinned(name, 0, this_module)?;
+                        inside.register = Some(ele_chrdev_reg);
+                        inside
+                            .register
+                            .as_mut()
+                            .unwrap()
+                            .as_mut()
+                            .register::<observable::ObservableOps>()?;
                     }
                     Ok(_) => {
                         pr_info!("not yet implemented");
@@ -1038,7 +1042,7 @@ pub fn rros_early_init_factories(
     this_module: &'static ThisModule,
 ) -> Result<Pin<Box<chrdev::Registration<NR_FACTORIES>>>> {
     // TODO: move the number of factories to a variable
-    let mut early_factories: [&mut SpinLock<RrosFactory>; 6] = unsafe {
+    let mut early_factories: [&mut SpinLock<RrosFactory>; 7] = unsafe {
         [
             &mut clock::RROS_CLOCK_FACTORY,
             &mut thread::RROS_THREAD_FACTORY,
@@ -1046,6 +1050,7 @@ pub fn rros_early_init_factories(
             &mut proxy::RROS_PROXY_FACTORY,
             &mut control::RROS_CONTROL_FACTORY,
             &mut poll::RROS_POLL_FACTORY,
+            &mut observable::RROS_OBSERVABLE_FACTORY,
         ]
     };
     // static struct rros_factory *early_factories[] = {
@@ -1222,9 +1227,6 @@ impl RrosCloneReq {
     }
 }
 
-#[allow(dead_code)]
-fn rros_index_factory_element() {}
-
 extern "C" {
     pub fn rust_helper_copy_from_user(
         to: *mut c_types::c_void,
@@ -1332,6 +1334,19 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
                 &state_offset,
             )
         }
+    } else if fdname == "observable" {
+        pr_debug!("ioctl_clone_device: observable clone");
+        unsafe {
+            (*observable::RROS_OBSERVABLE_FACTORY.locked_data().get())
+                .build
+                .unwrap()(
+                &mut observable::RROS_OBSERVABLE_FACTORY,
+                cstr_u_name,
+                Some(u_attrs),
+                real_req.clone_flags.try_into().unwrap(),
+                &state_offset,
+            )
+        }
     } else {
         pr_debug!("maybe a thread");
         unsafe {
@@ -1366,6 +1381,11 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     } else if fdname == "proxy" {
         pr_debug!("ioctl_clone_device: proxy element create");
         create_element_device(e.clone(), unsafe { &mut proxy::RROS_PROXY_FACTORY })
+    } else if fdname == "observable" {
+        pr_debug!("ioctl_clone_device: observable element create");
+        create_element_device(e.clone(), unsafe {
+            &mut observable::RROS_OBSERVABLE_FACTORY
+        })
     } else {
         pr_debug!("maybe a thread");
         create_element_device(e.clone(), unsafe { &mut thread::RROS_THREAD_FACTORY })
@@ -1438,7 +1458,66 @@ pub fn rros_element_name(e: &RrosElement) -> *const c_types::c_char {
     0 as *const c_types::c_char
 }
 
-fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
+#[allow(dead_code)]
+fn rros_index_element(map: &mut RrosIndex, e: Rc<RefCell<RrosElement>>) {
+    let mut fundle: FundleT;
+    let mut guard: FundleT = 0;
+    let mut flags: u64;
+
+    loop {
+        if rros_get_index({
+            guard = guard + 1;
+            guard
+        }) == 0
+        {
+            e.borrow_mut().fundle = RROS_NO_HANDLE;
+            return;
+        }
+
+        flags = map.rbtree.irq_lock_noguard();
+        fundle = rros_get_index({
+            map.generator += 1;
+            map.generator
+        });
+        if !fundle != 0 {
+            map.generator = 1;
+            fundle = map.generator;
+        }
+
+        let ret = unsafe { (*map.rbtree.locked_data().get()).get(&fundle) };
+        let mut ok = Err(Error::EEXIST);
+        if ret.is_none() {
+            // `try_insert`` always return Ok
+            ok = unsafe { (*map.rbtree.locked_data().get()).try_insert(fundle, e.clone()) };
+        }
+
+        map.rbtree.irq_unlock_noguard(flags);
+
+        if ok.is_ok() {
+            break;
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[inline]
+pub fn rros_index_factory_element(e: Rc<RefCell<RrosElement>>) {
+    unsafe {
+        rros_index_element(
+            (*e.borrow_mut().factory.locked_data().get())
+                .inside
+                .as_mut()
+                .unwrap()
+                .index
+                .as_mut()
+                .unwrap(),
+            e.clone(),
+        )
+    }
+}
+
+#[allow(dead_code)]
+pub fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     unsafe {
         let map = (*e.borrow_mut().factory.locked_data().get())
             .inside
@@ -1453,7 +1532,35 @@ fn rros_unindex_factory_element(e: Rc<RefCell<RrosElement>>) {
     }
 }
 
-fn rros_destroy_element(e: Rc<RefCell<RrosElement>>) {
+// Example of using the `rros_get_element_by_fundle` function
+// let e = rros_get_element_by_fundle((*thread::RROS_THREAD_FACTORY.locked_data().get()).inside.as_mut().unwrap().index.as_mut().unwrap(), fundle);
+// let element: *mut T; // T means the type of the element.
+// if e.is_some() {
+//      let e = e.unwrap();
+//      let e = e.borrow_mut();
+//      element = e.pointer as *mut T;
+// }
+//
+#[allow(dead_code)]
+pub fn rros_get_element_by_fundle(
+    map: &mut RrosIndex,
+    fundle: FundleT,
+) -> Option<Rc<RefCell<RrosElement>>> {
+    let flags = map.rbtree.irq_lock_noguard();
+
+    let e = unsafe {
+        (*map.rbtree.locked_data().get())
+            .get(&fundle)
+            .map(|e| e.clone())
+    };
+
+    map.rbtree.irq_unlock_noguard(flags);
+
+    e
+}
+
+#[allow(dead_code)]
+fn rros_destroy_element(_e: Rc<RefCell<RrosElement>>) {
     // `clear_bit` is unnecessary because minor_map is a u64 type in rros.
     // `putname` is implemented automatically in `drop` function.
 }

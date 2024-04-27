@@ -31,6 +31,14 @@ pub fn dovetail_start() -> Result<usize> {
     Err(Error::EINVAL)
 }
 
+/// A trait to implement function for `RrosSubscriber`.
+pub trait DovetailSubscriber {
+    /// The type of the return value to `get` funtion.
+    type Node;
+    /// Get a mutable reference to the root node of the subscriber red-black tree.
+    fn get(&self) -> &mut Self::Node;
+}
+
 /// A wrapper for [`oob_thread_state`].
 pub struct OobThreadState {
     pub(crate) ptr: *mut bindings::oob_thread_state,
@@ -55,6 +63,20 @@ impl OobThreadState {
     pub fn set_thread(&self, curr: *mut c_void) {
         unsafe {
             (*(self.ptr)).thread = curr;
+        }
+    }
+
+    /// `subscriber`: A method that returns a pointer to a `T` which impl `DovetailSubscriber` trait. It dereferences the `OobThreadState`'s pointer and returns the `subscriber` field.
+    pub fn subscriber<T: DovetailSubscriber>(&self) -> *mut T {
+        // FIXME: need to refactor in the future.
+        unsafe { (*(self.ptr)).subscriber as *mut T }
+    }
+
+    /// `set_subscriber`: A method that set the `subscriber` field to the `sbr` parameter.
+    pub fn set_subscriber<T: DovetailSubscriber>(&self, sbr: *mut T) {
+        // FIXME: need a SpinLock?
+        unsafe {
+            (*(self.ptr)).subscriber = sbr as *mut c_void;
         }
     }
 }

@@ -14,6 +14,8 @@ extern "C" {
     #[allow(improper_ctypes)]
     fn rust_helper_dovetail_request_ucall(task: *mut bindings::task_struct);
     fn rust_helper_dovetail_mm_state() -> *mut bindings::oob_mm_state;
+    #[allow(improper_ctypes)]
+    fn rust_helper_dovetail_send_mayday(task: *mut bindings::task_struct);
 }
 
 /// The `dovetail_start` function is a wrapper around the `bindings::dovetail_start` function from the kernel bindings. It starts the Dovetail interface in the kernel.
@@ -160,6 +162,13 @@ pub fn dovetail_leave_oob() {
 pub fn dovetail_request_ucall(ptr: *mut bindings::task_struct) {
     unsafe {
         rust_helper_dovetail_request_ucall(ptr);
+    }
+}
+
+/// send mayday signals to userland thread.
+pub fn dovetail_send_mayday(ptr: *mut bindings::task_struct) {
+    unsafe {
+        rust_helper_dovetail_send_mayday(ptr);
     }
 }
 

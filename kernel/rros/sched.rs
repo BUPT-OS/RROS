@@ -426,7 +426,7 @@ pub struct RrosSchedClass {
         ) -> Result<i32>,
     >,
     pub sched_forget: Option<fn(thread: Arc<SpinLock<RrosThread>>) -> Result<usize>>,
-    pub sched_kick: Option<fn(thread: Rc<RefCell<RrosThread>>)>,
+    pub sched_kick: Option<fn(thread: Arc<SpinLock<RrosThread>>)>,
     pub sched_show: Option<
         fn(thread: *mut RrosThread, buf: *mut c_types::c_char, count: SsizeT) -> Result<usize>,
     >,
@@ -2496,5 +2496,16 @@ pub fn rros_disable_preempt() {
     }
     unsafe {
         rust_helper_rros_disable_preempt();
+    }
+}
+
+#[inline]
+pub fn rros_force_thread(thread: Arc<SpinLock<RrosThread>>) {
+    // assert_thread_pinned(thread);
+    {
+        let guard = thread.lock();
+        if guard.base_class.is_some() {
+            guard.base_class.unwrap().sched_kick.unwrap()(thread.clone());
+        }
     }
 }

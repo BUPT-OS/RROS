@@ -1554,10 +1554,10 @@ endif
 ifneq "$(srctree)" "."
 include/config/auto.conf: FORCE
 endif
-ifneq "$(CLANG_FLAGS)" "--target=aarch64-linux-gnu -fintegrated-as -Werror=unknown-warning-option -Werror=ignored-optimization-argument -Werror=option-ignored -Werror=unused-command-line-argument"
+ifneq "$(CLANG_FLAGS)" " --target=aarch64-linux-gnu -fintegrated-as -Werror=unknown-warning-option -Werror=ignored-optimization-argument -Werror=option-ignored -Werror=unused-command-line-argument"
 include/config/auto.conf: FORCE
 endif
-ifneq "$(CC_VERSION_TEXT)" "Ubuntu clang version 13.0.1-2ubuntu2.2"
+ifneq "$(CC_VERSION_TEXT)" "Ubuntu clang version 13.0.1-++20220120110844+75e33f71c2da-1~exp1~20220120230854.66"
 include/config/auto.conf: FORCE
 endif
 ifneq "$(NM)" "llvm-nm"

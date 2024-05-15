@@ -14,4 +14,17 @@ menuconfig Rros
 	  interrupt and task events.  Rros runs asynchronously to the
 	  common kernel services, on the high-priority, out-of-band
 	  stage managed by the Dovetail layer.
+	  
+
+if Rros
+
+source "kernel/rros/Kconfig"
+
+if WARN_CPUFREQ_GOVERNOR
+comment "WARNING! CPU_FREQ governors other than 'performance'"
+comment "or 'powersave' may significantly increase latency"
+comment "on this platform during the frequency transitions."
+endif
+
+endif
 

@@ -1447,6 +1447,7 @@ config CC_HAVE_SHADOW_CALL_STACK
 	def_bool $(cc-option, -fsanitize=shadow-call-stack -ffixed-x18)
 
 source "kernel/Kconfig.dovetail"
+source "kernel/Kconfig.rros"
 
 config PARAVIRT
 	bool "Enable paravirtualization code"

@@ -1491,7 +1491,6 @@ deps_config := \
 	mm/damon/Kconfig \
 	mm/Kconfig \
 	fs/Kconfig.binfmt \
-	kernel/Kconfig.rros \
 	kernel/Kconfig.freezer \
 	kernel/Kconfig.locks \
 	block/Kconfig.iosched \
@@ -1520,6 +1519,8 @@ deps_config := \
 	drivers/cpuidle/Kconfig.arm \
 	drivers/cpuidle/Kconfig \
 	kernel/power/Kconfig \
+	kernel/rros/Kconfig \
+	kernel/Kconfig.rros \
 	kernel/Kconfig.dovetail \
 	kernel/Kconfig.hz \
 	arch/arm64/Kconfig.platforms \

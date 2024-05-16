@@ -1,0 +1,2650 @@
+  SYNC    include/config/auto.conf.cmd
+  CALL    scripts/checksyscalls.sh
+  BINDGEN rust/bindings/bindings_generated.rs
+  BINDGEN rust/uapi/uapi_generated.rs
+  RUSTC L rust/uapi.o
+  RUSTC L rust/bindings.o
+  EXPORTS rust/exports_bindings_generated.h
+  RUSTC L rust/kernel.o
+  EXPORTS rust/exports_kernel_generated.h
+  RUSTC     samples/rust/rust_minimal.o
+  CC      init/main.o
+  RUSTC     samples/rust/rust_print.o
+  CC      net/devres.o
+  CC      ipc/mqueue.o
+  CC      security/commoncap.o
+  CC      security/keys/keyring.o
+  CC      io_uring/io_uring.o
+  CC      net/socket.o
+  CC      fs/namei.o
+  CC      init/do_mounts.o
+  CC      lib/kobject_uevent.o
+  CC      kernel/fork.o
+  AR      samples/rust/built-in.a
+  AR      samples/built-in.a
+  CC      net/compat.o
+  CC      rust/exports.o
+  CC      crypto/algapi.o
+  CC      mm/memcontrol.o
+  CC      net/llc/llc_core.o
+  CC      security/keys/process_keys.o
+  CC      net/core/sock.o
+  AR      rust/built-in.a
+  CC      net/ethernet/eth.o
+  CC      security/lsm_audit.o
+  CC      net/802/p8022.o
+  CC      security/keys/request_key.o
+  CC      net/core/request_sock.o
+  CC      net/llc/llc_input.o
+  CC      fs/select.o
+  CC      crypto/aead.o
+  CC      lib/vsprintf.o
+  CC      security/apparmor/apparmorfs.o
+  CC      init/init_task.o
+  AR      net/ethernet/built-in.a
+  CC      net/802/psnap.o
+  AR      ipc/built-in.a
+  CC      net/core/skbuff.o
+  CC      net/sched/sch_generic.o
+  CC      kernel/exit.o
+  CC      net/llc/llc_output.o
+  CC      net/netlink/af_netlink.o
+  CC      crypto/skcipher.o
+  CC      security/apparmor/audit.o
+  CC      crypto/ahash.o
+  AR      security/keys/built-in.a
+  CC      net/sched/sch_mq.o
+  CC      net/802/stp.o
+  CC      net/netlink/genetlink.o
+  AR      init/built-in.a
+  CC      security/apparmor/capability.o
+  CC      drivers/base/core.o
+  CC      io_uring/filetable.o
+  CC      net/802/garp.o
+  CC      net/core/datagram.o
+  CC      net/sched/sch_frag.o
+  CC      fs/file.o
+  AR      net/llc/built-in.a
+  CC [M]  drivers/block/nbd.o
+  CC      crypto/shash.o
+  CC      security/apparmor/task.o
+  AR      mm/built-in.a
+  CC      net/netlink/policy.o
+  CC      kernel/sysctl.o
+  CC      security/device_cgroup.o
+  CC      net/core/stream.o
+  CC      net/bpf/test_run.o
+  CC [M]  drivers/misc/ti-st/st_core.o
+  CC      io_uring/openclose.o
+  AR      net/802/built-in.a
+  CC      net/core/scm.o
+  CC      lib/nlattr.o
+  CC      net/ethtool/ioctl.o
+  CC      security/apparmor/ipc.o
+  CC      crypto/akcipher.o
+  CC      net/sched/sch_api.o
+  CC [M]  drivers/block/drbd/drbd_bitmap.o
+  CC      drivers/base/property.o
+  CC      security/apparmor/lib.o
+  CC      fs/fs_context.o
+  CC [M]  drivers/misc/ti-st/st_kim.o
+  CC      net/ethtool/common.o
+  AR      net/netlink/built-in.a
+  CC      io_uring/uring_cmd.o
+  CC      crypto/sig.o
+  CC      kernel/pid.o
+  CC      net/core/gen_stats.o
+  CC      lib/net_utils.o
+  CC      net/netfilter/core.o
+  CC [M]  drivers/block/drbd/drbd_proc.o
+  CC [M]  drivers/misc/ti-st/st_ll.o
+  CC      net/ethtool/netlink.o
+  CC      net/sched/sch_blackhole.o
+  AR      net/bpf/built-in.a
+  CC      net/netfilter/nf_log.o
+  CC      net/core/gen_estimator.o
+  CC      net/ipv4/route.o
+  AR      drivers/base/built-in.a
+  CC [M]  drivers/block/drbd/drbd_worker.o
+  CC      crypto/kpp.o
+  CC      fs/eventpoll.o
+  CC      security/apparmor/path.o
+  CC      kernel/extable.o
+  AR      lib/lib.a
+  AR      lib/built-in.a
+  CC      net/xfrm/xfrm_policy.o
+  CC      net/netfilter/nf_queue.o
+  CC      net/ipv4/inetpeer.o
+  LD [M]  drivers/misc/ti-st/st_drv.o
+  CC [M]  drivers/block/drbd/drbd_receiver.o
+  CC      security/apparmor/domain.o
+  CC      net/sched/cls_api.o
+  CC      io_uring/net.o
+  CC      net/unix/af_unix.o
+  CC      net/ethtool/bitset.o
+  CC      net/xfrm/xfrm_state.o
+  CC      crypto/acompress.o
+  CC      net/netfilter/nf_sockopt.o
+  CC      net/ipv4/protocol.o
+  CC      kernel/nsproxy.o
+  CC      net/core/net_namespace.o
+  CC      io_uring/msg_ring.o
+  CC      net/unix/garbage.o
+  CC      net/ethtool/strset.o
+  CC [M]  net/ipv6/netfilter/ip6_tables.o
+  CC      fs/nfs_common/grace.o
+  CC      crypto/scompress.o
+  CC [M]  drivers/block/drbd/drbd_req.o
+  CC      net/ipv4/ip_input.o
+  CC [M]  drivers/block/drbd/drbd_actlog.o
+  CC      kernel/cred.o
+  CC      net/core/secure_seq.o
+  CC      net/netfilter/utils.o
+  CC      security/apparmor/policy.o
+  CC      net/ipv4/ip_fragment.o
+  CC      io_uring/fdinfo.o
+  CC      net/packet/af_packet.o
+  CC      fs/nfs_common/nfs_ssc.o
+  CC      net/sched/act_api.o
+  CC      net/unix/sysctl_net_unix.o
+  CC      net/ethtool/linkinfo.o
+  CC      crypto/algboss.o
+  CC      net/ipv6/addrconf_core.o
+  CC      kernel/sched/core.o
+  CC [M]  net/ipv6/netfilter/ip6table_filter.o
+  CC      net/core/flow_dissector.o
+  CC      io_uring/rsrc.o
+  CC [M]  drivers/block/drbd/drbd_main.o
+  CC      net/netfilter/nf_bpf_link.o
+  CC      net/unix/unix_bpf.o
+  AR      fs/nfs_common/built-in.a
+  CC      net/ipv4/ip_forward.o
+  CC      security/apparmor/policy_unpack.o
+  CC      net/sched/sch_fifo.o
+  CC      crypto/rng.o
+  CC      net/ethtool/linkmodes.o
+  CC      net/ipv6/exthdrs_core.o
+  CC      net/xfrm/xfrm_input.o
+  CC      fs/proc/namespaces.o
+  CC      security/apparmor/procattr.o
+  CC      net/ipv6/ip6_checksum.o
+  CC      io_uring/rw.o
+  CC      net/unix/scm.o
+  CC [M]  net/ipv6/netfilter/ip6table_mangle.o
+  CC [M]  crypto/geniv.o
+  CC      net/netfilter/nf_hooks_lwtunnel.o
+  CC      fs/proc/proc_sysctl.o
+  CC      net/ethtool/rss.o
+  CC      net/ipv4/ip_options.o
+  CC      net/sched/ematch.o
+  AR      net/packet/built-in.a
+  CC      drivers/scsi/scsi_transport_iscsi.o
+  CC      net/ipv6/ip6_icmp.o
+  CC      net/sunrpc/clnt.o
+  CC      net/core/sysctl_net_core.o
+  CC      io_uring/opdef.o
+  CC      net/xfrm/xfrm_output.o
+  AR      net/unix/built-in.a
+  CC [M]  net/ipv6/netfilter/ip6table_raw.o
+  CC [M]  net/netfilter/nfnetlink.o
+  CC      fs/proc/proc_net.o
+  CC      security/apparmor/lsm.o
+  CC      net/core/dev.o
+  CC [M]  crypto/crypto_user_base.o
+  CC [M]  net/netfilter/nfnetlink_acct.o
+  CC      net/sched/sch_oob.o
+  CC      net/ethtool/linkstate.o
+  CC [M]  drivers/block/drbd/drbd_nl.o
+  CC      net/ipv4/ip_output.o
+  CC      io_uring/notif.o
+  CC      net/sunrpc/xprt.o
+  CC      net/ipv6/output_core.o
+  CC      net/xfrm/xfrm_sysctl.o
+  AR      fs/proc/built-in.a
+  CC      fs/sysfs/mount.o
+  CC      security/apparmor/resource.o
+  CC      net/8021q/vlan_core.o
+  CC [M]  net/netfilter/nfnetlink_queue.o
+  CC [M]  crypto/authenc.o
+  CC [M]  net/ipv6/netfilter/ip6table_security.o
+  CC      net/ethtool/debug.o
+  AR      kernel/sched/built-in.a
+  CC [M]  net/sched/act_police.o
+  CC      drivers/nvme/host/core.o
+  CC      net/ipv4/ip_sockglue.o
+  AR      io_uring/built-in.a
+  CC [M]  drivers/scsi/libiscsi.o
+  CC      net/core/dev_addr_lists.o
+  CC      kernel/kallsyms.o
+  CC      net/ipv6/protocol.o
+  CC      net/xfrm/xfrm_replay.o
+  CC [M]  drivers/scsi/libiscsi_tcp.o
+  AR      fs/sysfs/built-in.a
+  CC      security/apparmor/secid.o
+  CC [M]  crypto/authencesn.o
+  CC      net/8021q/vlan.o
+  CC      net/ipv4/inet_hashtables.o
+  CC      fs/nfs/client.o
+  CC [M]  net/ipv6/netfilter/ip6table_nat.o
+  CC      net/sunrpc/socklib.o
+  CC      net/ethtool/wol.o
+  CC [M]  net/sched/act_gact.o
+  CC [M]  net/netfilter/nfnetlink_log.o
+  CC      drivers/spi/spi.o
+  CC      kernel/cgroup/cgroup.o
+  CC      net/xfrm/xfrm_device.o
+  CC [M]  drivers/block/drbd/drbd_state.o
+  CC [M]  crypto/af_alg.o
+  CC [M]  drivers/block/drbd/drbd_nla.o
+  CC      net/8021q/vlan_dev.o
+  CC      security/apparmor/file.o
+  CC      net/wireless/wext-core.o
+  CC      net/sunrpc/xprtsock.o
+  CC      drivers/nvme/host/sysfs.o
+  CC      fs/nfs/dir.o
+  CC [M]  net/ipv6/netfilter/nf_defrag_ipv6_hooks.o
+  CC      net/ethtool/features.o
+  CC      fs/nfs/file.o
+  CC [M]  net/sched/act_mirred.o
+  CC      net/ipv6/ip6_offload.o
+  CC      net/ipv4/inet_timewait_sock.o
+  CC [M]  net/netfilter/nfnetlink_osf.o
+  CC [M]  drivers/scsi/iscsi_tcp.o
+  CC      net/xfrm/xfrm_algo.o
+  CC      net/8021q/vlan_netlink.o
+  CC      net/core/dst.o
+  CC      security/apparmor/policy_ns.o
+  AR      drivers/nvme/host/built-in.a
+  AR      drivers/nvme/built-in.a
+  CC [M]  crypto/algif_hash.o
+  CC      net/wireless/wext-proc.o
+  CC      net/ethtool/privflags.o
+  CC      fs/lockd/clntlock.o
+  CC [M]  drivers/block/drbd/drbd_debugfs.o
+  CC      net/ipv4/inet_connection_sock.o
+  AR      drivers/spi/built-in.a
+  CC      net/9p/trans_fd.o
+  CC [M]  net/ipv6/netfilter/nf_conntrack_reasm.o
+  CC      fs/nfs/getroot.o
+  CC [M]  net/sched/act_ipt.o
+  CC      net/8021q/vlan_gvrp.o
+  CC      net/wireless/wext-spy.o
+  CC      net/xfrm/xfrm_user.o
+  CC      net/ethtool/rings.o
+  CC      net/core/netevent.o
+  AR      drivers/scsi/built-in.a
+  CC [M]  crypto/algif_skcipher.o
+  CC      drivers/net/mii.o
+  CC      security/apparmor/label.o
+  CC [M]  net/netfilter/nf_conntrack_core.o
+  CC      fs/lockd/clntproc.o
+  CC      net/ipv4/tcp.o
+  CC      net/sysctl_net.o
+  CC      net/sunrpc/sched.o
+  AR      kernel/cgroup/built-in.a
+  CC      kernel/audit.o
+  CC      net/8021q/vlanproc.o
+  CC      fs/nfs/inode.o
+  CC      net/wireless/wext-priv.o
+  CC      net/9p/trans_virtio.o
+  LD [M]  drivers/block/drbd/drbd.o
+  CC      net/ethtool/channels.o
+  CC [M]  net/ipv6/netfilter/nf_socket_ipv6.o
+  CC      drivers/net/loopback.o
+  CC      net/core/neighbour.o
+  CC [M]  crypto/algif_rng.o
+  CC [M]  net/sched/act_nat.o
+  CC      net/ipv6/tcpv6_offload.o
+  CC [M]  net/xfrm/xfrm_ipcomp.o
+  CC      fs/lockd/clntxdr.o
+  AR      net/8021q/built-in.a
+  CC      security/apparmor/mount.o
+  CC [M]  net/netfilter/nf_conntrack_standalone.o
+  CC [M]  net/wireless/core.o
+  CC      net/sunrpc/auth.o
+  CC      kernel/auditfilter.o
+  AR      net/9p/built-in.a
+  CC      net/ethtool/coalesce.o
+  CC [M]  net/sched/act_pedit.o
+  CC      drivers/net/phy/mdio-boardinfo.o
+  CC [M]  net/ipv6/netfilter/nf_tproxy_ipv6.o
+  CC      net/ipv6/exthdrs_offload.o
+  CC [M]  crypto/algif_aead.o
+  AR      net/xfrm/built-in.a
+  CC      fs/lockd/host.o
+  CC      net/dns_resolver/dns_query.o
+  CC [M]  net/wireless/sysfs.o
+  CC      security/apparmor/net.o
+  CC      net/ipv4/tcp_input.o
+  CC      net/sunrpc/auth_null.o
+  CC      fs/nfs/super.o
+  CC [M]  net/netfilter/nf_conntrack_expect.o
+  CC      security/apparmor/policy_compat.o
+  CC      drivers/net/phy/stubs.o
+  CC      net/ethtool/pause.o
+  AR      net/dns_resolver/built-in.a
+  CC      net/core/rtnetlink.o
+  CC      kernel/auditsc.o
+  CC [M]  net/ipv6/netfilter/nf_reject_ipv6.o
+  CC      fs/lockd/svc.o
+  AR      crypto/built-in.a
+  LD [M]  crypto/crypto_user.o
+  CC      net/ipv4/tcp_output.o
+  CC [M]  net/sched/act_simple.o
+  CC [M]  drivers/usb/gadget/function/u_ether.o
+  CC [M]  net/wireless/radiotap.o
+  CC      fs/nfs/io.o
+  CC [M]  net/netfilter/nf_conntrack_helper.o
+  CC      security/apparmor/crypto.o
+  CC      drivers/net/phy/mdio_devres.o
+  CC      net/sunrpc/auth_tls.o
+  CC      net/ethtool/eee.o
+  CC [M]  net/mpls/mpls_gso.o
+  CC      fs/nfs/direct.o
+  CC      net/ipv6/inet6_hashtables.o
+  CC      kernel/audit_watch.o
+  CC [M]  net/ipv6/netfilter/nf_dup_ipv6.o
+  CC      fs/lockd/svclock.o
+  CC      net/ipv4/tcp_timer.o
+  CC [M]  drivers/usb/gadget/legacy/ether.o
+  CC      drivers/net/phy/phy.o
+  CC [M]  net/sched/act_skbedit.o
+  CC      fs/nfs/pagelist.o
+  CC [M]  drivers/usb/gadget/function/f_ncm.o
+  CC [M]  net/wireless/util.o
+  CC      net/core/utils.o
+  AR      security/apparmor/built-in.a
+  CC      net/ethtool/tsinfo.o
+  AR      security/built-in.a
+  CC      net/sunrpc/auth_unix.o
+  CC      drivers/net/mdio/fwnode_mdio.o
+  CC [M]  net/netfilter/nf_conntrack_proto.o
+  CC      kernel/audit_fsnotify.o
+  CC [M]  net/ipv6/netfilter/nft_reject_ipv6.o
+  CC      fs/lockd/svcshare.o
+  CC [M]  drivers/usb/gadget/legacy/cdc2.o
+  CC      net/ipv4/tcp_ipv4.o
+  CC      drivers/net/phy/phy-c45.o
+  CC [M]  net/sched/act_csum.o
+  CC [M]  drivers/usb/gadget/function/f_ecm.o
+  CC [M]  net/wireless/reg.o
+  CC      net/ethtool/cabletest.o
+  CC      net/core/link_watch.o
+  CC      drivers/net/phy/phy-core.o
+  CC      kernel/audit_tree.o
+  CC      net/sunrpc/svc.o
+  CC      net/l3mdev/l3mdev.o
+  CC      drivers/net/mdio/of_mdio.o
+  CC      net/ipv4/tcp_minisocks.o
+  CC      drivers/net/virtio_net.o
+  CC      fs/nfs/read.o
+  CC [M]  drivers/usb/gadget/legacy/multi.o
+  CC [M]  net/ipv6/netfilter/nft_dup_ipv6.o
+  CC      fs/lockd/svcproc.o
+  CC [M]  net/netfilter/nf_conntrack_proto_generic.o
+  CC [M]  drivers/usb/gadget/function/f_eem.o
+  CC      net/ipv6/mcast_snoop.o
+  CC      drivers/net/phy/phy_device.o
+  AR      net/l3mdev/built-in.a
+  CC      net/ethtool/tunnels.o
+  CC      drivers/net/mdio/mdio-bcm-unimac.o
+  CC      net/core/filter.o
+  CC [M]  net/wireless/scan.o
+  CC      kernel/seccomp.o
+  CC [M]  net/sched/sch_htb.o
+  CC      net/sunrpc/svcsock.o
+  LD [M]  drivers/usb/gadget/legacy/g_ether.o
+  LD [M]  drivers/usb/gadget/legacy/g_cdc.o
+  LD [M]  drivers/usb/gadget/legacy/g_multi.o
+  CC      fs/nfs/symlink.o
+  CC      drivers/net/ethernet/broadcom/genet/bcmgenet.o
+  CC [M]  net/ipv6/netfilter/nft_fib_ipv6.o
+  CC      fs/lockd/svcsubs.o
+  CC      net/ipv4/tcp_cong.o
+  CC [M]  drivers/usb/gadget/function/f_subset.o
+  CC [M]  net/netfilter/nf_conntrack_proto_tcp.o
+  CC [M]  drivers/net/mdio/mdio-bitbang.o
+  CC      drivers/net/phy/linkmode.o
+  CC      net/ethtool/fec.o
+  CC      net/handshake/alert.o
+  CC      net/core/sock_diag.o
+  CC [M]  drivers/usb/class/cdc-wdm.o
+  CC      fs/nfs/unlink.o
+  CC [M]  net/sched/sch_hfsc.o
+  CC      drivers/net/phy/mdio_bus.o
+  AR      drivers/net/mdio/built-in.a
+  CC      kernel/taskstats.o
+  CC [M]  drivers/usb/gadget/function/f_rndis.o
+  CC      drivers/net/ethernet/broadcom/genet/bcmmii.o
+  CC      net/sunrpc/svcauth.o
+  CC      fs/lockd/mon.o
+  CC      net/ethtool/eeprom.o
+  CC [M]  net/ipv6/netfilter/ip6t_ah.o
+  CC      net/ipv4/tcp_metrics.o
+  CC [M]  net/ipv6/af_inet6.o
+  CC      net/handshake/genl.o
+  CC [M]  net/netfilter/nf_conntrack_proto_udp.o
+  CC      drivers/media/rc/bpf-lirc.o
+  CC [M]  net/wireless/nl80211.o
+  CC [M]  net/key/af_key.o
+  CC      drivers/net/ethernet/broadcom/genet/bcmgenet_wol.o
+  CC [M]  drivers/usb/gadget/function/rndis.o
+  CC      fs/nfs/write.o
+  CC      drivers/net/phy/mdio_device.o
+  CC      kernel/trace/bpf_trace.o
+  CC [M]  drivers/net/hamradio/mkiss.o
+  CC [M]  net/sched/sch_red.o
+  CC      net/sunrpc/svcauth_unix.o
+  CC      net/ethtool/stats.o
+  CC      fs/lockd/trace.o
+  CC      fs/lockd/xdr.o
+  CC [M]  net/ipv6/netfilter/ip6t_eui64.o
+  CC      net/handshake/netlink.o
+  AR      drivers/media/rc/built-in.a
+  CC [M]  net/netfilter/nf_conntrack_proto_icmp.o
+  CC      drivers/net/phy/swphy.o
+  CC      net/ipv4/tcp_fastopen.o
+  CC [M]  drivers/media/common/ttpci-eeprom.o
+  LD [M]  drivers/usb/gadget/function/usb_f_ncm.o
+  LD [M]  drivers/usb/gadget/function/usb_f_ecm.o
+  LD [M]  drivers/usb/gadget/function/usb_f_eem.o
+  AR      drivers/net/ethernet/broadcom/genet/built-in.a
+  AR      drivers/net/ethernet/broadcom/built-in.a
+  LD [M]  drivers/usb/gadget/function/usb_f_ecm_subset.o
+  LD [M]  drivers/usb/gadget/function/usb_f_rndis.o
+  CC [M]  drivers/net/ethernet/microchip/enc28j60.o
+  CC [M]  drivers/usb/atm/cxacru.o
+  CC      net/core/dev_ioctl.o
+  CC [M]  net/wireless/mlme.o
+  CC      fs/lockd/clnt4xdr.o
+  CC      net/ethtool/phc_vclocks.o
+  CC [M]  net/sched/sch_gred.o
+  CC [M]  net/bridge/br.o
+  CC [M]  net/appletalk/aarp.o
+  CC      drivers/net/phy/bcm7xxx.o
+  CC [M]  drivers/net/hamradio/6pack.o
+  CC      kernel/trace/trace_kprobe.o
+  CC      net/sunrpc/addr.o
+  CC      net/handshake/request.o
+  CC      fs/nfs/namespace.o
+  CC [M]  net/netfilter/nf_conntrack_extend.o
+  CC [M]  net/ipv6/netfilter/ip6t_frag.o
+  CC      net/ipv4/tcp_rate.o
+  CC      drivers/net/phy/bcm-phy-lib.o
+  CC [M]  drivers/usb/atm/speedtch.o
+  CC      net/core/tso.o
+  CC [M]  drivers/media/usb/dvb-usb/pctv452e.o
+  CC      net/ethtool/mm.o
+  CC [M]  net/bridge/br_device.o
+  CC [M]  net/appletalk/ddp.o
+  CC [M]  drivers/net/ethernet/qualcomm/qca_7k_common.o
+  CC      fs/lockd/xdr4.o
+  CC      net/sunrpc/rpcb_clnt.o
+  CC [M]  net/sched/sch_ingress.o
+  CC      fs/nfs/mount_clnt.o
+  CC      net/handshake/tlshd.o
+  CC [M]  net/ipv6/netfilter/ip6t_ipv6header.o
+  AR      kernel/trace/built-in.a
+  CC [M]  drivers/net/hamradio/yam.o
+  CC [M]  net/netfilter/nf_conntrack_acct.o
+  CC      net/ipv4/tcp_recovery.o
+  CC [M]  drivers/net/wireless/ath/main.o
+  CC      kernel/bpf/core.o
+  CC      drivers/net/phy/broadcom.o
+  CC [M]  drivers/net/ethernet/qualcomm/qca_7k.o
+  CC      net/core/sock_reuseport.o
+  CC [M]  drivers/usb/atm/ueagle-atm.o
+  CC      net/ethtool/module.o
+  LD [M]  drivers/media/usb/dvb-usb/dvb-usb-pctv452e.o
+  CC      fs/lockd/svc4proc.o
+  CC [M]  net/bridge/br_fdb.o
+  CC      net/handshake/trace.o
+  CC      fs/nfs/nfstrace.o
+  CC      net/sunrpc/timer.o
+  CC [M]  net/sched/sch_sfb.o
+  CC [M]  net/appletalk/dev.o
+  CC [M]  drivers/net/wireless/ath/regd.o
+  CC [M]  net/netfilter/nf_conntrack_seqadj.o
+  CC [M]  net/ipv6/netfilter/ip6t_mh.o
+  CC [M]  drivers/net/hamradio/bpqether.o
+  CC      drivers/net/phy/fixed_phy.o
+  CC [M]  drivers/net/ethernet/qualcomm/qca_debug.o
+  CC      net/ipv4/tcp_ulp.o
+  CC      net/ethtool/pse-pd.o
+  CC      net/core/fib_notifier.o
+  CC      fs/lockd/procfs.o
+  CC [M]  drivers/usb/atm/usbatm.o
+  CC [M]  net/appletalk/atalk_proc.o
+  CC      net/sunrpc/xdr.o
+  CC [M]  drivers/net/wireless/ath/hw.o
+  AR      net/handshake/built-in.a
+  CC      drivers/net/phy/micrel.o
+  CC [M]  net/sched/sch_sfq.o
+  CC [M]  net/wireless/ibss.o
+  CC [M]  drivers/usb/usbip/usbip_common.o
+  CC [M]  drivers/net/hamradio/baycom_ser_fdx.o
+  CC [M]  net/netfilter/nf_conntrack_proto_icmpv6.o
+  CC [M]  drivers/net/ethernet/qualcomm/qca_spi.o
+  CC [M]  net/ipv6/netfilter/ip6t_hbh.o
+  CC      net/ethtool/plca.o
+  AR      fs/lockd/built-in.a
+  CC      net/ipv4/tcp_offload.o
+  CC      net/core/xdp.o
+  CC [M]  drivers/media/dvb-core/dvb_net.o
+  CC      kernel/bpf/syscall.o
+  CC [M]  drivers/net/wireless/atmel/at76c50x-usb.o
+  CC [M]  net/appletalk/sysctl_net_atalk.o
+  CC [M]  net/bridge/br_forward.o
+  CC [M]  drivers/net/wireless/ath/key.o
+  CC      fs/nfs/export.o
+  CC [M]  drivers/net/hamradio/hdlcdrv.o
+  CC [M]  drivers/usb/usbip/vudc_sysfs.o
+  CC [M]  drivers/usb/atm/xusbatm.o
+  AR      net/ethtool/built-in.a
+  CC [M]  net/sched/sch_tbf.o
+  CC      net/sunrpc/sunrpc_syms.o
+  CC [M]  drivers/net/ethernet/qualcomm/qca_uart.o
+  CC [M]  net/wireless/sme.o
+  CC      drivers/net/phy/microchip.o
+  LD [M]  drivers/media/dvb-core/dvb-core.o
+  CC [M]  net/netfilter/nf_conntrack_timestamp.o
+  CC [M]  net/ipv6/netfilter/ip6t_rpfilter.o
+  LD [M]  net/appletalk/appletalk.o
+  CC      net/ipv4/tcp_plb.o
+  CC [M]  net/ipv6/anycast.o
+  CC [M]  drivers/media/radio/wl128x/fmdrv_common.o
+  CC      net/core/flow_offload.o
+  CC [M]  net/ipv6/netfilter/ip6t_rt.o
+  CC [M]  net/bridge/br_if.o
+  CC      drivers/net/usb/r8152.o
+  CC [M]  drivers/net/wireless/ath/dfs_pattern_detector.o
+  CC      kernel/bpf/verifier.o
+  CC      drivers/net/phy/smsc.o
+  CC      net/sunrpc/cache.o
+  LD [M]  drivers/net/ethernet/qualcomm/qcaspi.o
+  CC      fs/nfs/sysfs.o
+  CC [M]  net/sched/sch_teql.o
+  LD [M]  drivers/net/ethernet/qualcomm/qcauart.o
+  CC [M]  drivers/usb/usbip/vudc_tx.o
+  CC [M]  drivers/net/ethernet/wiznet/w5100.o
+  CC [M]  net/netfilter/nf_conntrack_ecache.o
+  CC [M]  drivers/net/hamradio/baycom_ser_hdx.o
+  CC [M]  net/wireless/chan.o
+  CC      net/ipv4/datagram.o
+  CC      net/core/gro.o
+  CC [M]  drivers/media/radio/wl128x/fmdrv_rx.o
+  CC [M]  net/netrom/af_netrom.o
+  CC      kernel/events/core.o
+  CC [M]  fs/dlm/config.o
+  CC [M]  net/bridge/br_input.o
+  CC [M]  drivers/net/phy/phylink.o
+  CC [M]  drivers/net/wireless/ath/dfs_pri_detector.o
+  CC [M]  net/ipv6/netfilter/ip6t_srh.o
+  CC [M]  net/sched/sch_prio.o
+  CC      fs/nfs/fs_context.o
+  CC [M]  drivers/usb/usbip/vudc_rx.o
+  CC [M]  drivers/net/ethernet/wiznet/w5100-spi.o
+  CC [M]  drivers/net/wireless/broadcom/b43/main.o
+  CC [M]  net/wireless/ethtool.o
+  CC [M]  drivers/media/radio/wl128x/fmdrv_tx.o
+  CC [M]  net/netfilter/nf_conntrack_labels.o
+  CC      net/ipv4/raw.o
+  CC      net/core/netdev-genl.o
+  CC [M]  fs/dlm/midcomms.o
+  CC [M]  net/netrom/nr_dev.o
+  CC [M]  net/bridge/br_ioctl.o
+  CC [M]  net/sched/sch_multiq.o
+  LD [M]  drivers/usb/usbip/usbip-core.o
+  CC [M]  net/ipv6/netfilter/ip6t_NPT.o
+  LD [M]  drivers/usb/usbip/usbip-vudc.o
+  CC [M]  drivers/net/wireless/ath/ath9k/beacon.o
+  CC      drivers/net/usb/lan78xx.o
+  AR      drivers/net/ethernet/built-in.a
+  CC      net/sunrpc/rpc_pipe.o
+  CC      drivers/net/net_failover.o
+  CC [M]  drivers/net/phy/ax88796b.o
+  CC [M]  drivers/media/radio/wl128x/fmdrv_v4l2.o
+  CC [M]  net/wireless/mesh.o
+  CC [M]  net/netfilter/nf_conntrack_ovs.o
+  CC      net/core/netdev-genl-gen.o
+  CC      fs/nfs/nfsroot.o
+  CC [M]  net/sched/sch_netem.o
+  CC      net/ipv4/udp.o
+  AR      drivers/net/phy/built-in.a
+  CC [M]  net/ipv6/ip6_output.o
+  CC [M]  drivers/net/wireless/ath/ath9k/gpio.o
+  CC [M]  drivers/net/wireless/broadcom/b43/bus.o
+  CC [M]  net/bridge/br_stp.o
+  CC [M]  net/netrom/nr_in.o
+  CC [M]  fs/dlm/lowcomms.o
+  CC      kernel/bpf/inode.o
+  CC      net/core/gso.o
+  LD [M]  drivers/media/radio/wl128x/fm_drv.o
+  CC      net/sunrpc/sysfs.o
+  AR      drivers/media/built-in.a
+  CC [M]  net/ipv6/netfilter/ip6t_REJECT.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/main.o
+  CC [M]  drivers/net/wireless/ath/carl9170/main.o
+  CC      fs/nfs/sysctl.o
+  CC [M]  net/wireless/ap.o
+  CC [M]  net/netfilter/nf_conntrack_proto_dccp.o
+  CC [M]  drivers/net/wireless/broadcom/b43/phy_g.o
+  CC [M]  net/netrom/nr_loopback.o
+  CC [M]  drivers/net/wireless/ath/ath9k/init.o
+  CC      drivers/net/usb/smsc95xx.o
+  CC [M]  net/sched/sch_drr.o
+  CC [M]  net/bridge/br_stp_bpdu.o
+  CC      net/core/net-sysfs.o
+  CC [M]  net/rose/af_rose.o
+  CC      net/sunrpc/svc_xprt.o
+  AR      kernel/events/built-in.a
+  CC      fs/nfs/fscache.o
+  CC      net/ipv4/udplite.o
+  CC [M]  net/ipv6/netfilter/ip6t_SYNPROXY.o
+  CC [M]  drivers/net/wireless/ath/carl9170/usb.o
+  CC [M]  net/netfilter/nf_conntrack_proto_sctp.o
+  LD [M]  fs/dlm/dlm.o
+  CC [M]  net/ipv6/ip6_input.o
+  CC [M]  net/wireless/trace.o
+  CC [M]  drivers/md/dm-crypt.o
+  CC [M]  drivers/net/wireless/ath/ath9k/main.o
+  CC [M]  net/netrom/nr_out.o
+  CC [M]  net/sched/sch_plug.o
+  CC      kernel/bpf/helpers.o
+  CC      drivers/net/usb/usbnet.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/ilt.o
+  CC [M]  net/bridge/br_stp_if.o
+  CC [M]  drivers/net/dummy.o
+  CC      net/ipv4/udp_offload.o
+  CC [M]  net/rose/rose_dev.o
+  CC [M]  drivers/net/wireless/broadcom/b43/tables.o
+  CC      fs/nfs/nfs2super.o
+  CC      net/core/page_pool.o
+  CC [M]  drivers/net/wireless/ath/carl9170/cmd.o
+  CC      net/sunrpc/xprtmultipath.o
+  CC [M]  net/netfilter/nf_conntrack_proto_gre.o
+  CC [M]  net/netrom/nr_route.o
+  LD [M]  net/ipv6/netfilter/nf_defrag_ipv6.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmutil/utils.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/phy.o
+  CC [M]  net/sched/sch_mqprio.o
+  CC [M]  net/ipv6/addrconf.o
+  CC [M]  drivers/net/wireless/ath/ath9k/recv.o
+  CC [M]  drivers/net/usb/catc.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/debug.o
+  CC      kernel/bpf/log.o
+  CC [M]  drivers/net/wireless/broadcom/b43/lo.o
+  CC [M]  net/rose/rose_in.o
+  CC [M]  drivers/net/wireless/ath/carl9170/mac.o
+  CC      net/ipv4/arp.o
+  CC [M]  net/bridge/br_stp_timer.o
+  CC      fs/nfs/proc.o
+  CC [M]  drivers/md/dm-log-userspace-transfer.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmutil/d11.o
+  CC      net/core/net-procfs.o
+  CC [M]  net/netfilter/nf_conntrack_netlink.o
+  CC      net/sunrpc/backchannel_rqst.o
+  CC [M]  net/sched/sch_mqprio_lib.o
+  CC [M]  net/netrom/nr_subr.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/hif.o
+  CC [M]  drivers/net/usb/kaweth.o
+  CC [M]  drivers/net/wireless/ath/ath9k/xmit.o
+  CC      kernel/bpf/bpf_iter.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/radio.o
+  CC [M]  drivers/net/wireless/broadcom/b43/wa.o
+  CC [M]  drivers/net/wireless/ath/carl9170/phy.o
+  LD [M]  drivers/md/dm-log-userspace.o
+  CC      net/core/netpoll.o
+  CC [M]  net/rose/rose_link.o
+  CC      fs/nfs/nfs2xdr.o
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil.o
+  CC [M]  net/ax25/ax25_addr.o
+  CC [M]  net/bridge/br_netlink.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.o
+  CC      net/sunrpc/stats.o
+  CC [M]  net/sched/sch_choke.o
+  CC [M]  net/netrom/nr_timer.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/htc_mbox.o
+  CC      net/ipv4/icmp.o
+  CC [M]  drivers/net/wireless/broadcom/b43/phy_common.o
+  CC [M]  drivers/net/usb/pegasus.o
+  CC      kernel/bpf/map_iter.o
+  CC [M]  net/netfilter/nf_conntrack_amanda.o
+  CC [M]  net/rose/rose_loopback.o
+  CC [M]  net/ax25/ax25_dev.o
+  CC [M]  drivers/net/wireless/ath/carl9170/led.o
+  CC [M]  net/netrom/sysctl_net_netrom.o
+  CC      net/core/fib_rules.o
+  CC [M]  net/sched/sch_qfq.o
+  CC [M]  net/bridge/br_netlink_tunnel.o
+  CC      net/sunrpc/sysctl.o
+  CC [M]  drivers/net/wireless/ath/ath9k/link.o
+  CC      fs/nfs/nfs3super.o
+  CC [M]  net/wireless/ocb.o
+  CC [M]  drivers/net/wireless/broadcom/b43/phy_lp.o
+  CC      kernel/bpf/task_iter.o
+  CC [M]  net/ipv6/addrlabel.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/sysfs.o
+  CC [M]  drivers/net/usb/rtl8150.o
+  CC [M]  drivers/net/wireless/ath/carl9170/fw.o
+  CC [M]  net/netfilter/nf_conntrack_ftp.o
+  CC [M]  net/ax25/ax25_iface.o
+  CC [M]  net/rose/rose_out.o
+  LD [M]  net/netrom/netrom.o
+  CC      net/ipv4/devinet.o
+  CC [M]  net/sunrpc/auth_gss/auth_gss.o
+  CC [M]  net/can/af_can.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/htc_pipe.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/chip.o
+  CC [M]  net/bridge/br_arp_nd_proxy.o
+  CC [M]  drivers/net/wireless/ath/ath9k/antenna.o
+  CC      net/core/net-traces.o
+  CC [M]  net/sched/sch_codel.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/xmit.o
+  CC      fs/nfs/nfs3client.o
+  CC [M]  net/wireless/pmsr.o
+  CC      kernel/bpf/prog_iter.o
+  CC [M]  drivers/net/usb/hso.o
+  CC [M]  drivers/net/wireless/ath/carl9170/tx.o
+  CC [M]  net/ipv6/route.o
+  CC [M]  net/rose/rose_route.o
+  CC [M]  net/netfilter/nf_conntrack_h323_main.o
+  CC [M]  net/ax25/ax25_in.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/bmi.o
+  CC [M]  drivers/net/wireless/ath/ath9k/channel.o
+  CC [M]  net/can/proc.o
+  CC [M]  drivers/net/wireless/broadcom/b43/tables_lpphy.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/rfkill.o
+  CC      net/ipv4/af_inet.o
+  CC      fs/nfs/nfs3proc.o
+  CC [M]  net/sched/sch_fq_codel.o
+  CC      kernel/bpf/link_iter.o
+  CC [M]  net/bridge/br_sysfs_if.o
+  CC [M]  drivers/net/wireless/ath/carl9170/rx.o
+  CC [M]  net/wireless/of.o
+  CC [M]  net/rose/rose_subr.o
+  CC [M]  net/ax25/ax25_ip.o
+  CC [M]  net/sunrpc/auth_gss/gss_generic_token.o
+  CC [M]  drivers/net/usb/asix_devices.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.o
+  CC [M]  net/can/raw.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/cfg80211.o
+  CC [M]  drivers/net/wireless/ath/ath9k/mci.o
+  CC [M]  drivers/net/wireless/broadcom/b43/phy_ht.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/leds.o
+  CC [M]  net/netfilter/nf_conntrack_irc.o
+  CC      kernel/bpf/hashtab.o
+  CC [M]  net/sunrpc/auth_gss/gss_mech_switch.o
+  CC [M]  net/wireless/wext-compat.o
+  CC      fs/nfs/nfs3xdr.o
+  CC [M]  net/sched/sch_cake.o
+  CC [M]  net/rose/rose_timer.o
+  CC [M]  net/bridge/br_sysfs_br.o
+  CC [M]  net/ax25/ax25_out.o
+  CC [M]  drivers/net/usb/asix_common.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.o
+  CC      net/ipv4/igmp.o
+  LD [M]  drivers/net/wireless/ath/carl9170/carl9170.o
+  CC      net/core/selftests.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_80211_rx.o
+  CC [M]  net/can/bcm.o
+  CC [M]  drivers/net/wireless/broadcom/b43/tables_phy_ht.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/debugfs.o
+  CC [M]  net/ipv6/ip6_fib.o
+  CC [M]  drivers/net/wireless/ath/ath9k/pci.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/init.o
+  CC [M]  net/rose/sysctl_net_rose.o
+  CC [M]  net/sunrpc/auth_gss/svcauth_gss.o
+  CC [M]  net/netfilter/nf_conntrack_broadcast.o
+  CC [M]  net/ax25/ax25_route.o
+  CC [M]  net/bridge/br_nf_core.o
+  CC [M]  net/wireless/wext-sme.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/proto.o
+  CC [M]  drivers/net/usb/ax88172a.o
+  CC      fs/nfs/nfs3acl.o
+  CC [M]  drivers/net/wireless/broadcom/b43/radio_2059.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_80211_tx.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/dma.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9002_hw.o
+  CC      kernel/bpf/arraymap.o
+  CC [M]  net/can/gw.o
+  CC      net/core/netprio_cgroup.o
+  CC [M]  net/sched/sch_fq.o
+  CC [M]  net/netfilter/nf_conntrack_netbios_ns.o
+  CC [M]  net/ax25/ax25_std_in.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/main.o
+  LD [M]  net/rose/rose.o
+  CC      net/ipv4/fib_frontend.o
+  CC [M]  drivers/net/ifb.o
+  CC [M]  net/bridge/br_multicast.o
+  CC [M]  net/wireless/shipped-certs.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/common.o
+  CC [M]  drivers/net/usb/ax88179_178a.o
+  CC [M]  net/ipv6/ipv6_sockglue.o
+  CC [M]  drivers/net/wireless/broadcom/b43/sysfs.o
+  CC [M]  net/sunrpc/auth_gss/gss_rpc_upcall.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_ap.o
+  CC [M]  drivers/net/wireless/broadcom/b43legacy/pio.o
+  CC      fs/nfs/nfs4proc.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_hw.o
+  CC      net/core/netclassid_cgroup.o
+  CC      kernel/bpf/lpm_trie.o
+  CC [M]  net/can/isotp.o
+  CC [M]  net/ax25/ax25_std_subr.o
+  CC [M]  net/wireless/lib80211.o
+  CC [M]  net/netfilter/nf_conntrack_snmp.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/txrx.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/core.o
+  CC [M]  drivers/net/wireless/ath/ar5523/ar5523.o
+  CC [M]  drivers/net/wireless/broadcom/b43/xmit.o
+  CC [M]  drivers/net/usb/cdc_ether.o
+  CC [M]  net/sunrpc/auth_gss/gss_rpc_xdr.o
+  CC      net/ipv4/fib_semantics.o
+  CC [M]  net/sched/sch_hhf.o
+  CC      net/core/lwtunnel.o
+  LD [M]  drivers/net/wireless/broadcom/b43legacy/b43legacy.o
+  CC [M]  net/ax25/ax25_std_timer.o
+  CC [M]  net/ipv6/ndisc.o
+  CC [M]  drivers/net/wireless/marvell/libertas/cfg.o
+  CC [M]  net/wireless/lib80211_crypt_wep.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_info.o
+  CC [M]  drivers/net/wireless/ath/ath9k/hw.o
+  CC [M]  net/netfilter/nf_conntrack_pptp.o
+  CC      kernel/bpf/local_storage.o
+  CC [M]  net/can/j1939/address-claim.o
+  CC [M]  drivers/net/usb/cdc_eem.o
+  CC [M]  drivers/net/wireless/broadcom/b43/dma.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/wmi.o
+  CC [M]  net/sunrpc/auth_gss/trace.o
+  CC [M]  net/sched/sch_pie.o
+  CC [M]  net/wireless/lib80211_crypt_ccmp.o
+  CC [M]  net/ax25/ax25_subr.o
+  CC      net/core/lwt_bpf.o
+  CC [M]  net/bridge/br_mdb.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/firmware.o
+  CC [M]  drivers/net/wireless/intersil/p54/eeprom.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_ioctl.o
+  CC [M]  drivers/net/wireless/marvell/libertas/cmd.o
+  CC [M]  net/netfilter/nf_conntrack_sane.o
+  CC [M]  drivers/net/usb/dm9601.o
+  CC [M]  net/can/j1939/bus.o
+  CC      net/ipv4/fib_trie.o
+  CC      kernel/bpf/ringbuf.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_phy.o
+  CC [M]  net/ipv6/udp.o
+  CC [M]  net/wireless/lib80211_crypt_tkip.o
+  CC [M]  net/sched/cls_u32.o
+  CC [M]  drivers/net/wireless/broadcom/b43/pio.o
+  CC [M]  net/ax25/ax25_timer.o
+  CC [M]  net/sunrpc/auth_gss/gss_krb5_mech.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/core.o
+  CC [M]  drivers/net/wireless/intersil/p54/fwio.o
+  CC [M]  drivers/net/wireless/marvell/libertas/cmdresp.o
+  CC [M]  drivers/net/usb/sr9700.o
+  CC [M]  net/bridge/br_multicast_eht.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwvid.o
+  CC [M]  net/netfilter/nf_conntrack_sip.o
+  CC [M]  net/can/j1939/main.o
+  CC      net/core/dst_cache.o
+  CC      kernel/bpf/bpf_local_storage.o
+  CC      fs/nfs/nfs4xdr.o
+  AR      net/wireless/built-in.a
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9002_phy.o
+  LD [M]  net/wireless/cfg80211.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_main.o
+  CC [M]  drivers/net/macvlan.o
+  CC [M]  net/sunrpc/auth_gss/gss_krb5_seal.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/recovery.o
+  CC [M]  drivers/net/wireless/marvell/libertas/debugfs.o
+  CC [M]  net/sched/cls_route.o
+  CC [M]  drivers/net/usb/sr9800.o
+  CC [M]  drivers/net/wireless/intersil/p54/txrx.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/feature.o
+  CC [M]  net/ax25/ax25_uid.o
+  CC      net/ipv4/fib_notifier.o
+  CC [M]  drivers/net/wireless/broadcom/b43/rfkill.o
+  CC [M]  net/can/j1939/socket.o
+  CC [M]  net/ipv6/udplite.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar5008_phy.o
+  CC [M]  net/bridge/br_netfilter_hooks.o
+  CC      kernel/bpf/bpf_task_storage.o
+  CC [M]  drivers/net/wireless/intersil/hostap/hostap_proc.o
+  CC      net/core/gro_cells.o
+  CC [M]  net/sunrpc/auth_gss/gss_krb5_unseal.o
+  CC [M]  net/netfilter/nf_conntrack_tftp.o
+  CC [M]  drivers/net/wireless/ath/ath6kl/usb.o
+  CC [M]  drivers/net/usb/smsc75xx.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/btcoex.o
+  CC [M]  drivers/net/wireless/intersil/p54/main.o
+  CC [M]  drivers/net/macvtap.o
+  CC [M]  drivers/net/wireless/marvell/libertas/ethtool.o
+  CC [M]  net/ax25/af_ax25.o
+  CC      net/ipv4/inet_fragment.o
+  CC [M]  net/sched/cls_fw.o
+  CC [M]  net/ipv6/raw.o
+  CC [M]  drivers/net/wireless/broadcom/b43/ppr.o
+  CC      net/core/failover.o
+  CC      kernel/bpf/btf.o
+  LD [M]  drivers/net/wireless/intersil/hostap/hostap.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9002_calib.o
+  CC [M]  net/sunrpc/auth_gss/gss_krb5_wrap.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/usb.o
+  CC [M]  net/can/j1939/transport.o
+  CC [M]  drivers/net/wireless/marvell/libertas/main.o
+  CC [M]  net/bridge/br_netfilter_ipv6.o
+  CC [M]  drivers/net/wireless/intersil/p54/led.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/vendor.o
+  CC [M]  net/netfilter/nf_log_syslog.o
+  CC [M]  drivers/net/wireless/marvell/libertas_tf/main.o
+  LD [M]  drivers/net/wireless/ath/ath6kl/ath6kl_core.o
+  CC [M]  net/sched/cls_basic.o
+  LD [M]  drivers/net/wireless/ath/ath6kl/ath6kl_usb.o
+  CC      fs/nfs/nfs4state.o
+  CC      net/core/skmsg.o
+  CC [M]  drivers/net/wireless/broadcom/b43/leds.o
+  CC [M]  net/sunrpc/auth_gss/gss_krb5_crypto.o
+  CC [M]  net/ax25/ax25_ds_in.o
+  CC [M]  drivers/net/usb/gl620a.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_calib.o
+  CC [M]  net/bluetooth/af_bluetooth.o
+  CC      net/ipv4/ping.o
+  CC [M]  net/ipv6/icmp.o
+  CC [M]  drivers/net/wireless/intersil/p54/p54usb.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/pno.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/init.o
+  CC [M]  drivers/net/wireless/marvell/libertas/rx.o
+  CC [M]  drivers/net/wireless/marvell/libertas_tf/cmd.o
+  LD [M]  net/can/j1939/can-j1939.o
+  LD [M]  net/can/can.o
+  LD [M]  net/can/can-raw.o
+  LD [M]  net/can/can-bcm.o
+  LD [M]  net/can/can-gw.o
+  CC [M]  net/sched/cls_flow.o
+  CC [M]  net/bridge/netfilter/nft_reject_bridge.o
+  LD [M]  net/can/can-isotp.o
+  CC [M]  net/sunrpc/auth_gss/gss_krb5_keys.o
+  LD [M]  drivers/net/wireless/broadcom/b43/b43.o
+  CC [M]  drivers/net/netconsole.o
+  CC [M]  drivers/net/usb/net1080.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mmio.o
+  CC [M]  net/ax25/ax25_ds_subr.o
+  CC [M]  drivers/net/wireless/ath/ath9k/calib.o
+  CC [M]  net/netfilter/nf_nat_core.o
+  CC [M]  drivers/net/wireless/marvell/libertas/tx.o
+  CC [M]  net/bluetooth/hci_core.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcdc.o
+  CC      net/core/sock_map.o
+  LD [M]  drivers/net/wireless/intersil/p54/p54common.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/main.o
+  CC [M]  net/ipv6/mcast.o
+  LD [M]  net/sunrpc/auth_gss/auth_rpcgss.o
+  LD [M]  net/sunrpc/auth_gss/rpcsec_gss_krb5.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/main.o
+  AR      net/sunrpc/built-in.a
+  LD [M]  drivers/net/wireless/ath/ath.o
+  CC      fs/nfs/nfs4renewd.o
+  CC      net/ipv4/ip_tunnel_core.o
+  CC [M]  drivers/net/usb/plusb.o
+  CC [M]  net/sched/cls_cgroup.o
+  CC [M]  drivers/net/wireless/marvell/libertas_tf/if_usb.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/util.o
+  CC [M]  net/bridge/netfilter/ebtables.o
+  CC [M]  net/bridge/netfilter/ebtable_broute.o
+  UPD     kernel/config_data
+  CC      kernel/bpf/devmap.o
+  CC [M]  net/ax25/ax25_ds_timer.o
+  CC [M]  drivers/net/wireless/ath/ath9k/eeprom.o
+  CC [M]  drivers/net/wireless/marvell/libertas/firmware.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwsignal.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/mcu.o
+  CC [M]  net/netfilter/nf_nat_proto.o
+  CC [M]  drivers/net/usb/rndis_host.o
+  CC      fs/nfs/nfs4super.o
+  LD [M]  drivers/net/wireless/marvell/libertas_tf/libertas_tf.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/trace.o
+  LD [M]  drivers/net/wireless/marvell/libertas_tf/libertas_tf_usb.o
+  CC [M]  net/bluetooth/hci_conn.o
+  CC      net/core/bpf_sk_storage.o
+  CC      net/ipv4/gre_offload.o
+  CC [M]  net/ipv6/reassembly.o
+  CC [M]  net/ax25/sysctl_net_ax25.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/init.o
+  CC [M]  net/sched/em_cmp.o
+  CC [M]  drivers/net/wireless/marvell/libertas/if_usb.o
+  CC [M]  drivers/net/wireless/ath/ath9k/eeprom_def.o
+  CC [M]  net/bridge/netfilter/ebtable_filter.o
+  CC      kernel/bpf/cpumap.o
+  CC [M]  drivers/net/tun.o
+  CC [M]  drivers/net/usb/cdc_subset.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/trace.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/sdio.o
+  CC [M]  net/netfilter/nf_nat_helper.o
+  CC      fs/nfs/nfs4file.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/dma.o
+  CC      net/core/of_net.o
+  CC [M]  fs/ecryptfs/main.o
+  LD [M]  net/ax25/ax25.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00dev.o
+  CC      net/ipv4/metrics.o
+  CC [M]  drivers/net/wireless/marvell/libertas/if_sdio.o
+  CC [M]  net/sched/em_nbyte.o
+  CC [M]  net/bridge/netfilter/ebtable_nat.o
+  CC [M]  net/ipv6/tcp_ipv6.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/cfp.o
+  CC [M]  drivers/net/wireless/ath/ath9k/eeprom_4k.o
+  CC [M]  net/core/pktgen.o
+  CC [M]  drivers/net/usb/zaurus.o
+  CC      kernel/bpf/offload.o
+  CC [M]  net/bluetooth/hci_event.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/dma.o
+  LD [M]  fs/ecryptfs/ecryptfs.o
+  CC [M]  drivers/net/tap.o
+  CC [M]  net/netfilter/nf_nat_redirect.o
+  CC [M]  net/sched/em_u32.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.o
+  CC      fs/nfs/delegation.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mac80211.o
+  CC      net/ipv4/netlink.o
+  LD [M]  drivers/net/wireless/marvell/libertas/libertas.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00mac.o
+  LD [M]  drivers/net/wireless/marvell/libertas/usb8xxx.o
+  LD [M]  drivers/net/wireless/marvell/libertas/libertas_sdio.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/cmdevt.o
+  CC [M]  net/atm/addr.o
+  CC [M]  net/bridge/netfilter/ebt_802_3.o
+  CC [M]  drivers/net/wireless/realtek/rtl818x/rtl8187/dev.o
+  CC [M]  drivers/net/usb/mcs7830.o
+  CC [M]  drivers/net/wireless/ath/ath9k/eeprom_9287.o
+  CC [M]  net/ipv6/ping.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/core.o
+  CC [M]  net/sched/em_meta.o
+  CC [M]  net/ipv6/exthdrs.o
+  CC [M]  net/netfilter/nf_nat_masquerade.o
+  CC      kernel/bpf/net_namespace.o
+  CC      net/ipv4/nexthop.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00config.o
+  CC [M]  net/atm/pvc.o
+  CC [M]  drivers/net/usb/int51x1.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/debugfs.o
+  AR      net/core/built-in.a
+  CC [M]  net/bluetooth/mgmt.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/usb.o
+  CC [M]  net/bridge/netfilter/ebt_among.o
+  CC [M]  fs/nfsd/trace.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ani.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/eeprom.o
+  CC [M]  drivers/net/wireless/realtek/rtl818x/rtl8187/rtl8225.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/util.o
+  CC      fs/nfs/nfs4idmap.o
+  CC [M]  net/sched/em_text.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_core.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/base.o
+  CC [M]  drivers/net/usb/kalmia.o
+  CC      kernel/bpf/tcx.o
+  CC [M]  net/atm/signaling.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00queue.o
+  CC [M]  net/ipv6/datagram.o
+  CC [M]  net/netfilter/nf_nat_ovs.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/eeprom.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/debug.o
+  CC [M]  net/bridge/netfilter/ebt_arp.o
+  CC [M]  drivers/net/wireless/realtek/rtl818x/rtl8187/leds.o
+  CC [M]  net/sched/em_ipset.o
+  CC [M]  drivers/net/wireless/ath/ath9k/mac.o
+  CC [M]  drivers/net/usb/ipheth.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/phy.o
+  CC      net/ipv4/udp_tunnel_stub.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/txrx.o
+  CC [M]  net/atm/svc.o
+  CC      fs/nfs/callback.o
+  CC [M]  net/netfilter/nf_nat_amanda.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00link.o
+  CC      kernel/bpf/stackmap.o
+  CC [M]  net/ipv6/ip6_flowlabel.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/of.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/cam.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/tx.o
+  CC [M]  net/bridge/netfilter/ebt_ip.o
+  CC [M]  drivers/net/wireless/realtek/rtl818x/rtl8187/rfkill.o
+  CC [M]  drivers/net/usb/sierra_net.o
+  AR      net/sched/built-in.a
+  CC [M]  drivers/net/veth.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9002_mac.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/wmm.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/mac.o
+  CC [M]  net/atm/ioctl.o
+  CC [M]  net/bluetooth/hci_sock.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00crypto.o
+  CC [M]  fs/nfsd/nfssvc.o
+  CC      net/ipv4/sysctl_net_ipv4.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/dmi.o
+  CC      fs/nfs/callback_xdr.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8192e.o
+  CC [M]  net/netfilter/nf_nat_ftp.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/core.o
+  CC      kernel/bpf/bpf_cgrp_storage.o
+  CC [M]  net/ipv6/inet6_connection_sock.o
+  CC [M]  net/bridge/netfilter/ebt_ip6.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/agg-rx.o
+  LD [M]  drivers/net/wireless/realtek/rtl818x/rtl8187/rtl8187.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_mac.o
+  CC [M]  drivers/net/usb/cx82310_eth.o
+  CC [M]  fs/smb/client/trace.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/core.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00firmware.o
+  CC [M]  net/atm/common.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/util.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8723b.o
+  CC      kernel/bpf/cgroup.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/11n.o
+  CC      net/ipv4/proc.o
+  CC [M]  net/l2tp/l2tp_core.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/debug.o
+  CC [M]  net/bridge/netfilter/ebt_limit.o
+  CC [M]  net/netfilter/nf_nat_irc.o
+  CC [M]  net/bluetooth/hci_sysfs.o
+  CC [M]  fs/nfsd/nfsctl.o
+  CC [M]  net/ipv6/udp_offload.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_eeprom.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mcu.o
+  CC [M]  drivers/net/usb/cdc_ncm.o
+  CC      fs/nfs/callback_proc.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/module.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00leds.o
+  CC [M]  net/atm/atm_misc.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/debugfs.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8723a.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/efuse.o
+  CC [M]  net/bluetooth/l2cap_core.o
+  CC [M]  net/netfilter/nf_nat_sip.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/pci.o
+  CC [M]  net/bridge/netfilter/ebt_mark_m.o
+  CC [M]  fs/smb/client/cifsfs.o
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/brcmfmac-wcc.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/cyw/core.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/11ac.o
+  CC      kernel/bpf/reuseport_array.o
+  CC [M]  drivers/net/usb/huawei_cdc_ncm.o
+  CC [M]  net/ipv6/seg6.o
+  CC [M]  fs/nfsd/nfsfh.o
+  CC      net/ipv4/fib_rules.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2x00usb.o
+  CC [M]  net/atm/raw.o
+  CC [M]  net/l2tp/l2tp_ppp.o
+  CC [M]  drivers/net/wireless/mediatek/mt7601u/tx.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8192c.o
+  CC      fs/nfs/nfs4namespace.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/usb.o
+  CC [M]  net/bridge/netfilter/ebt_pkttype.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/cyw/module.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_paprd.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/ps.o
+  CC [M]  net/netfilter/nf_nat_tftp.o
+  CC [M]  drivers/net/usb/lg-vl600.o
+  CC [M]  net/ipv6/fib6_notifier.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/11n_aggr.o
+  CC      kernel/bpf/relo_core.o
+  CC [M]  net/atm/resources.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8188f.o
+  CC [M]  fs/smb/client/cifs_debug.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2800lib.o
+  CC [M]  fs/nfsd/vfs.o
+  LD [M]  drivers/net/wireless/mediatek/mt7601u/mt7601u.o
+  CC [M]  drivers/net/vrf.o
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/cyw/brcmfmac-cyw.o
+  CC      net/ipv4/ipmr.o
+  CC      fs/nfs/nfs4getroot.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/bca/core.o
+  CC [M]  drivers/net/usb/qmi_wwan.o
+  CC [M]  net/bridge/netfilter/ebt_stp.o
+  CC [M]  net/netfilter/nf_synproxy_core.o
+  CC [M]  net/l2tp/l2tp_ip.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/usb_trace.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rc.o
+  CC [M]  drivers/net/wireless/ath/ath9k/btcoex.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/11n_rxreorder.o
+  AR      kernel/bpf/built-in.a
+  CC [M]  net/ipv6/rpl.o
+  AR      kernel/built-in.a
+  CC [M]  net/atm/atm_sysfs.o
+  GZIP    kernel/config_data.gz
+  CC [M]  kernel/configs.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8188e.o
+  CC [M]  net/bluetooth/l2cap_sock.o
+  CC [M]  fs/smb/client/connect.o
+  CC      fs/nfs/nfs4client.o
+  CC [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/bca/module.o
+  CC [M]  drivers/net/usb/cdc_mbim.o
+  CC [M]  net/bridge/netfilter/ebt_vlan.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_util.o
+  CC [M]  fs/nfsd/export.o
+  CC [M]  drivers/leds/trigger/ledtrig-netdev.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/regd.o
+  CC [M]  net/l2tp/l2tp_netlink.o
+  CC [M]  net/atm/proc.o
+  CC [M]  net/ipv6/ioam6.o
+  CC [M]  net/sctp/sm_statetable.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_mci.o
+  CC [M]  net/netfilter/nf_conncount.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/scan.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8710b.o
+  CC      net/ipv4/ipmr_base.o
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/bca/brcmfmac-bca.o
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2500usb.o
+  CC [M]  net/bridge/netfilter/ebt_arpreply.o
+  CC [M]  net/bluetooth/smp.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/stats.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_mac.o
+  CC      fs/nfs/nfs4session.o
+  CC [M]  drivers/net/usb/aqc111.o
+  CC [M]  net/atm/pppoatm.o
+  CC [M]  net/sctp/sm_statefuns.o
+  CC [M]  fs/smb/client/dir.o
+  CC [M]  net/l2tp/l2tp_eth.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_aic.o
+  CC [M]  net/ipv6/sysctl_net_ipv6.o
+  CC [M]  net/netfilter/nf_dup_netdev.o
+  CC      net/ipv4/syncookies.o
+  CC [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu_8192f.o
+  CC [M]  net/bridge/netfilter/ebt_mark.o
+  CC [M]  fs/nfsd/auth.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/join.o
+  CC [M]  net/mac80211/main.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/usb.o
+  CC [M]  net/bluetooth/lib.o
+  LD [M]  net/atm/atm.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_mcu.o
+  CC      fs/nfs/dns_resolve.o
+  CC [M]  drivers/net/usb/r8153_ecm.o
+  CC [M]  net/l2tp/l2tp_ip6.o
+  CC [M]  drivers/net/wireless/ath/ath9k/ar9003_rtt.o
+  CC [M]  net/ipv6/ip6mr.o
+  CC [M]  net/sctp/sm_sideeffect.o
+  CC [M]  net/netfilter/nf_tables_core.o
+  CC [M]  fs/nfsd/lockd.o
+  LD [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.o
+  CC [M]  fs/smb/client/file.o
+  CC [M]  net/bridge/netfilter/ebt_dnat.o
+  CC      net/ipv4/ipconfig.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192c/main.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sta_ioctl.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt73usb.o
+  CC [M]  net/bluetooth/hci_request.o
+  AR      drivers/net/usb/built-in.a
+  LD [M]  drivers/net/usb/asix.o
+  CC [M]  drivers/net/wireless/zydas/zd1201.o
+  CC      fs/nfs/nfs4trace.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_eeprom.o
+  CC [M]  net/ipv6/xfrm6_policy.o
+  CC [M]  drivers/net/wireless/ath/ath9k/common.o
+  CC [M]  net/netfilter/nf_tables_api.o
+  CC [M]  net/mac80211/status.o
+  CC [M]  fs/nfsd/nfscache.o
+  CC [M]  fs/smb/client/inode.o
+  CC [M]  net/sctp/protocol.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192c/dm_common.o
+  CC [M]  fs/nfsd/stats.o
+  CC      net/ipv4/netfilter.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sta_cmd.o
+  CC [M]  net/bridge/netfilter/ebt_redirect.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_chip.o
+  CC [M]  drivers/net/wireless/ralink/rt2x00/rt2800usb.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_phy.o
+  CC [M]  net/ipv6/xfrm6_state.o
+  CC [M]  net/bluetooth/mgmt_util.o
+  CC [M]  drivers/net/wireless/ath/ath9k/common-init.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/dm.o
+  CC [M]  drivers/net/wireless/legacy/rndis_wlan.o
+  CC [M]  net/mac80211/driver-ops.o
+  CC [M]  fs/nfsd/filecache.o
+  CC [M]  net/sctp/endpointola.o
+  CC [M]  net/ipv4/netfilter/nf_defrag_ipv4.o
+  CC [M]  net/bridge/netfilter/ebt_snat.o
+  CC      fs/nfs/nfs4sysctl.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192c/fw_common.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_mmio.o
+  CC [M]  drivers/net/wireless/ath/ath9k/common-beacon.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_mac.o
+  CC [M]  net/netfilter/nft_chain_filter.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/uap_cmd.o
+  CC [M]  fs/smb/client/link.o
+  CC [M]  net/bluetooth/mgmt_config.o
+  CC [M]  net/ipv6/xfrm6_input.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/hw.o
+  CC      fs/nfs/pnfs.o
+  CC [M]  drivers/net/wireless/virtual/mac80211_hwsim.o
+  CC [M]  net/bridge/netfilter/ebt_log.o
+  CC [M]  net/sctp/associola.o
+  CC [M]  drivers/net/wireless/ath/ath9k/htc_hst.o
+  CC [M]  net/ipv4/netfilter/nf_socket_ipv4.o
+  CC [M]  net/mac80211/sta_info.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192c/phy_common.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_txrx.o
+  CC [M]  fs/nfsd/nfs3proc.o
+  CC      net/ipv4/tcp_cubic.o
+  CC [M]  net/bluetooth/hci_codec.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/ie.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_rf_al2230.o
+  CC [M]  fs/smb/client/misc.o
+  CC [M]  net/netfilter/nf_tables_trace.o
+  CC [M]  net/ipv6/xfrm6_output.o
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt2x00lib.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/led.o
+  CC [M]  net/bridge/netfilter/ebt_nflog.o
+  CC [M]  net/6lowpan/core.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_trace.o
+  CC [M]  drivers/net/wireless/ath/ath9k/hif_usb.o
+  CC [M]  net/ipv4/netfilter/nf_tproxy_ipv4.o
+  CC [M]  net/sctp/transport.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_rf_rf2959.o
+  CC [M]  net/bluetooth/eir.o
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192c/rtl8192c-common.o
+  CC [M]  fs/nfsd/nfs3xdr.o
+  CC      fs/nfs/pnfs_dev.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sta_cmdresp.o
+  CC [M]  net/mac80211/wep.o
+  CC [M]  fs/smb/client/netmisc.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/mac.o
+  CC [M]  net/netfilter/nft_immediate.o
+  CC [M]  net/ipv6/xfrm6_protocol.o
+  CC [M]  net/6lowpan/iphc.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_debugfs.o
+  CC [M]  net/6lowpan/nhc.o
+  LD [M]  net/bridge/bridge.o
+  LD [M]  net/bridge/br_netfilter.o
+  CC [M]  net/ipv4/netfilter/nf_reject_ipv4.o
+  CC [M]  net/sctp/chunk.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_rf_al7230b.o
+  CC [M]  net/bluetooth/hci_sync.o
+  CC [M]  net/bluetooth/coredump.o
+  CC [M]  drivers/net/wireless/ath/ath9k/wmi.o
+  CC [M]  fs/nfsd/nfs3acl.o
+  CC      net/ipv4/tcp_bpf.o
+  CC [M]  fs/nfsd/nfs4proc.o
+  CC      fs/nfs/pnfs_nfs.o
+  CC [M]  net/netfilter/nft_cmp.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/phy.o
+  CC [M]  fs/smb/client/smbencrypt.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sta_event.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_dfs.o
+  CC [M]  net/ipv6/netfilter.o
+  CC [M]  net/6lowpan/ndisc.o
+  CC [M]  net/6lowpan/nhc_dest.o
+  CC [M]  net/mac80211/wpa.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_rf_uw2453.o
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtlwifi.o
+  CC [M]  net/bluetooth/sco.o
+  CC [M]  net/sctp/sm_make_chunk.o
+  CC [M]  drivers/net/wireless/ath/ath9k/htc_drv_txrx.o
+  CC [M]  net/ipv4/netfilter/nf_nat_h323.o
+  CC      net/ipv4/udp_bpf.o
+  CC [M]  drivers/staging/wlan-ng/prism2usb.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/rf.o
+  CC [M]  net/netfilter/nft_range.o
+  CC      fs/nfs/nfs42proc.o
+  CC [M]  net/6lowpan/nhc_fragment.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_rf.o
+  CC [M]  fs/ocfs2/super.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/uap_event.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_beacon.o
+  CC [M]  fs/smb/client/transport.o
+  CC [M]  net/ipv6/fib6_rules.o
+  CC [M]  net/ieee802154/netlink.o
+  CC [M]  fs/nfsd/nfs4xdr.o
+  CC [M]  net/mac80211/scan.o
+  CC [M]  net/bluetooth/iso.o
+  CC      net/ipv4/xfrm4_policy.o
+  CC [M]  net/netfilter/nft_bitwise.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/sw.o
+  CC [M]  drivers/net/wireless/ath/ath9k/htc_drv_main.o
+  CC [M]  net/ipv4/netfilter/nf_nat_pptp.o
+  CC [M]  net/6lowpan/nhc_hop.o
+  CC [M]  drivers/net/wireless/zydas/zd1211rw/zd_usb.o
+  CC [M]  net/sctp/ulpevent.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_cmd.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_usb_mcu.o
+  CC [M]  net/ieee802154/nl-mac.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sta_tx.o
+  CC [M]  net/ipv6/proc.o
+  CC [M]  drivers/staging/wlan-ng/p80211conv.o
+  CC      fs/nfs/nfs42xattr.o
+  CC [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/trx.o
+  CC [M]  fs/smb/client/cached_dir.o
+  CC [M]  net/netfilter/nft_byteorder.o
+  CC [M]  net/6lowpan/nhc_ipv6.o
+  CC [M]  net/ipv4/netfilter/nf_nat_snmp_basic_main.o
+  CC [M]  drivers/net/wireless/ath/ath9k/htc_drv_beacon.o
+  CC [M]  drivers/staging/rtl8712/rtl8712_cmd.o
+  CC [M]  net/mac80211/offchannel.o
+  CC [M]  fs/nfsd/nfs4state.o
+  CC [M]  net/bluetooth/hci_debugfs.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x02_usb_core.o
+  LD [M]  drivers/net/wireless/zydas/zd1211rw/zd1211rw.o
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtl_usb.o
+  CC [M]  drivers/staging/wlan-ng/p80211req.o
+  CC [M]  net/sctp/inqueue.o
+  CC [M]  drivers/staging/vt6656/main_usb.o
+  CC [M]  net/ieee802154/nl-phy.o
+  CC [M]  net/ipv6/syncookies.o
+  CC [M]  fs/nfsd/nfs4idmap.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sta_rx.o
+  CC      fs/nfs/filelayout/filelayout.o
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/rtl8192cu.o
+  CC [M]  net/netfilter/nft_payload.o
+  CC      net/ipv4/xfrm4_state.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_security.o
+  CC [M]  net/6lowpan/nhc_mobility.o
+  CC [M]  net/ipv4/netfilter/nft_reject_ipv4.o
+  CC [M]  drivers/net/wireless/ath/ath9k/htc_drv_init.o
+  CC [M]  fs/smb/client/cifs_unicode.o
+  CC [M]  drivers/staging/wlan-ng/p80211wep.o
+  CC [M]  net/ieee802154/nl_policy.o
+  CC [M]  net/sctp/outqueue.o
+  CC [M]  drivers/staging/vt6656/card.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x0/usb.o
+  CC [M]  net/bluetooth/6lowpan.o
+  CC [M]  net/mac80211/ht.o
+  CC [M]  fs/nfsd/nfs4acl.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/uap_txrx.o
+  CC [M]  net/6lowpan/nhc_routing.o
+  CC [M]  net/ipv6/ah6.o
+  CC [M]  net/ieee802154/core.o
+  CC [M]  drivers/staging/wlan-ng/p80211netdev.o
+  CC [M]  net/ipv4/netfilter/nft_fib_ipv4.o
+  CC [M]  fs/smb/client/cifsencrypt.o
+  CC [M]  drivers/net/wireless/ath/ath9k/htc_drv_gpio.o
+  CC [M]  net/mac802154/main.o
+  CC      fs/nfs/filelayout/filelayoutdev.o
+  CC [M]  net/netfilter/nft_lookup.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x0/usb_mcu.o
+  CC [M]  drivers/staging/vt6656/mac.o
+  CC [M]  net/sctp/ulpqueue.o
+  CC [M]  net/mac80211/agg-tx.o
+  CC [M]  fs/ocfs2/stack_o2cb.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/cfg80211.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_eeprom.o
+  CC [M]  net/6lowpan/nhc_udp.o
+  CC [M]  net/ipv4/netfilter/nft_dup_ipv4.o
+  CC [M]  net/mac802154/rx.o
+  LD [M]  drivers/staging/wlan-ng/prism2_usb.o
+  CC [M]  net/ipv6/esp6.o
+  CC [M]  net/bluetooth/rfcomm/core.o
+  CC      fs/nfs/flexfilelayout/flexfilelayout.o
+  AR      fs/nfs/filelayout/built-in.a
+  CC [M]  net/ieee802154/header_ops.o
+  CC      net/ipv4/xfrm4_input.o
+  CC [M]  fs/smb/client/readdir.o
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x0/init.o
+  CC [M]  net/batman-adv/bat_algo.o
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k_hw.o
+  CC [M]  net/netfilter/nft_dynset.o
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k_common.o
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k_htc.o
+  CC [M]  drivers/staging/vt6656/baseband.o
+  CC [M]  drivers/staging/rtl8712/rtl8712_efuse.o
+  CC [M]  net/sctp/tsnmap.o
+  CC [M]  fs/nfsd/nfs4callback.o
+  LD [M]  net/6lowpan/6lowpan.o
+  CC [M]  net/mac80211/agg-rx.o
+  CC [M]  net/mac802154/tx.o
+  CC [M]  net/sctp/bind_addr.o
+  CC [M]  net/ipv4/netfilter/ip_tables.o
+  CC [M]  fs/ocfs2/cluster/heartbeat.o
+  CC [M]  net/batman-adv/bat_iv_ogm.o
+  CC [M]  net/bluetooth/bnep/core.o
+  CC [M]  net/ieee802154/sysfs.o
+  CC [M]  net/bluetooth/rfcomm/sock.o
+  CC [M]  net/netfilter/nft_meta.o
+  CC [M]  drivers/staging/vt6656/wcmd.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/ethtool.o
+  CC [M]  net/ipv6/esp6_offload.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x0/main.o
+  CC [M]  fs/smb/client/ioctl.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/eeprom.o
+  CC [M]  net/mac802154/mac_cmd.o
+  CC [M]  drivers/staging/rtl8712/hal_init.o
+  CC [M]  fs/nfs/blocklayout/blocklayout.o
+  CC [M]  net/sctp/socket.o
+  CC [M]  fs/nfsd/nfs4recover.o
+  CC [M]  net/mac80211/vht.o
+  CC [M]  net/bluetooth/bnep/sock.o
+  CC [M]  net/ieee802154/nl802154.o
+  CC      fs/nfs/flexfilelayout/flexfilelayoutdev.o
+  CC [M]  net/ipv4/netfilter/iptable_filter.o
+  CC [M]  fs/ocfs2/cluster/nodemanager.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x0/eeprom.o
+  CC [M]  net/netfilter/nft_rt.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/11h.o
+  CC [M]  net/bluetooth/rfcomm/tty.o
+  CC [M]  net/batman-adv/bat_v.o
+  CC [M]  drivers/staging/vt6656/rxtx.o
+  CC [M]  net/ipv6/ipcomp6.o
+  CC [M]  net/mac802154/mib.o
+  CC [M]  fs/smb/client/sess.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/mac.o
+  CC [M]  drivers/staging/rtl8712/usb_halinit.o
+  CC [M]  fs/nfs/blocklayout/dev.o
+  CC [M]  net/ipv4/netfilter/iptable_mangle.o
+  CC [M]  net/mac80211/he.o
+  AR      fs/nfs/flexfilelayout/built-in.a
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x0/phy.o
+  CC [M]  fs/ocfs2/cluster/tcp.o
+  LD [M]  fs/nfsd/nfsd.o
+  CC [M]  net/nfc/core.o
+  CC [M]  net/netfilter/nft_exthdr.o
+  CC [M]  net/bluetooth/bnep/netdev.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/tdls.o
+  CC [M]  net/batman-adv/bat_v_elp.o
+  CC [M]  fs/ocfs2/dlm/dlmdomain.o
+  CC [M]  net/ipv6/xfrm6_tunnel.o
+  CC [M]  drivers/staging/vt6656/power.o
+  LD [M]  net/bluetooth/rfcomm/rfcomm.o
+  CC [M]  net/mac802154/iface.o
+  CC      net/ipv4/xfrm4_output.o
+  CC [M]  drivers/staging/rtl8712/usb_ops.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/init.o
+  CC [M]  net/ieee802154/trace.o
+  CC [M]  fs/nfs/blocklayout/extent_tree.o
+  CC [M]  net/mac80211/s1g.o
+  CC [M]  fs/smb/client/export.o
+  LD [M]  net/bluetooth/bnep/bnep.o
+  CC [M]  net/bluetooth/hidp/core.o
+  CC [M]  drivers/staging/vt6656/key.o
+  CC [M]  net/nfc/netlink.o
+  CC [M]  net/ipv4/netfilter/iptable_nat.o
+  CC [M]  drivers/staging/rtl8712/usb_ops_linux.o
+  CC [M]  net/ipv6/tunnel6.o
+  CC [M]  net/netfilter/nft_last.o
+  CC [M]  net/mac802154/llsec.o
+  CC [M]  net/sctp/primitive.o
+  CC [M]  net/batman-adv/bat_v_ogm.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/phy.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/debugfs.o
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x0/mt76x0u.o
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x0/mt76x0-common.o
+  CC [M]  drivers/net/bonding/bond_main.o
+  CC [M]  fs/ocfs2/dlm/dlmdebug.o
+  CC [M]  net/sctp/output.o
+  CC [M]  fs/ocfs2/cluster/netdebug.o
+  CC [M]  net/ieee802154/socket.o
+  CC [M]  fs/nfs/blocklayout/rpc_pipefs.o
+  CC [M]  fs/smb/client/unc.o
+  CC [M]  drivers/staging/vt6656/rf.o
+  CC [M]  net/mac80211/ibss.o
+  CC [M]  net/netfilter/nft_counter.o
+  CC [M]  net/ipv6/ip6_vti.o
+  CC [M]  net/nfc/af_nfc.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_io.o
+  CC [M]  net/bluetooth/hidp/sock.o
+  CC [M]  net/batman-adv/bitarray.o
+  CC [M]  net/openvswitch/actions.o
+  CC [M]  net/ipv4/netfilter/iptable_raw.o
+  CC [M]  net/mac802154/util.o
+  CC [M]  drivers/net/wireless/marvell/mwifiex/sdio.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/mcu.o
+  LD [M]  fs/ocfs2/cluster/ocfs2_nodemanager.o
+  CC      net/ipv4/xfrm4_protocol.o
+  CC [M]  fs/ocfs2/dlm/dlmthread.o
+  CC [M]  drivers/staging/vt6656/usbpipe.o
+  CC [M]  net/sctp/input.o
+  CC [M]  net/ieee802154/6lowpan/core.o
+  CC [M]  net/nfc/rawsock.o
+  LD [M]  fs/nfs/blocklayout/blocklayoutdriver.o
+  CC [M]  fs/smb/client/smb2ops.o
+  CC [M]  net/netfilter/nft_objref.o
+  AR      fs/nfs/built-in.a
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76.o
+  CC [M]  drivers/net/ipvlan/ipvlan_core.o
+  CC [M]  net/mac802154/cfg.o
+  CC [M]  drivers/staging/rtl8712/rtl8712_io.o
+  CC [M]  net/ipv4/netfilter/ipt_ah.o
+  CC [M]  net/batman-adv/bridge_loop_avoidance.o
+  LD [M]  net/bluetooth/hidp/hidp.o
+  LD [M]  net/bluetooth/bluetooth.o
+  CC [M]  net/mac80211/iface.o
+  LD [M]  net/bluetooth/bluetooth_6lowpan.o
+  CC [M]  drivers/net/bonding/bond_3ad.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/usb.o
+  CC [M]  net/ipv6/sit.o
+  CC [M]  net/openvswitch/datapath.o
+  CC [M]  fs/ocfs2/dlm/dlmrecovery.o
+  CC [M]  drivers/net/bonding/bond_alb.o
+  CC [M]  drivers/staging/vt6656/channel.o
+  LD [M]  drivers/net/wireless/marvell/mwifiex/mwifiex.o
+  CC [M]  net/sctp/debug.o
+  LD [M]  drivers/net/wireless/marvell/mwifiex/mwifiex_sdio.o
+  CC [M]  net/ieee802154/6lowpan/rx.o
+  CC [M]  net/netfilter/nft_inner.o
+  CC [M]  net/nfc/llcp_core.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_ioctl_linux.o
+  CC [M]  net/mac802154/scan.o
+  CC [M]  fs/smb/client/smb2maperror.o
+  CC [M]  net/ipv4/netfilter/ipt_rpfilter.o
+  CC [M]  drivers/net/ipvlan/ipvlan_main.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/usb_init.o
+  LD [M]  drivers/staging/vt6656/vt6656_stage.o
+  AR      fs/built-in.a
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76-usb.o
+  CC [M]  drivers/net/wireguard/main.o
+  CC [M]  net/batman-adv/distributed-arp-table.o
+  CC [M]  net/ieee802154/6lowpan/reassembly.o
+  CC [M]  net/sctp/stream.o
+  CC [M]  net/mac80211/link.o
+  CC [M]  net/nsh/nsh.o
+  CC [M]  net/ipv6/ip6_tunnel.o
+  CC [M]  drivers/net/bonding/bond_sysfs.o
+  CC [M]  net/netfilter/nft_chain_route.o
+  CC [M]  net/openvswitch/dp_notify.o
+  CC [M]  net/mac802154/trace.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_ioctl_rtl.o
+  CC [M]  fs/ocfs2/dlm/dlmmaster.o
+  CC [M]  net/ipv4/netfilter/ipt_ECN.o
+  LD [M]  fs/ocfs2/ocfs2.o
+  CC [M]  fs/smb/client/smb2transport.o
+  CC [M]  fs/ocfs2/dlm/dlmast.o
+  CC [M]  net/nfc/llcp_commands.o
+  CC [M]  drivers/net/ipvlan/ipvlan_l3s.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/usb_main.o
+  CC [M]  drivers/net/wireguard/noise.o
+  CC [M]  net/ieee802154/6lowpan/tx.o
+  CC [M]  drivers/net/vxlan/vxlan_core.o
+  CC [M]  net/sctp/auth.o
+  CC [M]  net/batman-adv/fragmentation.o
+  CC [M]  net/openvswitch/flow.o
+  CC [M]  net/mac80211/rate.o
+  CC [M]  drivers/net/bonding/bond_sysfs_slave.o
+  LD [M]  net/mac802154/mac802154.o
+  CC [M]  net/netfilter/nf_tables_offload.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_ioctl_set.o
+  CC [M]  net/ipv4/netfilter/ipt_REJECT.o
+  CC [M]  net/ipv6/ip6_gre.o
+  CC [M]  net/nfc/llcp_sock.o
+  CC [M]  drivers/net/bonding/bond_debugfs.o
+  CC [M]  fs/smb/client/smb2misc.o
+  LD [M]  drivers/net/ipvlan/ipvlan.o
+  LD [M]  fs/ocfs2/ocfs2_stack_o2cb.o
+  CC [M]  drivers/net/wireguard/device.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/usb_mac.o
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x02-lib.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/usb_mcu.o
+  CC [M]  drivers/net/vxlan/vxlan_multicast.o
+  LD [M]  net/ieee802154/6lowpan/ieee802154_6lowpan.o
+  LD [M]  net/ieee802154/ieee802154.o
+  LD [M]  net/ieee802154/ieee802154_socket.o
+  CC [M]  net/batman-adv/gateway_client.o
+  CC [M]  net/openvswitch/flow_netlink.o
+  CC [M]  net/sctp/offload.o
+  CC [M]  fs/ocfs2/dlm/dlmconvert.o
+  CC [M]  net/mac80211/michael.o
+  CC [M]  drivers/net/bonding/bond_netlink.o
+  CC [M]  drivers/staging/rtl8712/rtl8712_led.o
+  CC [M]  net/ipv4/netfilter/arp_tables.o
+  CC [M]  net/netfilter/nft_set_hash.o
+  LD [M]  net/nfc/nfc.o
+  CC [M]  net/ipv4/ip_tunnel.o
+  CC [M]  fs/smb/client/smb2pdu.o
+  CC [M]  drivers/net/can/vcan.o
+  CC [M]  net/ipv4/netfilter/arpt_mangle.o
+  CC [M]  drivers/net/wireless/mediatek/mt76/mt76x2/usb_phy.o
+  CC [M]  drivers/net/wireguard/peer.o
+  CC [M]  drivers/connector/cn_queue.o
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x02-usb.o
+  CC [M]  drivers/net/vxlan/vxlan_vnifilter.o
+  CC [M]  net/batman-adv/gateway_common.o
+  CC [M]  net/sctp/stream_sched.o
+  CC [M]  fs/ocfs2/dlm/dlmlock.o
+  CC [M]  drivers/net/bonding/bond_options.o
+  CC [M]  net/ipv6/fou6.o
+  CC [M]  net/mac80211/tkip.o
+  CC [M]  drivers/net/vxlan/vxlan_mdb.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_mlme.o
+  CC [M]  net/netfilter/nft_set_bitmap.o
+  CC [M]  drivers/net/can/dev/skb.o
+  CC [M]  net/ipv4/netfilter/arptable_filter.o
+  CC [M]  drivers/net/ppp/ppp_generic.o
+  CC [M]  net/batman-adv/hard-interface.o
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x2/mt76x2-common.o
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x2/mt76x2u.o
+  CC [M]  drivers/net/wireguard/timers.o
+  CC [M]  fs/smb/client/smb2inode.o
+  CC [M]  net/openvswitch/flow_table.o
+  CC [M]  drivers/connector/connector.o
+  CC [M]  net/sctp/stream_sched_prio.o
+  CC [M]  fs/ocfs2/dlm/dlmunlock.o
+  CC [M]  net/ipv6/ip6_udp_tunnel.o
+  CC [M]  net/mac80211/aes_cmac.o
+  CC [M]  drivers/net/bonding/bond_procfs.o
+  CC [M]  drivers/staging/rtl8712/ieee80211.o
+  CC [M]  net/ipv4/netfilter/nf_dup_ipv4.o
+  CC [M]  net/netfilter/nft_set_rbtree.o
+  CC [M]  drivers/net/can/dev/calc_bittiming.o
+  CC [M]  drivers/net/ppp/ppp_async.o
+  CC [M]  drivers/net/can/spi/mcp251x.o
+  CC [M]  net/batman-adv/hash.o
+  CC [M]  drivers/net/wireguard/queueing.o
+  LD [M]  drivers/connector/cn.o
+  LD [M]  drivers/net/vxlan/vxlan.o
+  CC [M]  drivers/net/slip/slip.o
+  CC [M]  net/mac80211/aes_gmac.o
+  CC [M]  net/openvswitch/meter.o
+  CC [M]  net/ipv4/ipip.o
+  LD [M]  fs/ocfs2/dlm/ocfs2_dlm.o
+  CC [M]  net/sctp/stream_sched_rr.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_mp_ioctl.o
+  CC [M]  net/netfilter/nft_set_pipapo.o
+  CC [M]  net/ipv6/ila/ila_main.o
+  LD [M]  drivers/net/bonding/bonding.o
+  CC [M]  drivers/net/can/usb/ems_usb.o
+  CC [M]  drivers/net/can/dev/bittiming.o
+  CC [M]  net/batman-adv/main.o
+  CC [M]  fs/smb/client/smb2file.o
+  LD [M]  net/ipv4/netfilter/nf_nat_snmp_basic.o
+  CC [M]  drivers/net/can/dev/dev.o
+  CC [M]  drivers/net/slip/slhc.o
+  CC [M]  drivers/net/wireguard/send.o
+  CC [M]  drivers/net/ppp/ppp_synctty.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_mp.o
+  CC [M]  drivers/net/ieee802154/at86rf230.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-chip-fifo.o
+  CC [M]  drivers/net/can/usb/gs_usb.o
+  CC [M]  net/mac80211/fils_aead.o
+  CC [M]  net/openvswitch/openvswitch_trace.o
+  CC [M]  net/ipv6/ila/ila_common.o
+  CC [M]  net/sctp/stream_sched_fc.o
+  CC [M]  net/openvswitch/vport.o
+  CC [M]  fs/smb/client/cifsacl.o
+  CC [M]  drivers/net/ppp/pppox.o
+  CC [M]  net/netfilter/nft_compat.o
+  CC [M]  net/batman-adv/multicast.o
+  CC [M]  drivers/net/can/dev/length.o
+  CC [M]  net/ipv4/fou_core.o
+  CC [M]  fs/smb/client/fs_context.o
+  CC [M]  drivers/net/ieee802154/mrf24j40.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-core.o
+  CC [M]  drivers/net/wireguard/receive.o
+  CC [M]  drivers/net/wireguard/socket.o
+  CC [M]  drivers/staging/rtl8712/mlme_linux.o
+  CC [M]  net/mac80211/cfg.o
+  CC [M]  net/ipv6/ila/ila_lwt.o
+  CC [M]  net/sctp/stream_interleave.o
+  CC [M]  net/ipv6/ila/ila_xlat.o
+  CC [M]  drivers/net/ppp/pppoe.o
+  CC [M]  net/openvswitch/vport-internal_dev.o
+  CC [M]  net/openvswitch/vport-netdev.o
+  CC [M]  drivers/net/can/dev/netlink.o
+  CC [M]  net/ipv4/fou_nl.o
+  CC [M]  drivers/net/ieee802154/cc2520.o
+  CC [M]  drivers/net/can/usb/peak_usb/pcan_usb_core.o
+  CC [M]  net/netfilter/nft_connlimit.o
+  CC [M]  drivers/staging/rtl8712/recv_linux.o
+  CC [M]  net/batman-adv/netlink.o
+  CC [M]  drivers/block/aoe/aoeblk.o
+  CC [M]  net/ipv4/fou_bpf.o
+  CC [M]  fs/smb/client/dns_resolve.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-crc16.o
+  AR      drivers/net/built-in.a
+  CC [M]  net/mac80211/ethtool.o
+  CC [M]  net/openvswitch/conntrack.o
+  CC [M]  drivers/net/wireguard/peerlookup.o
+  CC [M]  drivers/net/can/dev/rx-offload.o
+  CC [M]  net/sctp/proc.o
+  CC [M]  drivers/net/can/usb/peak_usb/pcan_usb.o
+  LD [M]  net/ipv6/ila/ila.o
+  AR      net/ipv6/built-in.a
+  LD [M]  net/ipv6/ipv6.o
+  CC [M]  net/netfilter/nft_numgen.o
+  CC [M]  drivers/net/can/slcan/slcan-core.o
+  CC [M]  drivers/staging/rtl8712/xmit_linux.o
+  CC [M]  drivers/net/can/usb/peak_usb/pcan_usb_pro.o
+  CC [M]  net/openvswitch/vport-vxlan.o
+  CC [M]  drivers/block/aoe/aoechr.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-ethtool.o
+  CC [M]  drivers/staging/rtl8712/usb_intf.o
+  CC [M]  drivers/net/wireguard/allowedips.o
+  CC [M]  net/batman-adv/originator.o
+  CC [M]  net/ipv4/gre_demux.o
+  CC [M]  fs/smb/client/asn1.o
+  CC [M]  net/mac80211/rx.o
+  LD [M]  drivers/net/can/dev/can-dev.o
+  CC [M]  drivers/net/can/usb/peak_usb/pcan_usb_fd.o
+  CC [M]  net/openvswitch/vport-gre.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-ram.o
+  CC [M]  net/mac80211/spectmgmt.o
+  CC [M]  net/sctp/sysctl.o
+  CC [M]  drivers/block/aoe/aoecmd.o
+  CC [M]  drivers/staging/rtl8712/os_intfs.o
+  CC [M]  net/netfilter/nft_ct.o
+  CC [M]  net/ipv4/ip_gre.o
+  CC [M]  fs/smb/client/namespace.o
+  CC [M]  drivers/net/can/slcan/slcan-ethtool.o
+  CC [M]  drivers/net/wireguard/ratelimiter.o
+  CC [M]  net/mac80211/tx.o
+  CC [M]  net/sctp/ipv6.o
+  CC [M]  drivers/block/aoe/aoedev.o
+  CC [M]  net/batman-adv/routing.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-regmap.o
+  CC [M]  net/netfilter/nft_flow_offload.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_pwrctrl.o
+  CC [M]  net/batman-adv/send.o
+  LD [M]  drivers/net/can/usb/peak_usb/peak_usb.o
+  LD [M]  net/openvswitch/openvswitch.o
+  CC [M]  drivers/block/aoe/aoemain.o
+  CC [M]  drivers/w1/w1.o
+  CC [M]  drivers/net/wireguard/cookie.o
+  CC [M]  net/sctp/diag.o
+  LD [M]  drivers/net/can/slcan/slcan.o
+  CC [M]  net/netfilter/nft_limit.o
+  CC [M]  fs/smb/client/xattr.o
+  CC [M]  drivers/net/wireguard/netlink.o
+  CC [M]  net/mac80211/key.o
+  CC [M]  drivers/block/aoe/aoenet.o
+  CC [M]  drivers/w1/w1_int.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-ring.o
+  CC [M]  net/ipv4/udp_tunnel_core.o
+  CC [M]  drivers/staging/rtl8712/rtl8712_recv.o
+  CC [M]  net/netfilter/nft_nat.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_recv.o
+  CC [M]  net/mac80211/util.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-rx.o
+  CC [M]  net/batman-adv/soft-interface.o
+  CC [M]  drivers/bluetooth/hci_vhci.o
+  LD [M]  net/sctp/sctp.o
+  CC [M]  fs/smb/client/cifs_spnego.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_sta_mgt.o
+  CC [M]  net/ipv4/udp_tunnel_nic.o
+  LD [M]  net/sctp/sctp_diag.o
+  CC [M]  net/netfilter/nft_queue.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-tef.o
+  LD [M]  drivers/block/aoe/aoe.o
+  CC [M]  net/batman-adv/tp_meter.o
+  CC [M]  drivers/w1/w1_netlink.o
+  CC [M]  fs/smb/client/dfs_cache.o
+  CC [M]  net/mac80211/wme.o
+  CC [M]  net/netfilter/nft_quota.o
+  CC [M]  net/batman-adv/translation-table.o
+  CC [M]  drivers/bluetooth/hci_ldisc.o
+  CC [M]  fs/smb/client/dfs.o
+  LD [M]  drivers/net/wireguard/wireguard.o
+  CC [M]  net/ipv4/ip_vti.o
+  CC [M]  net/netfilter/nft_reject.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-timestamp.o
+  CC [M]  drivers/staging/rtl8712/rtl871x_xmit.o
+  CC [M]  net/batman-adv/tvlv.o
+  CC [M]  drivers/vhost/net.o
+  CC [M]  net/mac80211/chan.o
+  CC [M]  net/ipv4/ah4.o
+  CC [M]  drivers/bluetooth/hci_serdev.o
+  CC [M]  drivers/staging/rtl8712/rtl8712_xmit.o
+  CC [M]  fs/smb/client/fscache.o
+  LD [M]  drivers/w1/wire.o
+  CC [M]  net/mac80211/trace.o
+  CC [M]  net/netfilter/nft_reject_inet.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-tx.o
+  CC [M]  net/ipv4/esp4.o
+  CC [M]  drivers/bluetooth/hci_h4.o
+  CC [M]  fs/smb/client/smb1ops.o
+  CC [M]  net/mac80211/mlme.o
+  CC [M]  net/ipv4/ipcomp.o
+  CC [M]  net/netfilter/nft_tunnel.o
+  CC [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd-dump.o
+  CC [M]  fs/smb/client/cifssmb.o
+  LD [M]  drivers/staging/rtl8712/r8712u.o
+  CC [M]  drivers/bluetooth/hci_h5.o
+  CC [M]  net/mac80211/tdls.o
+  CC [M]  net/netfilter/nft_log.o
+  CC [M]  drivers/bluetooth/hci_bcm.o
+  LD [M]  drivers/vhost/vhost_net.o
+  CC [M]  net/ipv4/xfrm4_tunnel.o
+  CC [M]  net/mac80211/ocb.o
+  CC [M]  net/ipv4/tunnel4.o
+  LD [M]  net/batman-adv/batman-adv.o
+  CC [M]  drivers/bluetooth/bcm203x.o
+  CC [M]  net/mac80211/airtime.o
+  CC [M]  net/netfilter/nft_masq.o
+  CC [M]  net/ipv4/inet_diag.o
+  CC [M]  drivers/bluetooth/bpa10x.o
+  LD [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd.o
+  CC [M]  net/netfilter/nft_redir.o
+  CC [M]  net/ipv4/tcp_diag.o
+  CC [M]  net/mac80211/eht.o
+  CC [M]  drivers/bluetooth/bfusb.o
+  AR      drivers/built-in.a
+  CC [M]  net/mac80211/led.o
+  CC [M]  net/netfilter/nft_hash.o
+  CC [M]  net/mac80211/mesh.o
+  CC [M]  drivers/bluetooth/btusb.o
+  CC [M]  net/ipv4/tcp_bbr.o
+  CC [M]  net/mac80211/mesh_pathtbl.o
+  CC [M]  net/netfilter/nft_fib.o
+  CC [M]  drivers/bluetooth/btintel.o
+  CC [M]  net/netfilter/nft_fib_inet.o
+  CC [M]  net/mac80211/mesh_plink.o
+  CC [M]  net/ipv4/tcp_bic.o
+  CC [M]  drivers/bluetooth/ath3k.o
+  CC [M]  net/mac80211/mesh_hwmp.o
+  CC [M]  net/netfilter/nft_fib_netdev.o
+  CC [M]  net/ipv4/tcp_westwood.o
+  CC [M]  net/mac80211/mesh_sync.o
+  CC [M]  net/ipv4/tcp_htcp.o
+  CC [M]  net/mac80211/mesh_ps.o
+  LD [M]  fs/smb/client/cifs.o
+  CC [M]  net/mac80211/pm.o
+  CC [M]  drivers/bluetooth/btmrvl_main.o
+  CC [M]  net/netfilter/nft_socket.o
+  CC [M]  drivers/bluetooth/btmrvl_debugfs.o
+  CC [M]  net/mac80211/rc80211_minstrel_ht.o
+  CC [M]  drivers/bluetooth/btmrvl_sdio.o
+  CC [M]  net/netfilter/nft_osf.o
+  CC [M]  drivers/bluetooth/btbcm.o
+  CC [M]  net/netfilter/nft_tproxy.o
+  CC [M]  drivers/bluetooth/btrtl.o
+  CC [M]  net/netfilter/nft_chain_nat.o
+  CC [M]  net/netfilter/nft_dup_netdev.o
+  CC [M]  net/netfilter/nft_fwd_netdev.o
+  CC [M]  net/netfilter/nf_flow_table_core.o
+  CC [M]  net/netfilter/nf_flow_table_ip.o
+  LD [M]  drivers/bluetooth/hci_uart.o
+  CC [M]  net/netfilter/nf_flow_table_offload.o
+  CC [M]  net/netfilter/nf_flow_table_inet.o
+  CC [M]  net/netfilter/x_tables.o
+  AR      net/ipv4/built-in.a
+  LD [M]  net/ipv4/fou.o
+  CC [M]  net/netfilter/xt_tcpudp.o
+  LD [M]  net/ipv4/gre.o
+  LD [M]  net/ipv4/udp_tunnel.o
+  CC [M]  net/netfilter/xt_mark.o
+  LD [M]  drivers/bluetooth/btmrvl.o
+  CC [M]  net/netfilter/xt_connmark.o
+  CC [M]  net/netfilter/xt_set.o
+  CC [M]  net/netfilter/xt_nat.o
+  CC [M]  net/netfilter/xt_CHECKSUM.o
+  CC [M]  net/netfilter/xt_CLASSIFY.o
+  CC [M]  net/netfilter/xt_CT.o
+  CC [M]  net/netfilter/xt_DSCP.o
+  CC [M]  net/netfilter/xt_HL.o
+  CC [M]  net/netfilter/xt_HMARK.o
+  CC [M]  net/netfilter/xt_LED.o
+  CC [M]  net/netfilter/xt_LOG.o
+  CC [M]  net/netfilter/xt_NETMAP.o
+  CC [M]  net/netfilter/xt_NFLOG.o
+  CC [M]  net/netfilter/xt_NFQUEUE.o
+  CC [M]  net/netfilter/xt_RATEEST.o
+  CC [M]  net/netfilter/xt_REDIRECT.o
+  LD [M]  net/mac80211/mac80211.o
+  CC [M]  net/netfilter/xt_MASQUERADE.o
+  CC [M]  net/netfilter/xt_TPROXY.o
+  CC [M]  net/netfilter/xt_TCPMSS.o
+  CC [M]  net/netfilter/xt_TCPOPTSTRIP.o
+  CC [M]  net/netfilter/xt_TEE.o
+  CC [M]  net/netfilter/xt_TRACE.o
+  CC [M]  net/netfilter/xt_IDLETIMER.o
+  CC [M]  net/netfilter/xt_addrtype.o
+  CC [M]  net/netfilter/xt_bpf.o
+  CC [M]  net/netfilter/xt_cluster.o
+  CC [M]  net/netfilter/xt_comment.o
+  CC [M]  net/netfilter/xt_connbytes.o
+  CC [M]  net/netfilter/xt_connlabel.o
+  CC [M]  net/netfilter/xt_connlimit.o
+  CC [M]  net/netfilter/xt_conntrack.o
+  CC [M]  net/netfilter/xt_cpu.o
+  CC [M]  net/netfilter/xt_dccp.o
+  CC [M]  net/netfilter/xt_devgroup.o
+  CC [M]  net/netfilter/xt_dscp.o
+  CC [M]  net/netfilter/xt_ecn.o
+  CC [M]  net/netfilter/xt_esp.o
+  CC [M]  net/netfilter/xt_hashlimit.o
+  CC [M]  net/netfilter/xt_helper.o
+  CC [M]  net/netfilter/xt_hl.o
+  CC [M]  net/netfilter/xt_iprange.o
+  CC [M]  net/netfilter/xt_ipvs.o
+  CC [M]  net/netfilter/xt_l2tp.o
+  CC [M]  net/netfilter/xt_length.o
+  CC [M]  net/netfilter/xt_limit.o
+  CC [M]  net/netfilter/xt_mac.o
+  CC [M]  net/netfilter/xt_multiport.o
+  CC [M]  net/netfilter/xt_nfacct.o
+  CC [M]  net/netfilter/xt_osf.o
+  CC [M]  net/netfilter/xt_owner.o
+  CC [M]  net/netfilter/xt_physdev.o
+  CC [M]  net/netfilter/xt_pkttype.o
+  CC [M]  net/netfilter/xt_policy.o
+  CC [M]  net/netfilter/xt_quota.o
+  CC [M]  net/netfilter/xt_rateest.o
+  CC [M]  net/netfilter/xt_realm.o
+  CC [M]  net/netfilter/xt_recent.o
+  CC [M]  net/netfilter/xt_sctp.o
+  CC [M]  net/netfilter/xt_socket.o
+  CC [M]  net/netfilter/xt_state.o
+  CC [M]  net/netfilter/xt_statistic.o
+  CC [M]  net/netfilter/xt_string.o
+  CC [M]  net/netfilter/xt_tcpmss.o
+  CC [M]  net/netfilter/xt_time.o
+  CC [M]  net/netfilter/xt_u32.o
+  AR      net/netfilter/built-in.a
+  LD [M]  net/netfilter/nf_conntrack.o
+  CC [M]  net/netfilter/ipset/ip_set_core.o
+  CC [M]  net/netfilter/ipset/ip_set_getport.o
+  CC [M]  net/netfilter/ipvs/ip_vs_conn.o
+  CC [M]  net/netfilter/ipset/pfxlen.o
+  CC [M]  net/netfilter/ipvs/ip_vs_core.o
+  CC [M]  net/netfilter/ipset/ip_set_bitmap_ip.o
+  CC [M]  net/netfilter/ipvs/ip_vs_ctl.o
+  CC [M]  net/netfilter/ipset/ip_set_bitmap_ipmac.o
+  CC [M]  net/netfilter/ipvs/ip_vs_sched.o
+  CC [M]  net/netfilter/ipset/ip_set_bitmap_port.o
+  CC [M]  net/netfilter/ipvs/ip_vs_xmit.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_ip.o
+  CC [M]  net/netfilter/ipvs/ip_vs_app.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_ipport.o
+  LD [M]  net/netfilter/nf_conntrack_h323.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_ipportip.o
+  LD [M]  net/netfilter/nf_nat.o
+  LD [M]  net/netfilter/nf_tables.o
+  CC [M]  net/netfilter/ipvs/ip_vs_sync.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_ipportnet.o
+  CC [M]  net/netfilter/ipvs/ip_vs_est.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_net.o
+  CC [M]  net/netfilter/ipvs/ip_vs_proto.o
+  LD [M]  net/netfilter/nf_flow_table.o
+  CC [M]  net/netfilter/ipvs/ip_vs_pe.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_netport.o
+  CC [M]  net/netfilter/ipvs/ip_vs_proto_tcp.o
+  CC [M]  net/netfilter/ipvs/ip_vs_proto_udp.o
+  CC [M]  net/netfilter/ipvs/ip_vs_proto_ah_esp.o
+  CC [M]  net/netfilter/ipset/ip_set_hash_netiface.o
+  CC [M]  net/netfilter/ipvs/ip_vs_proto_sctp.o
+  CC [M]  net/netfilter/ipset/ip_set_list_set.o
+  CC [M]  net/netfilter/ipvs/ip_vs_nfct.o
+  CC [M]  net/netfilter/ipvs/ip_vs_rr.o
+  CC [M]  net/netfilter/ipvs/ip_vs_wrr.o
+  CC [M]  net/netfilter/ipvs/ip_vs_lc.o
+  CC [M]  net/netfilter/ipvs/ip_vs_wlc.o
+  CC [M]  net/netfilter/ipvs/ip_vs_lblc.o
+  CC [M]  net/netfilter/ipvs/ip_vs_lblcr.o
+  CC [M]  net/netfilter/ipvs/ip_vs_dh.o
+  CC [M]  net/netfilter/ipvs/ip_vs_sh.o
+  CC [M]  net/netfilter/ipvs/ip_vs_sed.o
+  LD [M]  net/netfilter/ipset/ip_set.o
+  CC [M]  net/netfilter/ipvs/ip_vs_nq.o
+  CC [M]  net/netfilter/ipvs/ip_vs_ftp.o
+  CC [M]  net/netfilter/ipvs/ip_vs_pe_sip.o
+  LD [M]  net/netfilter/ipvs/ip_vs.o
+  AR      net/built-in.a
+  AR      built-in.a
+  AR      vmlinux.a
+  LD      vmlinux.o
+  OBJCOPY modules.builtin.modinfo
+  GEN     modules.builtin
+  MODPOST Module.symvers
+  CC      .vmlinux.export.o
+  UPD     include/generated/utsversion.h
+  CC      init/version-timestamp.o
+  LD      .tmp_vmlinux.kallsyms1
+  NM      .tmp_vmlinux.kallsyms1.syms
+  LD [M]  kernel/configs.ko
+  LD [M]  fs/nfs/blocklayout/blocklayoutdriver.ko
+  LD [M]  fs/dlm/dlm.ko
+  LD [M]  fs/ecryptfs/ecryptfs.ko
+  LD [M]  fs/nfsd/nfsd.ko
+  LD [M]  fs/smb/client/cifs.ko
+  LD [M]  fs/ocfs2/ocfs2.ko
+  LD [M]  fs/ocfs2/ocfs2_stack_o2cb.ko
+  LD [M]  fs/ocfs2/cluster/ocfs2_nodemanager.ko
+  LD [M]  fs/ocfs2/dlm/ocfs2_dlm.ko
+  LD [M]  crypto/geniv.ko
+  LD [M]  crypto/crypto_user.ko
+  LD [M]  crypto/authenc.ko
+  LD [M]  crypto/authencesn.ko
+  LD [M]  crypto/af_alg.ko
+  LD [M]  crypto/algif_hash.ko
+  LD [M]  crypto/algif_skcipher.ko
+  LD [M]  crypto/algif_rng.ko
+  LD [M]  crypto/algif_aead.ko
+  LD [M]  drivers/block/nbd.ko
+  LD [M]  drivers/block/drbd/drbd.ko
+  LD [M]  drivers/misc/ti-st/st_drv.ko
+  LD [M]  drivers/scsi/libiscsi.ko
+  LD [M]  drivers/scsi/libiscsi_tcp.ko
+  LD [M]  drivers/scsi/iscsi_tcp.ko
+  LD [M]  drivers/net/phy/phylink.ko
+  LD [M]  drivers/net/phy/ax88796b.ko
+  LD [M]  drivers/net/mdio/mdio-bitbang.ko
+  LD [M]  drivers/net/ethernet/microchip/enc28j60.ko
+  LD [M]  drivers/net/ethernet/qualcomm/qca_7k_common.ko
+  LD [M]  drivers/net/ethernet/qualcomm/qcaspi.ko
+  LD [M]  drivers/net/ethernet/qualcomm/qcauart.ko
+  LD [M]  drivers/net/ethernet/wiznet/w5100.ko
+  LD [M]  drivers/net/ethernet/wiznet/w5100-spi.ko
+  LD [M]  drivers/net/hamradio/mkiss.ko
+  LD [M]  drivers/net/hamradio/6pack.ko
+  LD [M]  drivers/net/hamradio/yam.ko
+  LD [M]  drivers/net/hamradio/bpqether.ko
+  LD [M]  drivers/net/hamradio/baycom_ser_fdx.ko
+  LD [M]  drivers/net/hamradio/hdlcdrv.ko
+  LD [M]  drivers/net/hamradio/baycom_ser_hdx.ko
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k.ko
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k_hw.ko
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k_common.ko
+  LD [M]  drivers/net/wireless/ath/ath9k/ath9k_htc.ko
+  LD [M]  drivers/net/wireless/ath/carl9170/carl9170.ko
+  LD [M]  drivers/net/wireless/ath/ath6kl/ath6kl_core.ko
+  LD [M]  drivers/net/wireless/ath/ath6kl/ath6kl_usb.ko
+  LD [M]  drivers/net/wireless/ath/ar5523/ar5523.ko
+  LD [M]  drivers/net/wireless/ath/ath.ko
+  LD [M]  drivers/net/wireless/atmel/at76c50x-usb.ko
+  LD [M]  drivers/net/wireless/broadcom/b43/b43.ko
+  LD [M]  drivers/net/wireless/broadcom/b43legacy/b43legacy.ko
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil.ko
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/brcmfmac-wcc.ko
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/cyw/brcmfmac-cyw.ko
+  LD [M]  drivers/net/wireless/broadcom/brcm80211/brcmfmac/bca/brcmfmac-bca.ko
+  LD [M]  drivers/net/wireless/intersil/hostap/hostap.ko
+  LD [M]  drivers/net/wireless/intersil/p54/p54common.ko
+  LD [M]  drivers/net/wireless/intersil/p54/p54usb.ko
+  LD [M]  drivers/net/wireless/marvell/libertas/libertas.ko
+  LD [M]  drivers/net/wireless/marvell/libertas/usb8xxx.ko
+  LD [M]  drivers/net/wireless/marvell/libertas/libertas_sdio.ko
+  LD [M]  drivers/net/wireless/marvell/libertas_tf/libertas_tf.ko
+  LD [M]  drivers/net/wireless/marvell/libertas_tf/libertas_tf_usb.ko
+  LD [M]  drivers/net/wireless/marvell/mwifiex/mwifiex.ko
+  LD [M]  drivers/net/wireless/marvell/mwifiex/mwifiex_sdio.ko
+  LD [M]  drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76-usb.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x02-lib.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x02-usb.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x0/mt76x0u.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x0/mt76x0-common.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x2/mt76x2-common.ko
+  LD [M]  drivers/net/wireless/mediatek/mt76/mt76x2/mt76x2u.ko
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt2x00lib.ko
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt2x00usb.ko
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt2800lib.ko
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt2500usb.ko
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt73usb.ko
+  LD [M]  drivers/net/wireless/ralink/rt2x00/rt2800usb.ko
+  LD [M]  drivers/net/wireless/realtek/rtl818x/rtl8187/rtl8187.ko
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtlwifi.ko
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtl_usb.ko
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192c/rtl8192c-common.ko
+  LD [M]  drivers/net/wireless/realtek/rtlwifi/rtl8192cu/rtl8192cu.ko
+  LD [M]  drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.ko
+  LD [M]  drivers/net/wireless/zydas/zd1211rw/zd1211rw.ko
+  LD [M]  drivers/net/wireless/zydas/zd1201.ko
+  LD [M]  drivers/net/wireless/legacy/rndis_wlan.ko
+  LD [M]  drivers/net/wireless/virtual/mac80211_hwsim.ko
+  LD [M]  drivers/net/usb/catc.ko
+  LD [M]  drivers/net/usb/kaweth.ko
+  LD [M]  drivers/net/usb/pegasus.ko
+  LD [M]  drivers/net/usb/rtl8150.ko
+  LD [M]  drivers/net/usb/hso.ko
+  LD [M]  drivers/net/usb/asix.ko
+  LD [M]  drivers/net/usb/ax88179_178a.ko
+  LD [M]  drivers/net/usb/cdc_ether.ko
+  LD [M]  drivers/net/usb/cdc_eem.ko
+  LD [M]  drivers/net/usb/dm9601.ko
+  LD [M]  drivers/net/usb/sr9700.ko
+  LD [M]  drivers/net/usb/sr9800.ko
+  LD [M]  drivers/net/usb/smsc75xx.ko
+  LD [M]  drivers/net/usb/gl620a.ko
+  LD [M]  drivers/net/usb/net1080.ko
+  LD [M]  drivers/net/usb/plusb.ko
+  LD [M]  drivers/net/usb/rndis_host.ko
+  LD [M]  drivers/net/usb/cdc_subset.ko
+  LD [M]  drivers/net/usb/zaurus.ko
+  LD [M]  drivers/net/usb/mcs7830.ko
+  LD [M]  drivers/net/usb/int51x1.ko
+  LD [M]  drivers/net/usb/kalmia.ko
+  LD [M]  drivers/net/usb/ipheth.ko
+  LD [M]  drivers/net/usb/sierra_net.ko
+  LD [M]  drivers/net/usb/cx82310_eth.ko
+  LD [M]  drivers/net/usb/cdc_ncm.ko
+  LD [M]  drivers/net/usb/huawei_cdc_ncm.ko
+  LD [M]  drivers/net/usb/lg-vl600.ko
+  LD [M]  drivers/net/usb/qmi_wwan.ko
+  LD [M]  drivers/net/usb/cdc_mbim.ko
+  LD [M]  drivers/net/usb/aqc111.ko
+  LD [M]  drivers/net/usb/r8153_ecm.ko
+  LD [M]  drivers/net/bonding/bonding.ko
+  LD [M]  drivers/net/ipvlan/ipvlan.ko
+  LD [M]  drivers/net/dummy.ko
+  LD [M]  drivers/net/wireguard/wireguard.ko
+  LD [M]  drivers/net/ifb.ko
+  LD [M]  drivers/net/macvlan.ko
+  LD [M]  drivers/net/macvtap.ko
+  LD [M]  drivers/net/netconsole.ko
+  LD [M]  drivers/net/tun.ko
+  LD [M]  drivers/net/tap.ko
+  LD [M]  drivers/net/veth.ko
+  LD [M]  drivers/net/vxlan/vxlan.ko
+  LD [M]  drivers/net/vrf.ko
+  LD [M]  drivers/net/can/dev/can-dev.ko
+  LD [M]  drivers/net/can/spi/mcp251xfd/mcp251xfd.ko
+  LD [M]  drivers/net/can/spi/mcp251x.ko
+  LD [M]  drivers/net/can/usb/ems_usb.ko
+  LD [M]  drivers/net/can/usb/gs_usb.ko
+  LD [M]  drivers/net/can/usb/peak_usb/peak_usb.ko
+  LD [M]  drivers/net/can/vcan.ko
+  LD [M]  drivers/net/can/slcan/slcan.ko
+  LD [M]  drivers/net/ppp/ppp_generic.ko
+  LD [M]  drivers/net/ppp/ppp_async.ko
+  LD [M]  drivers/net/ppp/ppp_synctty.ko
+  LD [M]  drivers/net/ppp/pppox.ko
+  LD [M]  drivers/net/ppp/pppoe.ko
+  LD [M]  drivers/net/slip/slip.ko
+  LD [M]  drivers/net/slip/slhc.ko
+  LD [M]  drivers/net/ieee802154/at86rf230.ko
+  LD [M]  drivers/net/ieee802154/mrf24j40.ko
+  LD [M]  drivers/net/ieee802154/cc2520.ko
+  LD [M]  drivers/usb/gadget/function/u_ether.ko
+  LD [M]  drivers/usb/gadget/function/usb_f_ncm.ko
+  LD [M]  drivers/usb/gadget/function/usb_f_ecm.ko
+  LD [M]  drivers/usb/gadget/function/usb_f_eem.ko
+  LD [M]  drivers/usb/gadget/function/usb_f_ecm_subset.ko
+  LD [M]  drivers/usb/gadget/function/usb_f_rndis.ko
+  LD [M]  drivers/usb/gadget/legacy/g_ether.ko
+  LD [M]  drivers/usb/gadget/legacy/g_cdc.ko
+  LD [M]  drivers/usb/gadget/legacy/g_multi.ko
+  LD [M]  drivers/usb/class/cdc-wdm.ko
+  LD [M]  drivers/usb/atm/cxacru.ko
+  LD [M]  drivers/usb/atm/speedtch.ko
+  LD [M]  drivers/usb/atm/ueagle-atm.ko
+  LD [M]  drivers/usb/atm/usbatm.ko
+  KSYMS   .tmp_vmlinux.kallsyms1.S
+  LD [M]  drivers/usb/atm/xusbatm.ko
+  LD [M]  drivers/usb/usbip/usbip-core.ko
+  LD [M]  drivers/usb/usbip/usbip-vudc.ko
+  LD [M]  drivers/media/common/ttpci-eeprom.ko
+  LD [M]  drivers/media/usb/dvb-usb/dvb-usb-pctv452e.ko
+  LD [M]  drivers/media/dvb-core/dvb-core.ko
+  LD [M]  drivers/media/radio/wl128x/fm_drv.ko
+  LD [M]  drivers/md/dm-crypt.ko
+  LD [M]  drivers/md/dm-log-userspace.ko
+  LD [M]  drivers/leds/trigger/ledtrig-netdev.ko
+  LD [M]  drivers/staging/wlan-ng/prism2_usb.ko
+  LD [M]  drivers/staging/rtl8712/r8712u.ko
+  LD [M]  drivers/staging/vt6656/vt6656_stage.ko
+  LD [M]  drivers/connector/cn.ko
+  LD [M]  drivers/block/aoe/aoe.ko
+  LD [M]  drivers/w1/wire.ko
+  LD [M]  drivers/bluetooth/hci_vhci.ko
+  LD [M]  drivers/bluetooth/hci_uart.ko
+  LD [M]  drivers/bluetooth/bcm203x.ko
+  LD [M]  drivers/bluetooth/bpa10x.ko
+  LD [M]  drivers/bluetooth/bfusb.ko
+  LD [M]  drivers/bluetooth/btusb.ko
+  LD [M]  drivers/bluetooth/btintel.ko
+  LD [M]  drivers/bluetooth/ath3k.ko
+  LD [M]  drivers/bluetooth/btmrvl.ko
+  LD [M]  drivers/bluetooth/btmrvl_sdio.ko
+  LD [M]  drivers/bluetooth/btbcm.ko
+  LD [M]  drivers/bluetooth/btrtl.ko
+  LD [M]  drivers/vhost/vhost_net.ko
+  LD [M]  net/core/pktgen.ko
+  LD [M]  net/sched/act_police.ko
+  LD [M]  net/sched/act_gact.ko
+  LD [M]  net/sched/act_mirred.ko
+  LD [M]  net/sched/act_ipt.ko
+  LD [M]  net/sched/act_nat.ko
+  LD [M]  net/sched/act_pedit.ko
+  LD [M]  net/sched/act_simple.ko
+  LD [M]  net/sched/act_skbedit.ko
+  LD [M]  net/sched/act_csum.ko
+  LD [M]  net/sched/sch_htb.ko
+  LD [M]  net/sched/sch_hfsc.ko
+  LD [M]  net/sched/sch_red.ko
+  LD [M]  net/sched/sch_gred.ko
+  LD [M]  net/sched/sch_ingress.ko
+  LD [M]  net/sched/sch_sfb.ko
+  LD [M]  net/sched/sch_sfq.ko
+  LD [M]  net/sched/sch_tbf.ko
+  LD [M]  net/sched/sch_teql.ko
+  LD [M]  net/sched/sch_prio.ko
+  LD [M]  net/sched/sch_multiq.ko
+  LD [M]  net/sched/sch_netem.ko
+  LD [M]  net/sched/sch_drr.ko
+  LD [M]  net/sched/sch_plug.ko
+  LD [M]  net/sched/sch_mqprio.ko
+  LD [M]  net/sched/sch_mqprio_lib.ko
+  LD [M]  net/sched/sch_choke.ko
+  LD [M]  net/sched/sch_qfq.ko
+  LD [M]  net/sched/sch_codel.ko
+  LD [M]  net/sched/sch_fq_codel.ko
+  LD [M]  net/sched/sch_cake.ko
+  LD [M]  net/sched/sch_fq.ko
+  LD [M]  net/sched/sch_hhf.ko
+  LD [M]  net/sched/sch_pie.ko
+  LD [M]  net/sched/cls_u32.ko
+  LD [M]  net/sched/cls_route.ko
+  LD [M]  net/sched/cls_fw.ko
+  LD [M]  net/sched/cls_basic.ko
+  LD [M]  net/sched/cls_flow.ko
+  LD [M]  net/sched/cls_cgroup.ko
+  LD [M]  net/sched/em_cmp.ko
+  LD [M]  net/sched/em_nbyte.ko
+  LD [M]  net/sched/em_u32.ko
+  LD [M]  net/sched/em_meta.ko
+  LD [M]  net/sched/em_text.ko
+  LD [M]  net/sched/em_ipset.ko
+  LD [M]  net/netfilter/nfnetlink.ko
+  LD [M]  net/netfilter/nfnetlink_acct.ko
+  LD [M]  net/netfilter/nfnetlink_queue.ko
+  LD [M]  net/netfilter/nfnetlink_log.ko
+  LD [M]  net/netfilter/nfnetlink_osf.ko
+  LD [M]  net/netfilter/nf_conntrack_netlink.ko
+  LD [M]  net/netfilter/nf_conntrack.ko
+  LD [M]  net/netfilter/nf_conntrack_amanda.ko
+  LD [M]  net/netfilter/nf_conntrack_ftp.ko
+  LD [M]  net/netfilter/nf_conntrack_h323.ko
+  LD [M]  net/netfilter/nf_conntrack_irc.ko
+  LD [M]  net/netfilter/nf_conntrack_broadcast.ko
+  LD [M]  net/netfilter/nf_conntrack_netbios_ns.ko
+  LD [M]  net/netfilter/nf_conntrack_snmp.ko
+  LD [M]  net/netfilter/nf_conntrack_pptp.ko
+  LD [M]  net/netfilter/nf_conntrack_sane.ko
+  LD [M]  net/netfilter/nf_conntrack_sip.ko
+  LD [M]  net/netfilter/nf_conntrack_tftp.ko
+  LD [M]  net/netfilter/nf_log_syslog.ko
+  LD [M]  net/netfilter/nf_nat.ko
+  LD [M]  net/netfilter/nf_nat_amanda.ko
+  LD [M]  net/netfilter/nf_nat_ftp.ko
+  LD [M]  net/netfilter/nf_nat_irc.ko
+  LD [M]  net/netfilter/nf_nat_sip.ko
+  LD [M]  net/netfilter/nf_nat_tftp.ko
+  LD [M]  net/netfilter/nf_synproxy_core.ko
+  LD [M]  net/netfilter/nf_conncount.ko
+  LD [M]  net/netfilter/nf_dup_netdev.ko
+  LD [M]  net/netfilter/nf_tables.ko
+  LD [M]  net/netfilter/nft_compat.ko
+  LD [M]  net/netfilter/nft_connlimit.ko
+  LD [M]  net/netfilter/nft_numgen.ko
+  LD [M]  net/netfilter/nft_ct.ko
+  LD [M]  net/netfilter/nft_flow_offload.ko
+  LD [M]  net/netfilter/nft_limit.ko
+  LD [M]  net/netfilter/nft_nat.ko
+  LD [M]  net/netfilter/nft_queue.ko
+  LD [M]  net/netfilter/nft_quota.ko
+  LD [M]  net/netfilter/nft_reject.ko
+  LD [M]  net/netfilter/nft_reject_inet.ko
+  LD [M]  net/netfilter/nft_tunnel.ko
+  LD [M]  net/netfilter/nft_log.ko
+  LD [M]  net/netfilter/nft_masq.ko
+  LD [M]  net/netfilter/nft_redir.ko
+  LD [M]  net/netfilter/nft_hash.ko
+  AS      .tmp_vmlinux.kallsyms1.S
+  LD [M]  net/netfilter/nft_fib.ko
+  LD [M]  net/netfilter/nft_fib_inet.ko
+  LD [M]  net/netfilter/nft_fib_netdev.ko
+  LD [M]  net/netfilter/nft_socket.ko
+  LD [M]  net/netfilter/nft_osf.ko
+  LD [M]  net/netfilter/nft_tproxy.ko
+  LD [M]  net/netfilter/nft_chain_nat.ko
+  LD [M]  net/netfilter/nft_dup_netdev.ko
+  LD [M]  net/netfilter/nft_fwd_netdev.ko
+  LD [M]  net/netfilter/nf_flow_table.ko
+  LD [M]  net/netfilter/nf_flow_table_inet.ko
+  LD [M]  net/netfilter/x_tables.ko
+  LD [M]  net/netfilter/xt_tcpudp.ko
+  LD [M]  net/netfilter/xt_mark.ko
+  LD [M]  net/netfilter/xt_connmark.ko
+  LD [M]  net/netfilter/xt_set.ko
+  LD [M]  net/netfilter/xt_nat.ko
+  LD [M]  net/netfilter/xt_CHECKSUM.ko
+  LD [M]  net/netfilter/xt_CLASSIFY.ko
+  LD [M]  net/netfilter/xt_CT.ko
+  LD [M]  net/netfilter/xt_DSCP.ko
+  LD [M]  net/netfilter/xt_HL.ko
+  LD [M]  net/netfilter/xt_HMARK.ko
+  LD [M]  net/netfilter/xt_LED.ko
+  LD [M]  net/netfilter/xt_LOG.ko
+  LD [M]  net/netfilter/xt_NETMAP.ko
+  LD [M]  net/netfilter/xt_NFLOG.ko
+  LD [M]  net/netfilter/xt_NFQUEUE.ko
+  LD [M]  net/netfilter/xt_RATEEST.ko
+  LD [M]  net/netfilter/xt_REDIRECT.ko
+  LD [M]  net/netfilter/xt_MASQUERADE.ko
+  LD [M]  net/netfilter/xt_TPROXY.ko
+  LD [M]  net/netfilter/xt_TCPMSS.ko
+  LD [M]  net/netfilter/xt_TCPOPTSTRIP.ko
+  LD [M]  net/netfilter/xt_TEE.ko
+  LD [M]  net/netfilter/xt_TRACE.ko
+  LD [M]  net/netfilter/xt_IDLETIMER.ko
+  LD [M]  net/netfilter/xt_addrtype.ko
+  LD [M]  net/netfilter/xt_bpf.ko
+  LD [M]  net/netfilter/xt_cluster.ko
+  LD [M]  net/netfilter/xt_comment.ko
+  LD [M]  net/netfilter/xt_connbytes.ko
+  LD [M]  net/netfilter/xt_connlabel.ko
+  LD [M]  net/netfilter/xt_connlimit.ko
+  LD [M]  net/netfilter/xt_conntrack.ko
+  LD [M]  net/netfilter/xt_cpu.ko
+  LD [M]  net/netfilter/xt_dccp.ko
+  LD [M]  net/netfilter/xt_devgroup.ko
+  LD [M]  net/netfilter/xt_dscp.ko
+  LD [M]  net/netfilter/xt_ecn.ko
+  LD [M]  net/netfilter/xt_esp.ko
+  LD [M]  net/netfilter/xt_hashlimit.ko
+  LD [M]  net/netfilter/xt_helper.ko
+  LD [M]  net/netfilter/xt_hl.ko
+  LD [M]  net/netfilter/xt_iprange.ko
+  LD [M]  net/netfilter/xt_ipvs.ko
+  LD [M]  net/netfilter/xt_l2tp.ko
+  LD [M]  net/netfilter/xt_length.ko
+  LD [M]  net/netfilter/xt_limit.ko
+  LD [M]  net/netfilter/xt_mac.ko
+  LD [M]  net/netfilter/xt_multiport.ko
+  LD [M]  net/netfilter/xt_nfacct.ko
+  LD [M]  net/netfilter/xt_osf.ko
+  LD [M]  net/netfilter/xt_owner.ko
+  LD [M]  net/netfilter/xt_physdev.ko
+  LD [M]  net/netfilter/xt_pkttype.ko
+  LD [M]  net/netfilter/xt_policy.ko
+  LD [M]  net/netfilter/xt_quota.ko
+  LD [M]  net/netfilter/xt_rateest.ko
+  LD [M]  net/netfilter/xt_realm.ko
+  LD [M]  net/netfilter/xt_recent.ko
+  LD [M]  net/netfilter/xt_sctp.ko
+  LD [M]  net/netfilter/xt_socket.ko
+  LD [M]  net/netfilter/xt_state.ko
+  LD [M]  net/netfilter/xt_statistic.ko
+  LD [M]  net/netfilter/xt_string.ko
+  LD [M]  net/netfilter/xt_tcpmss.ko
+  LD [M]  net/netfilter/xt_time.ko
+  LD [M]  net/netfilter/xt_u32.ko
+  LD [M]  net/netfilter/ipset/ip_set.ko
+  LD [M]  net/netfilter/ipset/ip_set_bitmap_ip.ko
+  LD [M]  net/netfilter/ipset/ip_set_bitmap_ipmac.ko
+  LD [M]  net/netfilter/ipset/ip_set_bitmap_port.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_ip.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_ipport.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_ipportip.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_ipportnet.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_net.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_netport.ko
+  LD [M]  net/netfilter/ipset/ip_set_hash_netiface.ko
+  LD [M]  net/netfilter/ipset/ip_set_list_set.ko
+  LD [M]  net/netfilter/ipvs/ip_vs.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_rr.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_wrr.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_lc.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_wlc.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_lblc.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_lblcr.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_dh.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_sh.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_sed.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_nq.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_ftp.ko
+  LD [M]  net/netfilter/ipvs/ip_vs_pe_sip.ko
+  LD [M]  net/ipv4/netfilter/nf_defrag_ipv4.ko
+  LD [M]  net/ipv4/netfilter/nf_socket_ipv4.ko
+  LD [M]  net/ipv4/netfilter/nf_tproxy_ipv4.ko
+  LD [M]  net/ipv4/netfilter/nf_reject_ipv4.ko
+  LD [M]  net/ipv4/netfilter/nf_nat_h323.ko
+  LD [M]  net/ipv4/netfilter/nf_nat_pptp.ko
+  LD [M]  net/ipv4/netfilter/nf_nat_snmp_basic.ko
+  LD [M]  net/ipv4/netfilter/nft_reject_ipv4.ko
+  LD [M]  net/ipv4/netfilter/nft_fib_ipv4.ko
+  LD [M]  net/ipv4/netfilter/nft_dup_ipv4.ko
+  LD [M]  net/ipv4/netfilter/ip_tables.ko
+  LD [M]  net/ipv4/netfilter/iptable_filter.ko
+  LD [M]  net/ipv4/netfilter/iptable_mangle.ko
+  LD [M]  net/ipv4/netfilter/iptable_nat.ko
+  LD [M]  net/ipv4/netfilter/iptable_raw.ko
+  LD [M]  net/ipv4/netfilter/ipt_ah.ko
+  LD [M]  net/ipv4/netfilter/ipt_rpfilter.ko
+  LD [M]  net/ipv4/netfilter/ipt_ECN.ko
+  LD [M]  net/ipv4/netfilter/ipt_REJECT.ko
+  LD [M]  net/ipv4/netfilter/arp_tables.ko
+  LD [M]  net/ipv4/netfilter/arpt_mangle.ko
+  LD [M]  net/ipv4/netfilter/arptable_filter.ko
+  LD [M]  net/ipv4/netfilter/nf_dup_ipv4.ko
+  LD [M]  net/ipv4/ip_tunnel.ko
+  LD [M]  net/ipv4/ipip.ko
+  LD [M]  net/ipv4/fou.ko
+  LD [M]  net/ipv4/gre.ko
+  LD [M]  net/ipv4/ip_gre.ko
+  LD [M]  net/ipv4/udp_tunnel.ko
+  LD [M]  net/ipv4/ip_vti.ko
+  LD [M]  net/ipv4/ah4.ko
+  LD [M]  net/ipv4/esp4.ko
+  LD [M]  net/ipv4/ipcomp.ko
+  LD [M]  net/ipv4/xfrm4_tunnel.ko
+  LD [M]  net/ipv4/tunnel4.ko
+  LD [M]  net/ipv4/inet_diag.ko
+  LD [M]  net/ipv4/tcp_diag.ko
+  LD [M]  net/ipv4/tcp_bbr.ko
+  LD [M]  net/ipv4/tcp_bic.ko
+  LD [M]  net/ipv4/tcp_westwood.ko
+  LD [M]  net/ipv4/tcp_htcp.ko
+  LD [M]  net/xfrm/xfrm_ipcomp.ko
+  LD [M]  net/ipv6/netfilter/ip6_tables.ko
+  LD [M]  net/ipv6/netfilter/ip6table_filter.ko
+  LD [M]  net/ipv6/netfilter/ip6table_mangle.ko
+  LD [M]  net/ipv6/netfilter/ip6table_raw.ko
+  LD [M]  net/ipv6/netfilter/ip6table_security.ko
+  LD [M]  net/ipv6/netfilter/ip6table_nat.ko
+  LD [M]  net/ipv6/netfilter/nf_defrag_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nf_socket_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nf_tproxy_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nf_reject_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nf_dup_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nft_reject_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nft_dup_ipv6.ko
+  LD [M]  net/ipv6/netfilter/nft_fib_ipv6.ko
+  LD [M]  net/ipv6/netfilter/ip6t_ah.ko
+  LD [M]  net/ipv6/netfilter/ip6t_eui64.ko
+  LD [M]  net/ipv6/netfilter/ip6t_frag.ko
+  LD [M]  net/ipv6/netfilter/ip6t_ipv6header.ko
+  LD [M]  net/ipv6/netfilter/ip6t_mh.ko
+  LD [M]  net/ipv6/netfilter/ip6t_hbh.ko
+  LD [M]  net/ipv6/netfilter/ip6t_rpfilter.ko
+  LD [M]  net/ipv6/netfilter/ip6t_rt.ko
+  LD [M]  net/ipv6/netfilter/ip6t_srh.ko
+  LD [M]  net/ipv6/netfilter/ip6t_NPT.ko
+  LD [M]  net/ipv6/netfilter/ip6t_REJECT.ko
+  LD [M]  net/ipv6/netfilter/ip6t_SYNPROXY.ko
+  LD [M]  net/ipv6/ipv6.ko
+  LD [M]  net/ipv6/esp6.ko
+  LD [M]  net/ipv6/ah6.ko
+  LD [M]  net/ipv6/esp6_offload.ko
+  LD [M]  net/ipv6/ipcomp6.ko
+  LD [M]  net/ipv6/xfrm6_tunnel.ko
+  LD [M]  net/ipv6/tunnel6.ko
+  LD [M]  net/ipv6/ila/ila.ko
+  LD [M]  net/ipv6/ip6_vti.ko
+  LD [M]  net/ipv6/sit.ko
+  LD [M]  net/ipv6/ip6_tunnel.ko
+  LD [M]  net/ipv6/ip6_gre.ko
+  LD [M]  net/ipv6/fou6.ko
+  LD [M]  net/ipv6/ip6_udp_tunnel.ko
+  LD [M]  net/sunrpc/auth_gss/auth_rpcgss.ko
+  LD [M]  net/sunrpc/auth_gss/rpcsec_gss_krb5.ko
+  LD [M]  net/wireless/cfg80211.ko
+  LD [M]  net/wireless/lib80211.ko
+  LD [M]  net/wireless/lib80211_crypt_wep.ko
+  LD [M]  net/wireless/lib80211_crypt_ccmp.ko
+  LD [M]  net/wireless/lib80211_crypt_tkip.ko
+  LD [M]  net/mpls/mpls_gso.ko
+  LD [M]  net/key/af_key.ko
+  LD [M]  net/bridge/netfilter/nft_reject_bridge.ko
+  LD [M]  net/bridge/netfilter/ebtables.ko
+  LD [M]  net/bridge/netfilter/ebtable_broute.ko
+  LD [M]  net/bridge/netfilter/ebtable_filter.ko
+  LD [M]  net/bridge/netfilter/ebtable_nat.ko
+  LD [M]  net/bridge/netfilter/ebt_802_3.ko
+  LD [M]  net/bridge/netfilter/ebt_among.ko
+  LD [M]  net/bridge/netfilter/ebt_arp.ko
+  LD [M]  net/bridge/netfilter/ebt_ip.ko
+  LD [M]  net/bridge/netfilter/ebt_ip6.ko
+  LD [M]  net/bridge/netfilter/ebt_limit.ko
+  LD [M]  net/bridge/netfilter/ebt_mark_m.ko
+  LD [M]  net/bridge/netfilter/ebt_pkttype.ko
+  LD [M]  net/bridge/netfilter/ebt_stp.ko
+  LD [M]  net/bridge/netfilter/ebt_vlan.ko
+  LD [M]  net/bridge/netfilter/ebt_arpreply.ko
+  LD [M]  net/bridge/netfilter/ebt_mark.ko
+  LD [M]  net/bridge/netfilter/ebt_dnat.ko
+  LD [M]  net/bridge/netfilter/ebt_redirect.ko
+  LD [M]  net/bridge/netfilter/ebt_snat.ko
+  LD [M]  net/bridge/netfilter/ebt_log.ko
+  LD [M]  net/bridge/netfilter/ebt_nflog.ko
+  LD [M]  net/bridge/bridge.ko
+  LD [M]  net/bridge/br_netfilter.ko
+  LD [M]  net/appletalk/appletalk.ko
+  LD [M]  net/netrom/netrom.ko
+  LD [M]  net/rose/rose.ko
+  LD [M]  net/ax25/ax25.ko
+  LD [M]  net/can/can.ko
+  LD [M]  net/can/can-raw.ko
+  LD [M]  net/can/can-bcm.ko
+  LD [M]  net/can/can-gw.ko
+  LD [M]  net/can/j1939/can-j1939.ko
+  LD [M]  net/can/can-isotp.ko
+  LD [M]  net/bluetooth/bluetooth.ko
+  LD [M]  net/bluetooth/rfcomm/rfcomm.ko
+  LD [M]  net/bluetooth/bnep/bnep.ko
+  LD [M]  net/bluetooth/hidp/hidp.ko
+  LD      .tmp_vmlinux.kallsyms2
+  LD [M]  net/bluetooth/bluetooth_6lowpan.ko
+  LD [M]  net/atm/atm.ko
+  LD [M]  net/atm/pppoatm.ko
+  LD [M]  net/l2tp/l2tp_core.ko
+  LD [M]  net/l2tp/l2tp_ppp.ko
+  LD [M]  net/l2tp/l2tp_ip.ko
+  LD [M]  net/l2tp/l2tp_netlink.ko
+  LD [M]  net/l2tp/l2tp_eth.ko
+  LD [M]  net/l2tp/l2tp_ip6.ko
+  LD [M]  net/sctp/sctp.ko
+  LD [M]  net/sctp/sctp_diag.ko
+  LD [M]  net/mac80211/mac80211.ko
+  LD [M]  net/6lowpan/6lowpan.ko
+  LD [M]  net/6lowpan/nhc_dest.ko
+  LD [M]  net/6lowpan/nhc_fragment.ko
+  LD [M]  net/6lowpan/nhc_hop.ko
+  LD [M]  net/6lowpan/nhc_ipv6.ko
+  LD [M]  net/6lowpan/nhc_mobility.ko
+  LD [M]  net/6lowpan/nhc_routing.ko
+  LD [M]  net/6lowpan/nhc_udp.ko
+  LD [M]  net/ieee802154/6lowpan/ieee802154_6lowpan.ko
+  LD [M]  net/ieee802154/ieee802154.ko
+  LD [M]  net/ieee802154/ieee802154_socket.ko
+  LD [M]  net/mac802154/mac802154.ko
+  LD [M]  net/batman-adv/batman-adv.ko
+  LD [M]  net/nfc/nfc.ko
+  LD [M]  net/openvswitch/openvswitch.ko
+  LD [M]  net/openvswitch/vport-vxlan.ko
+  LD [M]  net/openvswitch/vport-gre.ko
+  LD [M]  net/nsh/nsh.ko
+  NM      .tmp_vmlinux.kallsyms2.syms
+  KSYMS   .tmp_vmlinux.kallsyms2.S
+  AS      .tmp_vmlinux.kallsyms2.S
+  LD      vmlinux
+  NM      System.map
+  SORTTAB vmlinux
+  OBJCOPY arch/arm64/boot/Image
+  GZIP    arch/arm64/boot/Image.gz

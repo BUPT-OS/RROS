@@ -1,6 +1,17 @@
+use kernel::prelude::*;
+
 use crate::list::*;
 use crate::{list_entry, list_first_entry, list_last_entry};
-use kernel::prelude::*;
+
+
+// module! {
+//     type: ListTest,
+//     name: "rust_lsit",
+//     author: "Rust for Linux Contributors",
+//     description: "pr_debugRust list test sample",
+//     license: "GPL",
+// }
+
 #[allow(dead_code)]
 struct ListTest {
     num: i32,
@@ -117,3 +128,4 @@ pub fn test_list() {
     test_list_method();
     test_entry();
 }
+

@@ -7,7 +7,7 @@
     // maybe_uninit_extra,
     // new_uninit
 )]
-#![feature(get_mut_unchecked)]
+// #![feature(get_mut_unchecked)]
 
 //! This file is the entry point of the rros kernel module.
 //! Importing necessary features and modules

@@ -65,7 +65,6 @@ alloc-cfgs = \
     --cfg no_macros \
     --cfg no_str \
     --cfg no_string \
-    --cfg no_sync \
     --cfg no_thin
 
 quiet_cmd_rustdoc = RUSTDOC $(if $(rustdoc_host),H, ) $<

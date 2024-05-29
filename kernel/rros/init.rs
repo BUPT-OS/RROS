@@ -1,12 +1,13 @@
 #![no_std]
-#![feature(allocator_api, global_asm)]
+// #![feature(allocator_api, global_asm)]
 #![feature(
     const_fn_transmute,
-    array_map,
-    get_mut_unchecked,
-    maybe_uninit_extra,
-    new_uninit
+    // array_map,
+    // get_mut_unchecked,
+    // maybe_uninit_extra,
+    // new_uninit
 )]
+#![feature(get_mut_unchecked)]
 
 //! This file is the entry point of the rros kernel module.
 //! Importing necessary features and modules
@@ -14,6 +15,10 @@
 use kernel::{
     bindings, c_types, chrdev, cpumask, dovetail, irqstage, percpu, prelude::*, str::CStr, task,
 };
+
+use kernel::sync::Arc;
+use alloc::rc::Rc;
+use alloc::boxed::Box;
 
 use core::str;
 use core::sync::atomic::{AtomicU8, Ordering};

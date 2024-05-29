@@ -61,11 +61,8 @@ core-cfgs = \
     --cfg no_fp_fmt_parse
 
 alloc-cfgs = \
-    --cfg no_borrow \
-    --cfg no_fmt \
     --cfg no_global_oom_handling \
     --cfg no_macros \
-    --cfg no_rc \
     --cfg no_str \
     --cfg no_string \
     --cfg no_sync \

@@ -7,7 +7,6 @@
     // maybe_uninit_extra,
     // new_uninit
 )]
-// #![feature(get_mut_unchecked)]
 
 //! This file is the entry point of the rros kernel module.
 //! Importing necessary features and modules
@@ -16,9 +15,9 @@ use kernel::{
     bindings, c_types, chrdev, cpumask, dovetail, irqstage, percpu, prelude::*, str::CStr, task,
 };
 
-use kernel::sync::Arc;
-use alloc::rc::Rc;
-use alloc::boxed::Box;
+// use kernel::sync::Arc;
+// use alloc::{rc::Rc,sync::Arc};
+// use alloc::boxed::Box;
 
 use core::str;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -87,27 +86,28 @@ mod net;
 
 module! {
     type: Rros,
-    name: b"rros",
-    author: b"Hongyu Li",
-    description: b"A rust realtime os",
-    license: b"GPL v2",
-    params: {
-        oobcpus_arg: str {
-            default: b"0\0",
-            permissions: 0o444,
-            description: b"which cpus in the oob",
-        },
-        init_state_arg: str {
-            default: b"enabled",
-            permissions: 0o444,
-            description: b"inital state of rros",
-        },
-        sysheap_size_arg: u32{
-            default: 0,
-            permissions: 0o444,
-            description: b"system heap size",
-        },
-    },
+    name: "rros",
+    author: "Hongyu Li",
+    description: "A rust realtime os",
+    license: "GPL v2",
+    // TODO: think about how to get params in module_init 20240529
+    // params: {
+    //     oobcpus_arg: str {
+    //         default: "0\0",
+    //         permissions: 0o444,
+    //         description: "which cpus in the oob",
+    //     },
+    //     init_state_arg: str {
+    //         default: "enabled",
+    //         permissions: 0o444,
+    //         description: "inital state of rros",
+    //     },
+    //     sysheap_size_arg: u32{
+    //         default: 0,
+    //         permissions: 0o444,
+    //         description: "system heap size",
+    //     },
+    // },
 }
 
 /// Data associated with each CPU in the machine.
@@ -331,7 +331,8 @@ fn test_mem() {
 fn test_lantency() {
     rros::latmus::test_latmus();
 }
-impl KernelModule for Rros {
+// impl KernelModule for Rros {
+impl kernel::Module for Rros {
     fn init() -> Result<Self> {
         let curr = task::Task::current_ptr();
         unsafe {

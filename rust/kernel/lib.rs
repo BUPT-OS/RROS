@@ -58,6 +58,18 @@ pub use bindings;
 pub use macros;
 pub use uapi;
 
+//rros related
+pub mod dovetail;
+pub mod percpu;
+pub mod irqstage;
+pub mod cpumask;
+
+pub mod file_operations;
+pub mod chrdev;
+pub mod c_types;
+
+
+
 #[doc(hidden)]
 pub use build_error::build_error;
 

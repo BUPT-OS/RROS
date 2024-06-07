@@ -58,15 +58,15 @@ pub use bindings;
 pub use macros;
 pub use uapi;
 
-//rros related
-pub mod dovetail;
-pub mod percpu;
-pub mod irqstage;
-pub mod cpumask;
+// //rros related
+// pub mod dovetail;
+// pub mod percpu;
+// pub mod irqstage;
+// pub mod cpumask;
 
-pub mod file_operations;
-pub mod chrdev;
-pub mod c_types;
+// pub mod file_operations;
+// pub mod chrdev;
+// pub mod c_types;
 
 
 

@@ -42,7 +42,7 @@ use crate::{
     timeout::RROS_INFINITE,
     timer::*,
     tp,
-    wait::{RrosWaitChannel, RrosWaitQueue, RROS_WAIT_PRIO},
+    wait::RrosWaitChannel,
     RROS_MACHINE_CPUDATA, RROS_OOB_CPUS,
 };
 

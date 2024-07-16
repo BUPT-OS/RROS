@@ -758,6 +758,9 @@ pub fn pin_to_initial_cpu(thread: Arc<SpinLock<RrosThread>>) {
         cpu = unsafe { (*thread.locked_data().get()).affinity.cpumask_first() as u32 };
     }
 
+    let name = unsafe { (*thread.locked_data().get()).name };
+    pr_debug!("[smp_test]: thread name is {:?}, cpu is {:?}", name, cpu);
+
     unsafe { bindings::set_cpus_allowed_ptr(current_ptr, CpumaskT::cpumask_of(cpu) as *const _); }
 
     let rq = rros_cpu_rq(cpu as i32);

@@ -4,13 +4,18 @@ use crate::{
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
-use core::{cell::Cell, ptr::NonNull};
+use core::cell::Cell;
 use kernel::ktime::KtimeT;
+
+extern "C" {
+    fn rust_helper_smp_wmb();
+}
 
 pub struct RrosFlag {
     pub wait: RrosWaitQueue,
     pub raised: Cell<bool>,
 }
+
 impl RrosFlag {
     pub fn new() -> Self {
         RrosFlag {
@@ -48,27 +53,52 @@ impl RrosFlag {
     // }
 
     #[inline]
-    pub fn read(&self) -> bool {
-        if self.raised.get() {
-            self.raised.set(false);
-            return true;
-        }
-        false
+    pub fn peek(cell: &Cell<bool>) -> bool {
+        unsafe { rust_helper_smp_wmb(); }
+        cell.get()
     }
+
     #[inline]
-    pub fn wait(&mut self) -> i32 {
-        // TODO: Try to get around the limitations of immutable borrowing.
-        let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
-        unsafe {
-            x.as_mut()
-                .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || self.read())
+    pub fn read(cell: &Cell<bool>) -> bool {
+        if cell.get() {
+            cell.set(false);
+            true
+        } else {
+            false
         }
     }
 
     #[inline]
+    pub fn wait(&mut self) -> i32 {
+        let cell = &self.raised;
+
+        self.wait.wait_timeout(
+            RROS_INFINITE,
+            RrosTmode::RrosRel,
+            || Self::read(cell),
+        )
+    }
+
+    #[inline]
+    pub fn wait_same(&mut self) -> i32 {
+        let cell = &self.raised;
+
+        self.wait.wait_timeout(
+            RROS_INFINITE,
+            RrosTmode::RrosRel,
+            || Self::peek(cell),
+        )
+    }
+
+    #[inline]
     pub fn wait_timeout(&mut self, timeout: KtimeT, tmode: RrosTmode) -> i32 {
-        let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
-        unsafe { x.as_mut().wait_timeout(timeout, tmode, || self.read()) }
+        let cell = &self.raised;
+
+        self.wait.wait_timeout(
+            timeout,
+            tmode,
+            || Self::read(cell),
+        )
     }
 
     #[inline]

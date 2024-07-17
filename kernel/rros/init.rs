@@ -329,6 +329,11 @@ fn test_lantency() {
 }
 impl KernelModule for Rros {
     fn init() -> Result<Self> {
+
+        for t in task::all_threads() {
+            unsafe{pr_info!("thread: {:p}\n", &(*t))};
+        }
+
         let curr = task::Task::current_ptr();
         unsafe {
             bindings::set_cpus_allowed_ptr(curr, cpumask::CpumaskT::from_int(1).as_cpumas_ptr());
@@ -404,6 +409,9 @@ impl KernelModule for Rros {
             }
         }
         test_lantency();
+
+        // add recovery code
+        
 
         // let mut rros_kthread1 = rros_kthread::new(fn1);
         // let mut rros_kthread2 = rros_kthread::new(fn2);

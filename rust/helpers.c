@@ -1154,6 +1154,11 @@ unsigned int rust_helper_minor(dev_t dev) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_minor);
 
+struct task_struct* rust_helper_next_task(struct task_struct *cur) {
+	return next_task(cur);
+}
+EXPORT_SYMBOL_GPL(rust_helper_next_task);
+
 // void rust_helper_anon_inode_getfile(const char *name,
 // 				const struct file_operations *fops,
 // 				void *priv, int flags) {

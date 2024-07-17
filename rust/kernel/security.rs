@@ -33,7 +33,7 @@ extern "C" {
 /// context.
 pub fn binder_set_context_mgr(mgr: &Task) -> Result {
     // SAFETY: By the `Task` invariants, `mgr.ptr` is valid.
-    let ret = unsafe { rust_helper_security_binder_set_context_mgr(mgr.ptr) };
+    let ret = unsafe { rust_helper_security_binder_set_context_mgr(mgr.0.get()) };
     if ret != 0 {
         Err(Error::from_kernel_errno(ret))
     } else {
@@ -45,7 +45,7 @@ pub fn binder_set_context_mgr(mgr: &Task) -> Result {
 /// task `to`.
 pub fn binder_transaction(from: &Task, to: &Task) -> Result {
     // SAFETY: By the `Task` invariants, `from.ptr` and `to.ptr` are valid.
-    let ret = unsafe { rust_helper_security_binder_transaction(from.ptr, to.ptr) };
+    let ret = unsafe { rust_helper_security_binder_transaction(from.0.get(), to.0.get()) };
     if ret != 0 {
         Err(Error::from_kernel_errno(ret))
     } else {
@@ -57,7 +57,7 @@ pub fn binder_transaction(from: &Task, to: &Task) -> Result {
 /// (owned by itself or other processes) to task `to` through a binder transaction.
 pub fn binder_transfer_binder(from: &Task, to: &Task) -> Result {
     // SAFETY: By the `Task` invariants, `from.ptr` and `to.ptr` are valid.
-    let ret = unsafe { rust_helper_security_binder_transfer_binder(from.ptr, to.ptr) };
+    let ret = unsafe { rust_helper_security_binder_transfer_binder(from.0.get(), to.0.get()) };
     if ret != 0 {
         Err(Error::from_kernel_errno(ret))
     } else {
@@ -70,7 +70,7 @@ pub fn binder_transfer_binder(from: &Task, to: &Task) -> Result {
 pub fn binder_transfer_file(from: &Task, to: &Task, file: &File) -> Result {
     // SAFETY: By the `Task` invariants, `from.ptr` and `to.ptr` are valid. Similarly, by the
     // `File` invariants, `file.ptr` is also valid.
-    let ret = unsafe { rust_helper_security_binder_transfer_file(from.ptr, to.ptr, file.ptr) };
+    let ret = unsafe { rust_helper_security_binder_transfer_file(from.0.get(), to.0.get(), file.ptr) };
     if ret != 0 {
         Err(Error::from_kernel_errno(ret))
     } else {

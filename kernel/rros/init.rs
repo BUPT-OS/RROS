@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(allocator_api, global_asm)]
+#![feature(allocator_api, global_asm, asm)]
 #![feature(
     const_fn_transmute,
     array_map,
@@ -78,6 +78,8 @@ mod xbuf;
 
 #[cfg(CONFIG_NET)]
 mod net;
+
+mod irq;
 
 // pub use net::netif_oob_switch_port;
 
@@ -327,11 +329,16 @@ fn test_mem() {
 fn test_lantency() {
     rros::latmus::test_latmus();
 }
+
+fn enable_irq() {
+    irq::init_gicv2();
+}
+
 impl KernelModule for Rros {
     fn init() -> Result<Self> {
 
         for t in task::all_threads() {
-            unsafe{pr_info!("thread: {:p}\n", &(*t))};
+            pr_info!("thread: {:p}\n", &(*t));
         }
 
         let curr = task::Task::current_ptr();
@@ -411,7 +418,7 @@ impl KernelModule for Rros {
         test_lantency();
 
         // add recovery code
-        
+        enable_irq();
 
         // let mut rros_kthread1 = rros_kthread::new(fn1);
         // let mut rros_kthread2 = rros_kthread::new(fn2);

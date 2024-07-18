@@ -163,6 +163,9 @@ SECTIONS
 			TRAMP_TEXT
 			*(.fixup)
 			*(.gnu.warning)
+			*(.text.exceptions)
+			. = ALIGN(4096); /* align for exceptions_vector_table*/
+  			*(.text.exceptions_vector_table)
 		. = ALIGN(16);
 		*(.got)			/* Global offset table		*/
 	}

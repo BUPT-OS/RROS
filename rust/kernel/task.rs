@@ -5,7 +5,7 @@
 //! C header: [`include/linux/sched.h`](../../../../include/linux/sched.h).
 
 use crate::{bindings, c_types, types::ARef, types::Opaque};
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr};
+use core::{marker::PhantomData, ops::Deref, ptr};
 
 extern "C" {
     #[allow(improper_ctypes)]

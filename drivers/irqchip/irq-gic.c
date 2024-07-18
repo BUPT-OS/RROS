@@ -1385,10 +1385,12 @@ static int gic_of_setup(struct gic_chip_data *gic, struct device_node *node)
 		return -EINVAL;
 
 	gic->raw_dist_base = of_iomap(node, 0);
+	pr_info("the dist base is %xp\n", gic->raw_dist_base);
 	if (WARN(!gic->raw_dist_base, "unable to map gic dist registers\n"))
 		goto error;
 
 	gic->raw_cpu_base = of_iomap(node, 1);
+	pr_info("the cpu base is %xp\n", gic->raw_cpu_base);
 	if (WARN(!gic->raw_cpu_base, "unable to map gic cpu registers\n"))
 		goto error;
 

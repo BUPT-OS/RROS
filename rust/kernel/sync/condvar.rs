@@ -91,7 +91,7 @@ impl CondVar {
         // SAFETY: Both `wait` and `wait_list` point to valid memory.
         unsafe { bindings::finish_wait(self.wait_list.get(), wait.get()) };
 
-        unsafe{Task::current().signal_pending()}
+        Task::current().signal_pending()
     }
 
     /// Calls the kernel function to notify the appropriate number of threads with the given flags.

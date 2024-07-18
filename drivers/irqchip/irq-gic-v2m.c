@@ -338,6 +338,8 @@ static int __init gicv2m_init_one(struct fwnode_handle *fwnode,
 	memcpy(&v2m->res, res, sizeof(struct resource));
 
 	v2m->base = ioremap(v2m->res.start, resource_size(&v2m->res));
+	pr_info("the gicc/gicd address is %p\n", v2m->base);
+	// pr_info("the gicc/gicd address is %p\n", v2m->base);
 	if (!v2m->base) {
 		pr_err("Failed to map GICv2m resource\n");
 		ret = -ENOMEM;

@@ -17,6 +17,10 @@ RROS（Rust实时操作系统）是一个双内核操作系统，由实时内核
 
 ## 新闻
 
+- [2024.07.13] 山宇轩在2024 Rust Meetup北京站分享关于RROS的研究。([photos](https://bupt-os.github.io/website/news/2024_07_13/rust_meetup/))
+- [2024.07.10] :fire::fire: “Rust-for-Linux 的实证研究：成功、不满和妥协”荣获 USENIX ATC 2024 最佳论文奖!!! ([photos](https://bupt-os.github.io/website/news/2024_07_11/atc2024_bestpaper/))
+- [2024.06.15] 李弘宇在第26届中国计算机系统研讨会（ChinaSys）做口头报告。([photos](https://bupt-os.github.io/website/news/2024_06_15/chinasys_26/))
+- [2024.03.30] RROS在2024年开源操作系统年度技术大会上亮相。([photos](https://bupt-os.github.io/website/news/2024_03_30/os2atc/))
 - [2023.12.09] :fire::fire: RROS 成功升空！ ([照片](https://mp.weixin.qq.com/s/4CukKyJe0OUi04Y4DWiUOQ)).
 - [2023.11.30] RROS 在 Xenomai meetup 2023 上展示。（[照片](https://bupt-os.github.io/website/news/2023_11_30/xenomai_workshop/)）。
 - [2023.11.28] :fire: RROS 开源了！

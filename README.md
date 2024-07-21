@@ -18,6 +18,10 @@ Here is an [architecture diagram](https://bupt-os.github.io/website/docs/introdu
 
 ## News
 
+- [2024.07.13] Shan Yuxuan shared research on RROS at the 2024 Rust Meetup Beijing. ([photos](https://bupt-os.github.io/website/news/2024_07_13/rust_meetup/))
+- [2024.07.10] :fire::fire: “An Empirical Study of Rust-for-Linux: The Success, Dissatisfaction, and Compromise” is presented USENIX ATC 2024 Best Paper Award!!!([photos](https://bupt-os.github.io/website/news/2024_07_11/atc2024_bestpaper/))
+- [2024.06.15] Li Hongyu gave an oral talk at the 26th ACM SIGOPS ChinaSys. ([photos](https://bupt-os.github.io/website/news/2024_06_15/chinasys_26/))
+- [2024.03.30] RROS is presented in Open Source Operating System Annual Technical Conference 2024. ([photos](https://bupt-os.github.io/website/news/2024_03_30/os2atc/))
 - [2023.12.09] :fire::fire: RROS is successfully launched into space! ([photos](https://bupt-os.github.io/website/news/2023_12_9/satellite_launch/)).
 - [2023.11.30] RROS is presented at Xenomai Workshop 2023 ([photos](https://bupt-os.github.io/website/news/2023_11_30/xenomai_workshop/)).
 - [2023.11.28] :fire: RROS is open-sourced!

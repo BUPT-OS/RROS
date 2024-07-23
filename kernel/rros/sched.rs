@@ -1,4 +1,5 @@
 use alloc::rc::Rc;
+use kernel::{interrupt, irq_pipeline::irq_get_reschedule_oob_ipi};
 
 use core::{
     cell::RefCell,
@@ -10,7 +11,7 @@ use core::{
 #[warn(unused_mut)]
 use kernel::{
     bindings, c_str, c_types, capability, completion,
-    cpumask::{self, online_cpus, possible_cpus},
+    cpumask::{CpumaskT, online_cpus, possible_cpus, num_possible_cpus},
     double_linked_list::*,
     dovetail::{self, OobMmState},
     irq_pipeline,
@@ -41,10 +42,10 @@ use crate::{
     timer::*,
     tp,
     wait::RrosWaitChannel,
+    RROS_MACHINE_CPUDATA, RROS_OOB_CPUS,
 };
 
 extern "C" {
-    fn rust_helper_cpumask_of(cpu: i32) -> *const cpumask::CpumaskT;
     #[allow(dead_code)]
     fn rust_helper_list_add_tail(new: *mut ListHead, head: *mut ListHead);
     fn rust_helper_test_bit(nr: i32, addr: *const usize) -> bool;
@@ -92,7 +93,7 @@ pub struct rros_rq {
     #[cfg(CONFIG_SMP)]
     pub cpu: i32,
     #[cfg(CONFIG_SMP)]
-    pub resched_cpus: cpumask::CpumaskT,
+    pub resched_cpus: CpumaskT,
     #[cfg(CONFIG_RROS_RUNSTATS)]
     pub last_account_switch: KtimeT,
     #[cfg(CONFIG_RROS_RUNSTATS)]
@@ -118,7 +119,7 @@ impl rros_rq {
             #[cfg(CONFIG_SMP)]
             cpu: 0,
             #[cfg(CONFIG_SMP)]
-            resched_cpus: cpumask::CpumaskT::from_int(0 as u64),
+            resched_cpus: CpumaskT::from_int(0 as u64),
             #[cfg(CONFIG_RROS_RUNSTATS)]
             last_account_switch: 0,
             #[cfg(CONFIG_RROS_RUNSTATS)]
@@ -166,7 +167,7 @@ pub static helloworldint: i32 = 5433;
 
 static mut RROS_RUNQUEUES: *mut rros_rq = 0 as *mut rros_rq;
 
-// pub static RROS_CPU_AFFINITY: cpumask::CpumaskT = cpumask::CpumaskT::from_int(0 as u64);
+pub static mut RROS_CPU_AFFINITY: CpumaskT = CpumaskT::cpu_mask_all();
 
 pub fn rros_cpu_rq(cpu: i32) -> *mut rros_rq {
     unsafe { percpu_defs::per_cpu(RROS_RUNQUEUES, cpu) }
@@ -250,10 +251,7 @@ pub fn rros_set_resched(rq_op: Option<*mut rros_rq>) {
         unsafe {
             (*rq).add_flags(RQ_SCHED);
             (*this_rq).add_local_flags(RQ_SCHED);
-            cpumask::cpumask_set_cpu(
-                rros_rq_cpu(rq) as u32,
-                (*this_rq).resched_cpus.as_cpumas_ptr(),
-            );
+            (*this_rq).resched_cpus.cpumask_set_cpu(rros_rq_cpu(rq) as u32);
         }
     }
 }
@@ -264,14 +262,18 @@ pub fn rros_set_resched(rq: Option<*mut rros_rq>) {
 }
 
 #[cfg(CONFIG_SMP)]
-pub fn is_threading_cpu(_cpu: i32) -> bool {
-    //return !!cpumask_test_cpu(cpu, &rros_cpu_affinity);
-    return false;
+pub fn is_threading_cpu(cpu: i32) -> bool {
+    unsafe { RROS_CPU_AFFINITY.cpumask_test_cpu(cpu as u32) }
 }
 
 #[cfg(not(CONFIG_SMP))]
 pub fn is_threading_cpu(cpu: i32) -> bool {
     return true;
+}
+
+#[cfg(CONFIG_SMP)]
+pub fn is_rros_cpu(cpu: i32) -> bool {
+    unsafe { RROS_OOB_CPUS.cpumask_test_cpu(cpu as u32) }
 }
 
 #[cfg(not(CONFIG_SMP))]
@@ -280,9 +282,76 @@ pub fn is_rros_cpu(cpu: i32) -> bool {
 }
 
 #[cfg(CONFIG_SMP)]
+pub fn rros_double_rq_lock(rq1: *mut rros_rq, rq2: *mut rros_rq) {
+    unsafe {
+        if rq1 == rq2 {
+            (*rq1).lock.raw_spin_lock();
+        } else if rq1 < rq2 {
+            (*rq1).lock.raw_spin_lock();
+            (*rq2).lock.raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
+        } else {
+            (*rq2).lock.raw_spin_lock();
+            (*rq1).lock.raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
+        }
+    }
+}
+
+#[cfg(CONFIG_SMP)]
+pub fn rros_double_rq_unlock(rq1: *mut rros_rq, rq2: *mut rros_rq) {
+    unsafe {
+        (*rq1).lock.raw_spin_unlock();
+        if rq1 != rq2 {
+            (*rq2).lock.raw_spin_unlock();
+        }
+    }
+}
+
+#[cfg(not(CONFIG_SMP))]
+pub fn rros_double_rq_lock(_rq1: *mut rros_rq, _rq2: *mut rros_rq) {}
+
+#[cfg(not(CONFIG_SMP))]
+pub fn rros_double_rq_unlock(_rq1: *mut rros_rq, _rq2: *mut rros_rq) {}
+
+#[cfg(CONFIG_SMP)]
+pub fn migrate_thread(thread: Arc<SpinLock<RrosThread>>, dst_rq: *mut rros_rq) {
+    let src_rq = unsafe { (*thread.locked_data().get()).rq.unwrap() };
+    rros_double_rq_lock(src_rq, dst_rq);
+
+    let thread_state = unsafe { (*thread.locked_data().get()).state };
+    if thread_state & T_READY != 0 {
+        let _ = rros_dequeue_thread(thread.clone());
+        unsafe { (*thread.locked_data().get()).state &= !T_READY };
+    }
+
+    if let Some(ref sched_class) = unsafe { (*thread.locked_data().get()).sched_class } {
+        if let Some(ref sched_migrate) = sched_class.sched_migrate {
+            let _ = sched_migrate(thread.clone(), dst_rq);
+        }
+    }
+
+    unsafe { (*thread.locked_data().get()).rq = Some(dst_rq); }
+    if unsafe { (*thread.locked_data().get()).state & RROS_THREAD_BLOCK_BITS } == 0 {
+        let _ = rros_requeue_thread(thread.clone());
+        unsafe { (*thread.locked_data().get()).state |= T_READY; }
+        rros_set_resched(Some(dst_rq));
+        rros_set_resched(Some(src_rq));
+    }
+
+    rros_double_rq_unlock(src_rq, dst_rq);
+}
+
+#[cfg(CONFIG_SMP)]
 #[allow(dead_code)]
-pub fn rros_migrate_thread(_thread: Arc<SpinLock<RrosThread>>, _dst_rq: *mut rros_rq) {
-    // TODO:
+pub fn rros_migrate_thread(thread: Arc<SpinLock<RrosThread>>, dst_rq: *mut rros_rq) {
+    // assert_hard_lock(&thread.lock);
+    let src_rq = unsafe { (*thread.locked_data().get()).rq.unwrap() };
+    if src_rq == dst_rq {
+        return;
+    }
+
+    // trace_rros_thread_migrate(thread, rros_rq_cpu(dst_rq));
+    migrate_thread(thread.clone(), dst_rq);
+    unsafe { (*thread.locked_data().get()).stat.lastperiod.reset_account() };
 }
 
 #[cfg(not(CONFIG_SMP))]
@@ -851,7 +920,7 @@ pub struct RrosThread {
     // pub trackers: *mut List<Arc<SpinLock<RrosMutex>>>,
     pub tracking_lock: HardSpinlock,
     pub element: Rc<RefCell<RrosElement>>,
-    pub affinity: cpumask::CpumaskT,
+    pub affinity: CpumaskT,
     pub exited: completion::Completion,
     pub raised_cap: capability::KernelCapStruct,
     pub kill_next: ListHead,
@@ -900,7 +969,7 @@ impl RrosThread {
             // trackers: 0 as *mut List<Arc<SpinLock<RrosMutex>>>,
             tracking_lock: HardSpinlock::new(),
             element: Rc::try_new(RefCell::new(RrosElement::new()?))?,
-            affinity: cpumask::CpumaskT::from_int(0 as u64),
+            affinity: CpumaskT::from_int(0 as u64),
             exited: completion::Completion::new(),
             raised_cap: capability::KernelCapStruct::new(),
             kill_next: ListHead {
@@ -947,7 +1016,7 @@ impl RrosThread {
         self.u_window = None;
         self.tracking_lock.init();
         // self.element = Rc::try_new(RefCell::new(RrosElement::new()?))?;
-        self.affinity = cpumask::CpumaskT::from_int(0 as u64);
+        self.affinity = CpumaskT::from_int(0 as u64);
         self.exited = completion::Completion::new();
         self.raised_cap = capability::KernelCapStruct::new();
         self.kill_next = ListHead {
@@ -1064,7 +1133,7 @@ impl RrosPollHead {
 }
 
 pub struct RrosInitThreadAttr {
-    pub affinity: *const cpumask::CpumaskT,
+    pub affinity: *const CpumaskT,
     pub observable: Option<Rc<RefCell<RrosObservable>>>,
     pub flags: i32,
     pub sched_class: Option<&'static RrosSchedClass>,
@@ -1344,7 +1413,6 @@ pub fn rros_init_sched() -> Result<usize> {
         }
     }
 
-    // for_each_online_cpu()
     #[cfg(CONFIG_SMP)]
     for cpu in online_cpus() {
         unsafe {
@@ -1363,27 +1431,40 @@ pub fn rros_init_sched() -> Result<usize> {
             }
         }
     }
-    // ret = bindings::__request_percpu_irq();
+
+    #[cfg(CONFIG_SMP)]
+    if num_possible_cpus() > 1 {
+        let ret =  interrupt::__request_percpu_irq(
+            irq_get_reschedule_oob_ipi() as u32,
+            Some(oob_reschedule_interrupt),
+            bindings::IRQF_OOB as u64,
+            unsafe {
+                CStr::from_bytes_with_nul_unchecked("RROS reschedule\0".as_bytes())
+                    .as_char_ptr()
+            },
+            unsafe { RROS_MACHINE_CPUDATA as *mut _ }
+        );
+        if ret != 0 {
+            pr_warn!("request_percpu_irq error!");
+            return Err(Error::EINTR);
+        }
+    }
+
     pr_info!("sched init success!");
     Ok(0)
 }
 
-/* oob stalled. */
-// #[cfg(CONFIG_SMP)]
-// unsafe extern "C" fn oob_reschedule_interrupt(irq: i32 , dev_id:*mut c_types::c_void) -> bindings::irqreturn_t {
-// 	// trace_rros_reschedule_ipi(this_rros_rq());
+#[cfg(CONFIG_SMP)]
+unsafe extern "C" fn oob_reschedule_interrupt(_irq: i32, _dev_id: *mut c_types::c_void) -> bindings::irqreturn_t {
+	// trace_rros_reschedule_ipi(this_rros_rq());
 
-// 	/* Will reschedule from rros_exit_irq(). */
-// 	return bindings::IRQ_HANDLED;
-// }
+    bindings::irqreturn_IRQ_HANDLED
+}
 
-// #[cfg(not(CONFIG_SMP))]
-// unsafe extern "C" fn oob_reschedule_interrupt(irq: i32 , dev_id:*mut c_types::c_void) -> bindings::irqreturn_t {
-// 	// trace_rros_reschedule_ipi(this_rros_rq());
-
-// 	/* Will reschedule from rros_exit_irq(). */
-// 	NULL;
-// }
+#[cfg(not(CONFIG_SMP))]
+unsafe extern "C" fn oob_reschedule_interrupt(_irq: i32, _dev_id: *mut c_types::c_void) -> bindings::irqreturn_t {
+    bindings::irqreturn_IRQ_NONE
+}
 
 fn register_classes() -> Result<usize> {
     // let RROS_SCHED_IDLE = unsafe{idle::RROS_SCHED_IDLE};
@@ -1474,7 +1555,13 @@ fn init_rq(rq: *mut rros_rq, cpu: i32) -> Result<usize> {
     let mut iattr = RrosInitThreadAttr::new();
     let name_fmt: &'static CStr = c_str!("ROOT");
     // let mut rq_ptr = rq.borrow_mut();
-    let mut _rros_nrthreads = 0;
+
+    #[cfg(CONFIG_SMP)]
+    unsafe {
+        (*rq).cpu = cpu;
+        (*rq).resched_cpus.cpumask_clear();
+    }
+
     unsafe {
         (*rq).proxy_timer_name = kstrdup(
             CStr::from_bytes_with_nul("[proxy-timer]\0".as_bytes())?.as_char_ptr(),
@@ -1545,7 +1632,7 @@ fn init_rq(rq: *mut rros_rq, cpu: i32) -> Result<usize> {
 
     // rros_set_current_account(rq, &rq->root_thread.stat.account);
     iattr.flags = T_ROOT as i32;
-    iattr.affinity = cpumask_of(cpu);
+    iattr.affinity = CpumaskT::cpumask_of(cpu as u32) as *const _;
     // TODO: Wait for global variables.
     unsafe {
         iattr.sched_class = Some(&idle::RROS_SCHED_IDLE);
@@ -1633,10 +1720,6 @@ pub fn roundrobin_handler(_timer: *mut RrosTimer) {
             pr_warn!("rros_sched_tick error!");
         }
     }
-}
-
-pub fn cpumask_of(cpu: i32) -> *const cpumask::CpumaskT {
-    return unsafe { rust_helper_cpumask_of(cpu) };
 }
 
 #[allow(dead_code)]
@@ -1798,20 +1881,19 @@ pub fn rros_requeue_thread(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     Ok(0)
 }
 
-// fn rros_need_resched(rq: *mut rros_rq) -> bool {
-//     unsafe{(*rq).flags & RQ_SCHED != 0x0}
-// }
-
 /* hard irqs off. */
 fn test_resched(rq: *mut rros_rq) -> bool {
     let need_resched = rros_need_resched(rq);
-    // #ifdef CONFIG_SMP
-    /* Send resched IPI to remote CPU(s). */
-    // if (unlikely(!cpumask_empty(&this_rq->resched_cpus))) {
-    // 	irq_send_oob_ipi(RESCHEDULE_OOB_IPI, &this_rq->resched_cpus);
-    // 	cpumask_clear(&this_rq->resched_cpus);
-    // 	this_rq->local_flags &= ~RQ_SCHED;
-    // }
+    
+    #[cfg(CONFIG_SMP)]
+    if unsafe { (*rq).resched_cpus.cpumask_empty().is_err() } {
+        unsafe {
+            irq_pipeline::irq_send_oob_ipi(irq_pipeline::irq_get_reschedule_oob_ipi(), &(*rq).resched_cpus);
+            (*rq).resched_cpus.cpumask_clear();
+            (*rq).local_flags &= !RQ_SCHED;
+        }
+    }
+
 
     if need_resched {
         unsafe { (*rq).flags &= !RQ_SCHED }
@@ -1865,8 +1947,6 @@ pub unsafe extern "C" fn rros_schedule() {
 }
 
 extern "C" {
-    fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
-    fn rust_helper_hard_local_irq_restore(flags: c_types::c_ulong);
     #[allow(dead_code)]
     fn rust_helper_preempt_enable();
     #[allow(dead_code)]
@@ -1885,7 +1965,7 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
         let this_rq = this_rros_rq();
         let mut leaving_inband;
 
-        let flags = rust_helper_hard_local_irq_save();
+        let flags = lock::hard_local_irq_save();
 
         curr = (*this_rq).get_curr();
 
@@ -1902,7 +1982,7 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
             // raw_spin_unlock(&this_rq->lock);
             // raw_spin_unlock_irqrestore(&curr->lock, flags);
             // rust_helper_hard_local_irq_restore(flags);
-            lock::raw_spin_unlock_irqrestore(flags);
+            lock::hard_local_irq_restore(flags);
             return 0;
         }
 
@@ -1929,7 +2009,7 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
                 }
             }
             // rust_helper_hard_local_irq_restore(flags);
-            lock::raw_spin_unlock_irqrestore(flags);
+            lock::hard_local_irq_restore(flags);
             return 0;
         }
 
@@ -1984,7 +2064,7 @@ unsafe extern "C" fn __rros_schedule(_arg: *mut c_types::c_void) -> i32 {
 
         pr_debug!("the inband_tail is {}", inband_tail);
         if inband_tail == false {
-            lock::raw_spin_unlock_irqrestore(flags);
+            lock::hard_local_irq_restore(flags);
         }
         pr_debug!(
             "end of the rros_schedule uninit_thread: x ref is {}",
@@ -2160,7 +2240,7 @@ pub fn rros_get_thread_rq(
 ) -> Option<*mut rros_rq> {
     // pr_debug!("yinyongcishu is {}", Arc::strong_count(&thread.clone().unwrap()));
     //todo raw_spin_lock_irqsave and raw_spin_lock
-    *flags = unsafe { rust_helper_hard_local_irq_save() };
+    *flags = lock::hard_local_irq_save();
     // unsafe{rust_helper_preempt_disable();}
     unsafe { (*thread.unwrap().locked_data().get()).rq.clone() }
 }
@@ -2170,10 +2250,11 @@ pub fn rros_put_thread_rq(
     _rq: Option<*mut rros_rq>,
     flags: c_types::c_ulong,
 ) -> Result<usize> {
-    unsafe {
-        rust_helper_hard_local_irq_restore(flags);
-        // rust_helper_preempt_enable();
-    }
+    // unsafe {
+    //     rust_helper_hard_local_irq_restore(flags);
+    //     // rust_helper_preempt_enable();
+    // }
+    lock::hard_local_irq_restore(flags);
     // TODO: raw_spin_unlock and raw_spin_unlock_irqrestore
     Ok(0)
 }
@@ -2362,8 +2443,36 @@ extern "C" {
     fn rust_helper_stall_oob();
 }
 
+#[cfg(CONFIG_SMP)]
+pub fn check_cpu_affinity(thread: Arc<SpinLock<RrosThread>>, cpu: i32) {
+    let rq = rros_cpu_rq(cpu);
+    unsafe { (*thread.locked_data().get()).lock.raw_spin_lock() };
+    
+    let thread_rq = unsafe { (*thread.locked_data().get()).rq.unwrap() };
+
+    if thread_rq != rq {
+        if !is_threading_cpu(cpu) {
+            // printk(RROS_WARNING "thread %s[%d] switched to non-rt CPU%d, aborted.\n",
+			//      thread->name, rros_get_inband_pid(thread), cpu);
+            unsafe {
+                (*rq).lock.raw_spin_lock();
+                (*thread.locked_data().get()).info |= T_CANCELD;
+                (*rq).lock.raw_spin_unlock();
+            }
+        } else if unsafe { (*thread.locked_data().get()).affinity.cpumask_test_cpu(cpu as u32) == false } {
+            unsafe { (*thread.locked_data().get()).affinity.cpumask_set_cpu(cpu as u32); }
+        }
+        rros_migrate_thread(thread.clone(), rq);
+    }
+
+    unsafe { (*thread.locked_data().get()).lock.raw_spin_unlock(); }
+}
+
+#[cfg(not(CONFIG_SMP))]
+pub fn check_cpu_affinity(_thread: Arc<SpinLock<RrosThread>>, _cpu: i32) {}
+
 #[no_mangle]
-unsafe extern "C" fn rust_resume_oob_task(ptr: *mut c_types::c_void) {
+unsafe extern "C" fn rust_resume_oob_task(ptr: *mut c_types::c_void, cpu: i32) {
     // struct RrosThread *thread = rros_thread_from_task(p);
 
     // pr_debug!("rros rros mutex ptr{:p}", ptr);
@@ -2400,7 +2509,7 @@ unsafe extern "C" fn rust_resume_oob_task(ptr: *mut c_types::c_void) {
     unsafe {
         rust_helper_unstall_oob();
     }
-    // check_cpu_affinity(p);
+    check_cpu_affinity(thread.clone(), cpu);
     pr_debug!(
         "3a600 uninit_thread: x ref is {}",
         Arc::strong_count(&thread)

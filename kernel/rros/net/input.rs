@@ -28,7 +28,7 @@ pub struct RrosNetRxqueue {
 }
 
 impl RrosNetRxqueue {
-    // TODO: 使用Rc<Refcell<>>来替代
+    // TODO: replace this with Rc<Refcell<>>
     pub fn new(hkey: u32) -> Option<NonNull<Self>> {
         extern "C" {
             fn rust_helper_INIT_LIST_HEAD(list: *mut bindings::list_head);

@@ -29,6 +29,7 @@ extern "C" {
     fn rust_helper_raw_spin_lock_init(lock: *mut bindings::raw_spinlock_t);
     fn rust_helper_raw_spin_lock(lock: *mut bindings::hard_spinlock_t);
     fn rust_helper_raw_spin_unlock(lock: *mut bindings::hard_spinlock_t);
+    fn rust_helper_raw_spin_lock_nested(lock: *mut bindings::hard_spinlock_t, depth: u32);
 }
 
 /// Safely initialises a [`SpinLock`] with the given name, generating a new lock class.
@@ -117,6 +118,27 @@ impl<T: ?Sized> SpinLock<T> {
                 self.spin_lock.get() as *mut bindings::hard_spinlock_t,
                 flags,
             );
+        }
+    }
+
+    /// The `raw_spin_lock` method acquires the lock.
+    pub fn raw_spin_lock(&self) {
+        unsafe {
+            rust_helper_raw_spin_lock(self.spin_lock.get() as *mut bindings::hard_spinlock_t)
+        }
+    }
+
+    /// The `raw_spin_lock_nested` method acquires the lock nestly.
+    pub fn raw_spin_lock_nested(&self, depth: u32) {
+        unsafe {
+            rust_helper_raw_spin_lock_nested(self.spin_lock.get() as *mut bindings::hard_spinlock_t, depth)
+        }
+    }
+
+    /// The `raw_spin_unlock` method release the lock.
+    pub fn raw_spin_unlock(&self) {
+        unsafe {
+            rust_helper_raw_spin_unlock(self.spin_lock.get() as *mut bindings::hard_spinlock_t)
         }
     }
 }
@@ -216,6 +238,13 @@ impl HardSpinlock {
     pub fn raw_spin_unlock(&mut self) {
         unsafe {
             rust_helper_raw_spin_unlock(&mut self.lock as *mut bindings::hard_spinlock_t);
+        }
+    }
+
+    /// Call `Linux` `raw_spin_lock_nested` to lock nestly.
+    pub fn raw_spin_lock_nested(&mut self, depth: u32) {
+        unsafe {
+            rust_helper_raw_spin_lock_nested(&mut self.lock as *mut bindings::hard_spinlock_t, depth)
         }
     }
 }

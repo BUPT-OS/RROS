@@ -1,7 +1,8 @@
 use kernel::{
-    bindings, c_types, clockchips, clockchips::ClockEventDevice, cpumask, interrupt,
+    bindings, c_types, clockchips, clockchips::ClockEventDevice, interrupt,
     irq_pipeline::*, ktime::*, percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr,
     sync::Lock, tick,
+    cpumask::{CpumaskT, num_possible_cpus},
 };
 
 use crate::{
@@ -103,15 +104,10 @@ impl clockchips::ClockIpiHandler for RrosClockIpiHandler {
 
 pub fn rros_enable_tick() -> Result<usize> {
     unsafe {
-        // PROXY_DEVICE = alloc_per_cpu(
-        //     size_of::<*mut bindings::clock_proxy_device>() as usize,
-        //     align_of::<*mut bindings::clock_proxy_device>() as usize,
-        // ) as *mut *mut bindings::clock_proxy_device;
         PROXY_DEVICE = alloc_per_cpu(
             size_of::<*mut clockchips::ClockProxyDevice>() as usize,
             align_of::<*mut clockchips::ClockProxyDevice>() as usize,
         ) as *mut clockchips::ClockProxyDevice;
-        // if PROXY_DEVICE == 0 as *mut *mut bindings::clock_proxy_device {
         if PROXY_DEVICE == null_mut() {
             return Err(kernel::Error::ENOMEM);
         }
@@ -120,7 +116,7 @@ pub fn rros_enable_tick() -> Result<usize> {
 
     pr_debug!("rros_enable_tick: in");
     #[cfg(CONFIG_SMP)]
-    if cpumask::num_possible_cpus() > 1 {
+    if num_possible_cpus() > 1 {
         pr_debug!("rros_enable_tick123");
         let ret = unsafe {
             interrupt::__request_percpu_irq(
@@ -277,5 +273,5 @@ pub fn rros_program_proxy_tick(clock: &RrosClock) {
 
 #[cfg(CONFIG_SMP)]
 pub fn rros_send_timer_ipi(_clock: &RrosClock, rq: *mut RrosRq) {
-    irq_send_oob_ipi(irq_get_timer_oob_ipi(), cpumask_of(rros_rq_cpu(rq)));
+    irq_send_oob_ipi(irq_get_timer_oob_ipi(), CpumaskT::cpumask_of(rros_rq_cpu(rq) as u32));
 }

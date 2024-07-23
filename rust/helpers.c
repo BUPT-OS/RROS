@@ -115,7 +115,6 @@ void rust_helper_init_wait(struct wait_queue_entry *wq_entry)
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_wait);
 
-// 此处是wait.h文件中的__add_wait_queue函数的接口
 void rust_helper_add_wait_queue(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry)
 {
 	struct list_head *head = &wq_head->head;
@@ -310,6 +309,11 @@ void rust_helper_cpumask_copy(struct cpumask *dstp,
 	cpumask_copy(dstp, srcp);
 }
 EXPORT_SYMBOL_GPL(rust_helper_cpumask_copy); 
+
+void rust_helper_cpumask_clear(struct cpumask *ptr) {
+	cpumask_clear(ptr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_cpumask_clear);
 
 unsigned long rust_helper_page_align(unsigned long size)
 {
@@ -768,6 +772,21 @@ void rust_helper_raw_spin_lock(hard_spinlock_t *lock) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_raw_spin_lock);
 
+void rust_helper_raw_spin_lock_nested(hard_spinlock_t *lock, unsigned int depth) {
+	raw_spin_lock_nested(lock, depth);
+}
+EXPORT_SYMBOL_GPL(rust_helper_raw_spin_lock_nested);
+
+unsigned int rust_helper_task_cpu(const struct task_struct *p) {
+	return task_cpu(p);
+}
+EXPORT_SYMBOL_GPL(rust_helper_task_cpu);
+
+unsigned int rust_helper_irq_get_RESCHEDULE_OOB_IPI(void) {
+	return RESCHEDULE_OOB_IPI;
+}
+EXPORT_SYMBOL_GPL(rust_helper_irq_get_RESCHEDULE_OOB_IPI);
+
 void rust_helper_raw_spin_unlock(hard_spinlock_t *lock) {
 	raw_spin_unlock(lock);
 }
@@ -949,7 +968,6 @@ void rust_helper_hash_del(struct hlist_node* node) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_hash_del);
 
-// 这个函数是自己加的
 struct hlist_head* rust_helper_get_hlist_head(struct hlist_head *hashtable,size_t length,u32 key) {
 	return &hashtable[hash_min(key, ilog2(length))];
 }

@@ -10,7 +10,7 @@ use crate::{
     },
     file::RrosFileBinding,
     flags::RrosFlag,
-    lock::{raw_spin_lock_init, raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
+    lock::raw_spin_lock_init,
     poll::RrosPollHead,
     sched::rros_schedule,
     thread::rros_init_user_element,
@@ -293,10 +293,10 @@ pub fn do_proxy_write(filp: &File, mut u_buf: *const c_char, count: usize) -> is
         return -(bindings::EINVAL as isize);
     }
 
-    flags = raw_spin_lock_irqsave();
+    flags = ring.lock.irq_lock_noguard();
     if !can_write_buffer(ring, count) {
         ret = -(bindings::EAGAIN as isize);
-        raw_spin_unlock_irqrestore(flags);
+        ring.lock.irq_unlock_noguard(flags);
         return ret;
     } else {
         wroff = ring.wroff;
@@ -313,7 +313,7 @@ pub fn do_proxy_write(filp: &File, mut u_buf: *const c_char, count: usize) -> is
                 n = wbytes;
             }
 
-            raw_spin_unlock_irqrestore(flags);
+            ring.lock.irq_unlock_noguard(flags);
 
             let uptrrd = u_buf as *mut UserSlicePtrReader;
             let res = unsafe {
@@ -323,7 +323,7 @@ pub fn do_proxy_write(filp: &File, mut u_buf: *const c_char, count: usize) -> is
                 )
             };
 
-            flags = raw_spin_lock_irqsave();
+            flags = ring.lock.irq_lock_noguard();
 
             let _ret = match res {
                 Ok(()) => 0,
@@ -349,7 +349,7 @@ pub fn do_proxy_write(filp: &File, mut u_buf: *const c_char, count: usize) -> is
 
             if n == rsvd {
                 if running_inband().is_ok() {
-                    raw_spin_unlock_irqrestore(flags);
+                    ring.lock.irq_unlock_noguard(flags);
                     let _ret = relay_output(unsafe { &mut (*proxy) });
                     return ret;
                 }
@@ -358,7 +358,7 @@ pub fn do_proxy_write(filp: &File, mut u_buf: *const c_char, count: usize) -> is
                     .call_inband_from(ring.wq.as_ref().unwrap().deref().get_ptr());
             }
         }
-        raw_spin_unlock_irqrestore(flags);
+        ring.lock.irq_unlock_noguard(flags);
         ret
     }
 }
@@ -487,10 +487,10 @@ pub fn do_proxy_read(filp: &File, mut u_buf: *const c_char, count: usize) -> isi
     'outer: loop {
         _u_ptr = u_buf;
         loop {
-            flags = raw_spin_lock_irqsave();
+            flags = ring.lock.irq_lock_noguard();
             avail = ring.fillsz.atomic_read() as u32 - ring.reserved;
             if avail < len as u32 {
-                raw_spin_unlock_irqrestore(flags);
+                ring.lock.irq_unlock_noguard(flags);
                 if avail > 0 && (unsafe { (*filp.get_ptr()).f_flags } & bindings::O_NONBLOCK) != 0 {
                     if ring.granularity != 0 {
                         len = rounddown(avail as usize, ring.granularity as usize) as isize;
@@ -523,7 +523,7 @@ pub fn do_proxy_read(filp: &File, mut u_buf: *const c_char, count: usize) -> isi
                     n = rbytes;
                 }
 
-                raw_spin_unlock_irqrestore(flags);
+                ring.lock.irq_unlock_noguard(flags);
 
                 let uptrwt = u_buf as *mut UserSlicePtrWriter;
                 let res = unsafe {
@@ -533,7 +533,7 @@ pub fn do_proxy_read(filp: &File, mut u_buf: *const c_char, count: usize) -> isi
                     )
                 };
 
-                flags = raw_spin_lock_irqsave();
+                flags = ring.lock.irq_lock_noguard();
 
                 let _ret = match res {
                     Ok(()) => 0,
@@ -561,7 +561,7 @@ pub fn do_proxy_read(filp: &File, mut u_buf: *const c_char, count: usize) -> isi
         }
     }
 
-    raw_spin_unlock_irqrestore(flags);
+    ring.lock.irq_unlock_noguard(flags);
 
     unsafe {
         rros_schedule();

@@ -16,6 +16,8 @@ extern "C" {
     fn rust_helper_get_task_struct(t: *mut bindings::task_struct);
     #[allow(improper_ctypes)]
     fn rust_helper_put_task_struct(t: *mut bindings::task_struct);
+    #[allow(improper_ctypes)]
+    fn rust_helper_task_cpu(t: *const bindings::task_struct) -> c_types::c_uint;
 }
 
 /// Wraps the kernel's `struct task_struct`.
@@ -100,6 +102,11 @@ impl Task {
     /// The `current_ptr` function returns a raw pointer to the current task. It is unsafe and should be used with caution.
     pub fn current_ptr() -> *mut bindings::task_struct {
         unsafe { rust_helper_get_current() }
+    }
+
+    /// The `task_cpu` function returns a CPU number of the provided `task_struct`.
+    pub fn task_cpu(ptr: *const bindings::task_struct) -> c_types::c_uint {
+        unsafe { rust_helper_task_cpu(ptr) }
     }
 
     /// Returns the group leader of the given task.

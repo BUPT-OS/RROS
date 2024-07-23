@@ -316,9 +316,10 @@ pub fn stop_timer_locked(timer: Arc<SpinLock<RrosTimer>>) {
 }
 
 pub fn __rros_stop_timer(timer: Arc<SpinLock<RrosTimer>>) {
-    //base = lock_timer_base(timer, &flags);
+    let mut flags: u64 = 0;
+    let base: *mut RrosTimerbase = lock_timer_base(timer.clone(), &mut flags);
     stop_timer_locked(timer);
-    //unlock_timer_base(base, flags);
+    unlock_timer_base(base, flags);
 }
 
 pub fn rros_stop_timer(timer: Arc<SpinLock<RrosTimer>>) {
@@ -335,34 +336,31 @@ pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut
     unsafe {
         let mut base = (*timer.locked_data().get()).get_base();
         while true {
-            // let new_flags = lock::right_raw_spin_lock_irqsave();
-            // raw_spin_lock_irqsave(&base.lock, flags);
             base = (*timer.locked_data().get()).get_base();
-            *flags = timer.irq_lock_noguard();
+            *flags = unsafe { (*base).lock.irq_lock_noguard() };
             let base2 = (*timer.locked_data().get()).get_base();
             if (base == base2) {
                 break;
             }
-            timer.irq_unlock_noguard(*flags);
-            // lock::right_raw_spin_unlock_irqrestore(&base.lock, flags);
+            unsafe { (*base).lock.irq_unlock_noguard(*flags); }
         }
         base
     }
 }
 
 #[cfg(not(CONFIG_SMP))]
-fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u32) -> *mut RrosTimerbase {
+pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut RrosTimerbase {
     pr_err!("!!!!!!!!!!!! this is wrong. lock_timer_base");
-    (*timer.locked_data().get()).get_base()
+    unsafe { (*timer.locked_data().get()).get_base() }
 }
 
 #[cfg(CONFIG_SMP)]
-pub fn unlock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: u64) {
-    timer.irq_unlock_noguard(flags);
+pub fn unlock_timer_base(base: *mut RrosTimerbase, flags: u64) {
+    unsafe { (*base).lock.irq_unlock_noguard(flags); }
 }
 
 #[cfg(not(CONFIG_SMP))]
-fn unlock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u32) {
+pub fn unlock_timer_base(_base: *mut RrosTimerbase, _flags: u64) {
     pr_err!("!!!!!!!!!!!! this is wrong. lock_timer_base");
 }
 
@@ -420,27 +418,17 @@ pub fn rros_percpu_timers(clock: &RrosClock, cpu: i32) -> *mut RrosTimerbase {
 }
 
 #[cfg(CONFIG_SMP)]
-fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
-    return 0;
-    // unsafe{
-    //     if (rust_helper_cpumask_test_cpu(cpu, clock.affinity.as_mut() as *mut bindings::cpumask)) {
-
-    //     }
-    // }
-    // if (cpumask_test_cpu(cpu, &clock->affinity))
-    // return cpu;
-
-    // return cpumask_first(&clock->affinity);
+pub fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
+    if clock.affinity.as_ref().unwrap().cpumask_test_cpu(cpu as u32) {
+        return cpu;
+    }
+    clock.affinity.as_ref().unwrap().cpumask_first()
 }
 
 #[cfg(not(CONFIG_SMP))]
-fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
+pub fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
     return 0;
 }
-
-// fn get_clock_cpu(clock: &RrosClock, cpu:i32) ->i32{
-//     return 0;
-// }
 
 use alloc::rc::Rc;
 use core::borrow::BorrowMut;
@@ -463,12 +451,13 @@ pub fn rros_init_timer_on_rq(
         timer.lock().set_handler(handler.unwrap());
     }
     timer.lock().set_interval(RROS_INFINITE);
-    let mut cpu = 0;
-    // if rq.clone().borrow().is_some(){ // Smp related
-    //     cpu = unsafe{get_clock_cpu(clock,rros_rq_cpu(&rq.clone().borrow()))};
-    // }else{
-    //     //cpumask_first(&RROS_CPU_AFFINITY);
-    // }
+
+    let cpu = if rq == 0 as *mut RrosRq {
+        unsafe { RROS_CPU_AFFINITY.cpumask_first() }
+    } else {
+        unsafe { get_clock_cpu(&(*(clock.get_master())), rros_rq_cpu(rq)) }
+    };
+
     #[cfg(CONFIG_SMP)]
     timer.lock().set_rq(rros_cpu_rq(cpu));
 
@@ -523,7 +512,7 @@ pub fn rros_start_timer(timer: Arc<SpinLock<RrosTimer>>, value: KtimeT, interval
         (*timer.locked_data().get()).add_status(RROS_TIMER_RUNNING);
         // pr_debug!("rros_start_timer: 2");
         unsafe { program_timer(timer.clone(), &mut (*tmb).q) };
-        unlock_timer_base(timer, flags);
+        unlock_timer_base(tmb, flags);
     }
 }
 
@@ -607,10 +596,18 @@ pub fn rros_abs_timeout(timer: Arc<SpinLock<RrosTimer>>, delta: KtimeT) -> Ktime
     unsafe { ktime_add((*(*timer.locked_data().get()).get_clock()).read(), delta) }
 }
 
-// fn rros_prepare_timed_wait(timer: rros_timer, clock: rros_clock, rq: rros_rq) {
-/* We may change the reference clock before waiting. */
-// if (rq != timer->rq || clock != timer->clock) {
-// rros_move_timer(timer, clock, rq);
-// }
+#[cfg(CONFIG_SMP)]
+pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut RrosClock, rq: *mut rros_rq) {
+    let f: bool = unsafe { (*timer.locked_data().get()).get_clock() != clock as *mut RrosClock };
+    let s: bool = unsafe { (*timer.locked_data().get()).get_rq() != rq };
+    if f || s {
+        rros_move_timer(timer, clock, rq);
+    }
+}
 
-// }
+#[cfg(not(CONFIG_SMP))]
+pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut RrosClock, rq: *mut rros_rq) {
+    if unsafe { (*timer.locked_data().get()).get_clock() != clock as *mut RrosClock } {
+        rros_move_timer(timer, clock, rq);
+    }
+}

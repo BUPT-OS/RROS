@@ -1,12 +1,15 @@
 use crate::{
     clock::{RrosClock, RROS_MONO_CLOCK},
-    lock::{raw_spin_lock_irqsave, raw_spin_unlock_irqrestore},
     sched::rros_schedule,
     timeout::{RrosTmode, RROS_INFINITE},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
 use core::{cell::Cell, ptr::NonNull};
 use kernel::ktime::KtimeT;
+
+extern "C" {
+    fn rust_helper_smp_wmb();
+}
 
 pub struct RrosFlag {
     pub wait: RrosWaitQueue,
@@ -49,6 +52,12 @@ impl RrosFlag {
     // }
 
     #[inline]
+    pub fn peek(&self) -> bool {
+        unsafe { rust_helper_smp_wmb(); }
+        self.raised.get()
+    }
+
+    #[inline]
     pub fn read(&self) -> bool {
         if self.raised.get() {
             self.raised.set(false);
@@ -63,6 +72,16 @@ impl RrosFlag {
         unsafe {
             x.as_mut()
                 .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || self.read())
+        }
+    }
+
+    #[inline]
+    pub fn wait_same(&mut self) -> i32 {
+        // TODO: Try to get around the limitations of immutable borrowing.
+        let mut x = unsafe { NonNull::new_unchecked(&self.wait as *const _ as *mut RrosWaitQueue) };
+        unsafe {
+            x.as_mut()
+                .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || self.peek())
         }
     }
 
@@ -100,10 +119,9 @@ impl RrosFlag {
 
     #[inline]
     pub fn flush_nosched(&mut self, reason: i32) {
-        let flags: u64;
-        flags = raw_spin_lock_irqsave();
+        let flags: u64 = self.wait.lock.raw_spin_lock_irqsave();
         self.wait.flush_locked(reason);
-        raw_spin_unlock_irqrestore(flags);
+        self.wait.lock.raw_spin_unlock_irqrestore(flags);
     }
 }
 

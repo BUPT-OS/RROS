@@ -7,11 +7,9 @@ use crate::{
     lock::*,
     monitor::{CLOCK_MONOTONIC, CLOCK_REALTIME},
     poll::RrosPollHead,
-    sched::{rros_cpu_rq, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
-    thread::T_ROOT,
-    thread::{rros_current, rros_delay, T_SYSRST},
-    tick,
-    tick::*,
+    sched::{self, is_rros_cpu, rros_cpu_rq, rros_get_thread_rq, rros_rq, rros_rq_cpu, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
+    thread::{rros_current, rros_delay, T_ROOT, T_SYSRST},
+    tick::{self, *},
     timeout::{RrosTmode, RROS_INFINITE},
     timer::*,
     tp::rros_timer_is_running,
@@ -33,21 +31,20 @@ use kernel::{
     bindings,
     c_types::{self, c_void},
     chrdev::Cdev,
-    clockchips, cpumask,
+    clockchips,
+    cpumask::{self, CpumaskT, online_cpus},
     device::DeviceType,
     double_linked_list::*,
     file::File,
     file_operations::{FileOpener, FileOperations, IoctlCommand},
-    io_buffer::IoBufferReader,
-    io_buffer::IoBufferWriter,
+    io_buffer::{IoBufferReader, IoBufferWriter},
     ioctl,
     ktime::*,
     percpu,
     prelude::*,
     premmpt, spinlock_init,
     str::CStr,
-    sync::Lock,
-    sync::SpinLock,
+    sync::{Lock, SpinLock},
     sysfs,
     task::Task,
     timekeeping,
@@ -78,8 +75,6 @@ extern "C" {
     fn rust_helper_minor(dev: bindings::dev_t) -> u32;
     fn rust_helper_rcu_read_lock();
     fn rust_helper_rcu_read_unlock();
-    fn rust_helper_raw_spin_lock_irqsave(lock: *mut bindings::hard_spinlock_t) -> u64;
-    fn rust_helper_raw_spin_unlock_irqrestore(lock: *mut bindings::hard_spinlock_t, flags: u64);
 }
 
 #[derive(Default)]
@@ -172,7 +167,7 @@ pub struct RrosClock {
     element: Option<Rc<RefCell<RrosElement>>>,
     dispose: Option<fn(&mut RrosClock)>,
     #[cfg(CONFIG_SMP)]
-    pub affinity: Option<cpumask::CpumaskT>,
+    pub affinity: Option<CpumaskT>,
 }
 
 impl RrosClock {
@@ -188,7 +183,7 @@ impl RrosClock {
         next: *mut ListHead,
         element: Option<Rc<RefCell<RrosElement>>>,
         dispose: Option<fn(&mut RrosClock)>,
-        #[cfg(CONFIG_SMP)] affinity: Option<cpumask::CpumaskT>,
+        #[cfg(CONFIG_SMP)] affinity: Option<CpumaskT>,
     ) -> Self {
         RrosClock {
             resolution,
@@ -336,41 +331,47 @@ pub fn adjust_timer(
 }
 
 pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) {
-    // Adjust all timers in the List in each CPU tmb of the current clock.
-    // raw_spin_lock_irqsave(&tmb->lock, flags);
-    let cpu = 0;
-    // for_each_online_cpu(cpu) {
-    let rq = rros_cpu_rq(cpu);
-    let tmb = rros_percpu_timers(clock, cpu);
-    let tq = unsafe { &mut (*tmb).q };
+    for cpu in online_cpus() {
+        let rq: *mut rros_rq = rros_cpu_rq(cpu as i32);
+        let tmb = rros_percpu_timers(clock, cpu as i32);
+        let tq = unsafe { &mut (*tmb).q };
+        
+        let flags:u64 = unsafe { (*tmb).lock.irq_lock_noguard() };
 
-    for i in 1..=tq.len() {
-        let timer = tq.get_by_index(i).unwrap().value.clone();
-        let get_clock = timer.lock().get_clock();
-        if get_clock == clock as *mut RrosClock {
-            rros_dequeue_timer(timer.clone(), tq);
-            adjust_timer(clock, timer.clone(), tq, delta);
+        for i in 1..=tq.len() {
+            let timer = tq.get_by_index(i).unwrap().value.clone();
+            let get_clock = timer.lock().get_clock();
+            if get_clock == clock as *mut RrosClock {
+                rros_dequeue_timer(timer.clone(), tq);
+                adjust_timer(clock, timer.clone(), tq, delta);
+            }
         }
-    }
 
-    if rq != this_rros_rq() {
-        rros_program_remote_tick(clock, rq);
-    } else {
-        rros_program_local_tick(clock);
+        if rq != this_rros_rq() {
+            rros_program_remote_tick(clock, rq);
+        } else {
+            rros_program_local_tick(clock);
+        }
+
+        unsafe { (*tmb).lock.irq_unlock_noguard(flags); }
     }
-    //}
 }
 
 pub fn rros_stop_timers(clock: &RrosClock) {
-    let cpu = 0;
-    let mut tmb = rros_percpu_timers(&clock, cpu);
-    let tq = unsafe { &mut (*tmb).q };
-    while tq.is_empty() == false {
-        //raw_spin_lock_irqsave(&tmb->lock, flags);
-        pr_debug!("rros_stop_timers: 213");
-        let timer = tq.get_head().unwrap().value.clone();
-        rros_timer_deactivate(timer);
-        //raw_spin_unlock_irqrestore(&tmb->lock, flags);
+    for cpu in online_cpus() {
+        if !is_rros_cpu(cpu as i32) {
+            continue;
+        }
+
+        let mut tmb = rros_percpu_timers(clock, cpu as i32);
+        let flags = unsafe { (*tmb).lock.irq_lock_noguard() };
+        let tq = unsafe { &mut (*tmb).q };
+        while !tq.is_empty() {
+            pr_debug!("rros_stop_timers: 213");
+            let timer = tq.get_head().unwrap().value.clone();
+            rros_timer_deactivate(timer);
+        }
+        unsafe { (*tmb).lock.irq_unlock_noguard(flags); }
     }
 }
 
@@ -586,13 +587,91 @@ fn set_timer_value(timer: Arc<SpinLock<RrosTimer>>, value: &Itimerspec64) -> Res
     return Ok(0);
 }
 
+pub fn rros_current_rq() -> *mut rros_rq {
+    let current = rros_current();
+    unsafe { (*(*current).locked_data().get()).rq.unwrap() }
+}
+
+pub fn double_timer_base_lock(tb1: *mut RrosTimerbase, tb2: *mut RrosTimerbase) {
+    unsafe {
+        if tb1 == tb2 {
+            (*tb1).lock.raw_spin_lock();
+        } else if tb1 < tb2 {
+            (*tb1).lock.raw_spin_lock();
+            (*tb2).lock.raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
+        } else {
+            (*tb2).lock.raw_spin_lock();
+            (*tb1).lock.raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
+        }    
+    }
+}
+
+pub fn double_timer_base_unlock(tb1: *mut RrosTimerbase, tb2: *mut RrosTimerbase) {
+    unsafe {
+        (*tb1).lock.raw_spin_unlock();
+        if tb1 != tb2 {
+            (*tb2).lock.raw_spin_unlock();
+        }
+    }
+}
+
+pub fn rros_move_timer(timer: Arc<SpinLock<RrosTimer>>, clock: *mut RrosClock, mut rq: *mut rros_rq) {
+    let cpu = get_clock_cpu(unsafe { &(*(*clock).get_master()) }, rros_rq_cpu(rq));
+    rq = rros_cpu_rq(cpu);
+
+    let mut flags: u64 = 0;
+    let old_base = lock_timer_base(timer.clone(), &mut flags);
+    
+    if rros_timer_on_rq(timer.clone(), rq) && clock == unsafe { (*timer.locked_data().get()).get_clock() } {
+        unlock_timer_base(old_base, flags);
+        return;
+    }
+    let new_base = rros_percpu_timers(unsafe { &(*(*clock).get_master()) }, cpu);
+    if unsafe { (*timer.locked_data().get()).get_status() & RROS_TIMER_RUNNING } != 0 {
+        stop_timer_locked(timer.clone());
+        unlock_timer_base(old_base, flags);
+        let flags: u64 = hard_local_irq_save();
+        double_timer_base_lock(old_base, new_base);
+        
+        unsafe {
+            #[cfg(CONFIG_SMP)]
+            (*timer.locked_data().get()).set_rq(rq);
+
+            (*timer.locked_data().get()).set_base(new_base);
+            (*timer.locked_data().get()).set_clock(clock);
+        }
+        rros_enqueue_timer(timer.clone(), unsafe { &mut (*new_base).q });
+        if timer_at_front(timer.clone()) {
+            rros_program_remote_tick(clock, rq);
+        }
+        double_timer_base_unlock(old_base, new_base);
+        hard_local_irq_restore(flags);
+    } else {
+        unsafe {
+            #[cfg(CONFIG_SMP)]
+            (*timer.locked_data().get()).set_rq(rq);
+
+            (*timer.locked_data().get()).set_base(new_base);
+            (*timer.locked_data().get()).set_clock(clock);
+        }
+        unlock_timer_base(old_base, flags);
+    }
+}
+
 #[cfg(CONFIG_SMP)]
 fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {
-    //TODO: complete this func when smp is useful
+    let flags = hard_local_irq_save();
+
+    let this_rq = rros_current_rq();
+    if unsafe { (*timer.locked_data().get()).get_rq() != this_rq } {
+        rros_move_timer(timer.clone(), unsafe { (*timer.locked_data().get()).get_clock() }, this_rq);
+    }
+
+    hard_local_irq_restore(flags);
 }
 
 #[cfg(not(CONFIG_SMP))]
-fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {}
+fn pin_timer(_timer: Arc<SpinLock<RrosTimer>>) {}
 
 fn set_timerfd(
     timerfd: &RrosTimerFd,
@@ -1090,8 +1169,13 @@ fn rros_init_slave_clock(clock: &mut RrosClock, master: &mut RrosClock) -> Resul
     premmpt::running_inband()?;
 
     // TODO: Check if there is a problem here, even if the timer can run.
-    // #[cfg(CONFIG_SMP)]
-    // clock.affinity = master.affinity;
+    #[cfg(CONFIG_SMP)]
+    {
+        if clock.affinity.is_none() {
+            clock.affinity = Some(CpumaskT::from_int(0));
+        }
+        clock.affinity.as_mut().unwrap().cpumask_copy(master.affinity.as_ref().unwrap());
+    }
 
     clock.timerdata = master.get_timerdata_addr();
     clock.offset = clock.read() - master.read();
@@ -1099,8 +1183,26 @@ fn rros_init_slave_clock(clock: &mut RrosClock, master: &mut RrosClock) -> Resul
     Ok(0)
 }
 
-fn rros_init_clock(clock: &mut RrosClock, affinity: &cpumask::CpumaskT) -> Result<usize> {
+fn rros_init_clock(clock: &mut RrosClock, affinity: &CpumaskT) -> Result<usize> {
     premmpt::running_inband()?;
+
+    #[cfg(CONFIG_SMP)]
+    {
+        if clock.affinity.is_none() {
+            clock.affinity = Some(CpumaskT::from_int(0));
+        }
+        let clock_affinity = clock.affinity.as_mut().unwrap();
+        if affinity.cpumask_empty().is_ok() {
+            clock_affinity.cpumask_clear();
+            clock_affinity.cpumask_set_cpu(unsafe { RROS_OOB_CPUS.cpumask_first() as u32 });
+        } else {
+            clock_affinity.cpumask_and(affinity, unsafe { &RROS_OOB_CPUS });
+            if clock_affinity.cpumask_empty().is_ok() {
+                return Err(Error::EINVAL);
+            }
+        }
+    }
+
     // 8 byte alignment
     let tmb = percpu::alloc_per_cpu(
         size_of::<RrosTimerbase>() as usize,
@@ -1111,10 +1213,9 @@ fn rros_init_clock(clock: &mut RrosClock, affinity: &cpumask::CpumaskT) -> Resul
     }
     clock.timerdata = tmb;
 
-    let mut tmb = rros_percpu_timers(clock, 0);
-
-    unsafe {
-        raw_spin_lock_init(&mut (*tmb).lock);
+    for cpu in online_cpus() {
+        let mut tmb = rros_percpu_timers(clock, cpu as i32);
+        unsafe { raw_spin_lock_init(&mut (*tmb).lock); }
     }
 
     clock.offset = 0;

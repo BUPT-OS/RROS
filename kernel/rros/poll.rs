@@ -570,20 +570,25 @@ pub fn rros_drop_watchpoints(drop_list: *mut list_head) {
         drop_list,
         RrosPollNode,
         {
+            unsafe {
+                if (*drop_list).next == drop_list {
+                    break;
+                }
+            }
             wpt = unsafe {
                 &mut *(container_of!(node, RrosPollWatchpoint, node) as *mut RrosPollWatchpoint)
             };
 
+            // FIXME: there is a bug!!!
             for poco in wpt.wait.connectors.as_mut_slice() {
                 if poco.head.is_some() {
-                    let guard = unsafe { poco.head.as_ref().unwrap().as_ref().watchpoints.lock() };
+                    let _guard = unsafe { poco.head.as_ref().unwrap().as_ref().watchpoints.lock() };
                     poco.events_received |= POLLNVAL as i32;
                     if poco.unwatch.is_some() {
                         unsafe {
                             (poco.unwatch.as_ref().unwrap())(poco.head.as_ref().unwrap().as_ref())
                         };
                     }
-                    drop(guard);
                 }
             }
             unsafe {

@@ -48,6 +48,7 @@ mod memory_test;
 mod monitor;
 // mod mutex;
 mod sched_test;
+mod stax;
 mod syscall;
 mod thread_test;
 mod timer;
@@ -79,6 +80,7 @@ mod xbuf;
 #[cfg(CONFIG_NET)]
 mod net;
 
+mod drivers;
 // pub use net::netif_oob_switch_port;
 
 module! {

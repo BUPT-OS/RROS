@@ -342,7 +342,9 @@ pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut
             if (base == base2) {
                 break;
             }
-            unsafe { (*base).lock.irq_unlock_noguard(*flags); }
+            unsafe {
+                (*base).lock.irq_unlock_noguard(*flags);
+            }
         }
         base
     }
@@ -356,7 +358,9 @@ pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut
 
 #[cfg(CONFIG_SMP)]
 pub fn unlock_timer_base(base: *mut RrosTimerbase, flags: u64) {
-    unsafe { (*base).lock.irq_unlock_noguard(flags); }
+    unsafe {
+        (*base).lock.irq_unlock_noguard(flags);
+    }
 }
 
 #[cfg(not(CONFIG_SMP))]
@@ -419,7 +423,12 @@ pub fn rros_percpu_timers(clock: &RrosClock, cpu: i32) -> *mut RrosTimerbase {
 
 #[cfg(CONFIG_SMP)]
 pub fn get_clock_cpu(clock: &RrosClock, cpu: i32) -> i32 {
-    if clock.affinity.as_ref().unwrap().cpumask_test_cpu(cpu as u32) {
+    if clock
+        .affinity
+        .as_ref()
+        .unwrap()
+        .cpumask_test_cpu(cpu as u32)
+    {
         return cpu;
     }
     clock.affinity.as_ref().unwrap().cpumask_first()
@@ -597,7 +606,11 @@ pub fn rros_abs_timeout(timer: Arc<SpinLock<RrosTimer>>, delta: KtimeT) -> Ktime
 }
 
 #[cfg(CONFIG_SMP)]
-pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut RrosClock, rq: *mut rros_rq) {
+pub fn rros_prepare_timed_wait(
+    timer: Arc<SpinLock<RrosTimer>>,
+    clock: &mut RrosClock,
+    rq: *mut rros_rq,
+) {
     let f: bool = unsafe { (*timer.locked_data().get()).get_clock() != clock as *mut RrosClock };
     let s: bool = unsafe { (*timer.locked_data().get()).get_rq() != rq };
     if f || s {
@@ -606,7 +619,11 @@ pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut Rros
 }
 
 #[cfg(not(CONFIG_SMP))]
-pub fn rros_prepare_timed_wait(timer: Arc<SpinLock<RrosTimer>>, clock: &mut RrosClock, rq: *mut rros_rq) {
+pub fn rros_prepare_timed_wait(
+    timer: Arc<SpinLock<RrosTimer>>,
+    clock: &mut RrosClock,
+    rq: *mut rros_rq,
+) {
     if unsafe { (*timer.locked_data().get()).get_clock() != clock as *mut RrosClock } {
         rros_move_timer(timer, clock, rq);
     }

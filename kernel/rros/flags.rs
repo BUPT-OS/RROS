@@ -54,7 +54,9 @@ impl RrosFlag {
 
     #[inline]
     pub fn peek(cell: &Cell<bool>) -> bool {
-        unsafe { rust_helper_smp_wmb(); }
+        unsafe {
+            rust_helper_smp_wmb();
+        }
         cell.get()
     }
 
@@ -72,33 +74,23 @@ impl RrosFlag {
     pub fn wait(&mut self) -> i32 {
         let cell = &self.raised;
 
-        self.wait.wait_timeout(
-            RROS_INFINITE,
-            RrosTmode::RrosRel,
-            || Self::read(cell),
-        )
+        self.wait
+            .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || Self::read(cell))
     }
 
     #[inline]
     pub fn wait_same(&mut self) -> i32 {
         let cell = &self.raised;
 
-        self.wait.wait_timeout(
-            RROS_INFINITE,
-            RrosTmode::RrosRel,
-            || Self::peek(cell),
-        )
+        self.wait
+            .wait_timeout(RROS_INFINITE, RrosTmode::RrosRel, || Self::peek(cell))
     }
 
     #[inline]
     pub fn wait_timeout(&mut self, timeout: KtimeT, tmode: RrosTmode) -> i32 {
         let cell = &self.raised;
 
-        self.wait.wait_timeout(
-            timeout,
-            tmode,
-            || Self::read(cell),
-        )
+        self.wait.wait_timeout(timeout, tmode, || Self::read(cell))
     }
 
     #[inline]

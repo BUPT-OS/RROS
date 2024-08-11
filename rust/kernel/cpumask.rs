@@ -9,10 +9,7 @@ use crate::{
     error::{Error, Result},
 };
 
-use core::{
-    iter::Iterator,
-    ops::BitAnd,
-};
+use core::{iter::Iterator, ops::BitAnd};
 
 extern "C" {
     fn rust_helper_num_possible_cpus() -> u32;

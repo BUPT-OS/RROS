@@ -1,12 +1,6 @@
-use crate::{
-    flags::RrosFlag,
-    thread::KthreadRunner,
-};
+use crate::{flags::RrosFlag, thread::KthreadRunner};
 
-use kernel::{
-    c_str,
-    prelude::*,
-};
+use kernel::{c_str, prelude::*};
 
 static mut FLAG_PTR: *mut RrosFlag = 0 as *mut RrosFlag;
 
@@ -29,7 +23,11 @@ fn kthread_fn(id: i32) {
         first = second;
         second = temp;
     }
-    pr_warn!("[smp_test]: kthread id is {:?}, the calculation result is {:?}", id, second);
+    pr_warn!(
+        "[smp_test]: kthread id is {:?}, the calculation result is {:?}",
+        id,
+        second
+    );
 }
 
 #[allow(dead_code)]

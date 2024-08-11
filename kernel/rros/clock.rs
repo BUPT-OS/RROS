@@ -7,7 +7,10 @@ use crate::{
     lock::*,
     monitor::{CLOCK_MONOTONIC, CLOCK_REALTIME},
     poll::RrosPollHead,
-    sched::{self, is_rros_cpu, rros_cpu_rq, rros_get_thread_rq, rros_rq, rros_rq_cpu, this_rros_rq, RQ_TDEFER, RQ_TIMER, RQ_TPROXY},
+    sched::{
+        self, is_rros_cpu, rros_cpu_rq, rros_get_thread_rq, rros_rq, rros_rq_cpu, this_rros_rq,
+        RQ_TDEFER, RQ_TIMER, RQ_TPROXY,
+    },
     thread::{rros_current, rros_delay, T_ROOT, T_SYSRST},
     tick::{self, *},
     timeout::{RrosTmode, RROS_INFINITE},
@@ -23,9 +26,9 @@ use core::{
     borrow::{Borrow, BorrowMut},
     cell::{RefCell, UnsafeCell},
     clone::Clone,
+    cmp::Ordering::{Equal, Greater, Less},
     mem::{align_of, size_of},
     ops::{Deref, DerefMut},
-    cmp::Ordering::{Equal, Less, Greater},
 };
 
 use kernel::{
@@ -33,7 +36,7 @@ use kernel::{
     c_types::{self, c_void},
     chrdev::Cdev,
     clockchips,
-    cpumask::{self, CpumaskT, online_cpus},
+    cpumask::{self, online_cpus, CpumaskT},
     device::DeviceType,
     double_linked_list::*,
     file::File,
@@ -343,7 +346,8 @@ pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) -> Result {
 
         let flags: u64 = unsafe { (*tmb).lock.irq_lock_noguard() };
 
-        let mut timers_adjust: Vec<Arc<SpinLock<RrosTimer>>> = Vec::try_with_capacity(tq.len() as usize)?;
+        let mut timers_adjust: Vec<Arc<SpinLock<RrosTimer>>> =
+            Vec::try_with_capacity(tq.len() as usize)?;
 
         while !tq.is_empty() {
             let timer = tq.get_by_index(0).unwrap().value.clone();
@@ -366,7 +370,9 @@ pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) -> Result {
             rros_program_local_tick(clock);
         }
 
-        unsafe { (*tmb).lock.irq_unlock_noguard(flags); }
+        unsafe {
+            (*tmb).lock.irq_unlock_noguard(flags);
+        }
     }
     Ok(())
 }
@@ -385,7 +391,9 @@ pub fn rros_stop_timers(clock: &RrosClock) {
             let timer = tq.get_head().unwrap().value.clone();
             rros_timer_deactivate(timer);
         }
-        unsafe { (*tmb).lock.irq_unlock_noguard(flags); }
+        unsafe {
+            (*tmb).lock.irq_unlock_noguard(flags);
+        }
     }
 }
 
@@ -607,14 +615,18 @@ pub fn rros_current_rq() -> *mut rros_rq {
 
 pub fn double_timer_base_lock(tb1: *mut RrosTimerbase, tb2: *mut RrosTimerbase) {
     match tb1.cmp(&tb2) {
-        Equal   => unsafe { (*tb1).lock.raw_spin_lock() },
-        Less    => unsafe {
+        Equal => unsafe { (*tb1).lock.raw_spin_lock() },
+        Less => unsafe {
             (*tb1).lock.raw_spin_lock();
-            (*tb2).lock.raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
+            (*tb2)
+                .lock
+                .raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
         },
         Greater => unsafe {
             (*tb2).lock.raw_spin_lock();
-            (*tb1).lock.raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
+            (*tb1)
+                .lock
+                .raw_spin_lock_nested(bindings::SINGLE_DEPTH_NESTING);
         },
     }
 }
@@ -631,14 +643,20 @@ pub fn double_timer_base_unlock(tb1: *mut RrosTimerbase, tb2: *mut RrosTimerbase
 // TODO: There are many global static references in the code that are used as raw pointers, such as
 // `RrosClock`, `RrosTimerbase`, `RrosRq`. Maybe we can use references to avoid so many raw pointers.
 // FYI: https://github.com/BUPT-OS/RROS/pull/41#discussion_r1680738528
-pub fn rros_move_timer(timer: Arc<SpinLock<RrosTimer>>, clock: *mut RrosClock, mut rq: *mut rros_rq) {
+pub fn rros_move_timer(
+    timer: Arc<SpinLock<RrosTimer>>,
+    clock: *mut RrosClock,
+    mut rq: *mut rros_rq,
+) {
     let cpu = get_clock_cpu(unsafe { &(*(*clock).get_master()) }, rros_rq_cpu(rq));
     rq = rros_cpu_rq(cpu);
 
     let mut flags: u64 = 0;
     let old_base = lock_timer_base(timer.clone(), &mut flags);
-    
-    if rros_timer_on_rq(timer.clone(), rq) && clock == unsafe { (*timer.locked_data().get()).get_clock() } {
+
+    if rros_timer_on_rq(timer.clone(), rq)
+        && clock == unsafe { (*timer.locked_data().get()).get_clock() }
+    {
         unlock_timer_base(old_base, flags);
         return;
     }
@@ -648,7 +666,7 @@ pub fn rros_move_timer(timer: Arc<SpinLock<RrosTimer>>, clock: *mut RrosClock, m
         unlock_timer_base(old_base, flags);
         let flags: u64 = hard_local_irq_save();
         double_timer_base_lock(old_base, new_base);
-        
+
         unsafe {
             #[cfg(CONFIG_SMP)]
             (*timer.locked_data().get()).set_rq(rq);
@@ -680,7 +698,11 @@ fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {
 
     let this_rq = rros_current_rq();
     if unsafe { (*timer.locked_data().get()).get_rq() != this_rq } {
-        rros_move_timer(timer.clone(), unsafe { (*timer.locked_data().get()).get_clock() }, this_rq);
+        rros_move_timer(
+            timer.clone(),
+            unsafe { (*timer.locked_data().get()).get_clock() },
+            this_rq,
+        );
     }
 
     hard_local_irq_restore(flags);
@@ -1228,7 +1250,9 @@ fn rros_init_clock(clock: &mut RrosClock, affinity: &CpumaskT) -> Result<usize> 
 
     for cpu in online_cpus() {
         let mut tmb = rros_percpu_timers(clock, cpu as i32);
-        unsafe { raw_spin_lock_init(&mut (*tmb).lock); }
+        unsafe {
+            raw_spin_lock_init(&mut (*tmb).lock);
+        }
     }
 
     clock.offset = 0;

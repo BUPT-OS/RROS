@@ -74,10 +74,10 @@ mod work;
 #[macro_use]
 pub mod types;
 mod proxy;
+mod smp_test;
 mod types_test;
 mod wait;
 mod xbuf;
-mod smp_test;
 
 #[cfg(CONFIG_NET)]
 mod net;
@@ -356,7 +356,8 @@ impl KernelModule for Rros {
         };
         if str::from_utf8(oobcpus_arg.read())? != "" {
             let res = unsafe {
-                RROS_OOB_CPUS.cpulist_parse(CStr::from_bytes_with_nul(oobcpus_arg.read())?.as_char_ptr())
+                RROS_OOB_CPUS
+                    .cpulist_parse(CStr::from_bytes_with_nul(oobcpus_arg.read())?.as_char_ptr())
             };
             match res {
                 Ok(_o) => (pr_info!("load parameters {}\n", str::from_utf8(oobcpus_arg.read())?)),
@@ -373,7 +374,9 @@ impl KernelModule for Rros {
             }
         }
 
-        unsafe { RROS_CPU_AFFINITY.cpumask_copy(&RROS_OOB_CPUS); }
+        unsafe {
+            RROS_CPU_AFFINITY.cpumask_copy(&RROS_OOB_CPUS);
+        }
 
         let res = init_core(); //*sysheap_size_arg.read()
         let fac_reg;

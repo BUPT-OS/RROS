@@ -22,7 +22,9 @@ pub fn hard_local_irq_save() -> u64 {
 }
 
 pub fn hard_local_irq_restore(flags: u64) {
-    unsafe { rust_helper_hard_local_irq_restore(flags); }
+    unsafe {
+        rust_helper_hard_local_irq_restore(flags);
+    }
 }
 
 // pub fn right_raw_spin_lock_irqsave(lock: *mut spinlock_t, flags: *mut u32) {

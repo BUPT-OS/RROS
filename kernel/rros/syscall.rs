@@ -174,7 +174,11 @@ fn prepare_for_signal(
     // * @curr->lock (i.e. @curr cannot go away under out feet).
     // */
     // [TODO: use the curr rq lock to make smp work]
-    flags = unsafe { (*(*(*curr).locked_data().get()).rq.unwrap()).lock.raw_spin_lock_irqsave() };
+    flags = unsafe {
+        (*(*(*curr).locked_data().get()).rq.unwrap())
+            .lock
+            .raw_spin_lock_irqsave()
+    };
 
     // /*
     // * We are called from out-of-band mode only to act upon a
@@ -197,7 +201,11 @@ fn prepare_for_signal(
         }
     }
 
-    unsafe { (*(*(*curr).locked_data().get()).rq.unwrap()).lock.raw_spin_unlock_irqrestore(flags); }
+    unsafe {
+        (*(*(*curr).locked_data().get()).rq.unwrap())
+            .lock
+            .raw_spin_unlock_irqrestore(flags);
+    }
 
     rros_test_cancel();
 

@@ -1,8 +1,16 @@
 use kernel::{
-    bindings, c_types, clockchips, clockchips::ClockEventDevice, interrupt,
-    irq_pipeline::*, ktime::*, percpu::alloc_per_cpu, percpu_defs, prelude::*, str::CStr,
-    sync::Lock, tick,
-    cpumask::{CpumaskT, num_possible_cpus},
+    bindings, c_types, clockchips,
+    clockchips::ClockEventDevice,
+    cpumask::{num_possible_cpus, CpumaskT},
+    interrupt,
+    irq_pipeline::*,
+    ktime::*,
+    percpu::alloc_per_cpu,
+    percpu_defs,
+    prelude::*,
+    str::CStr,
+    sync::Lock,
+    tick,
 };
 
 use crate::{
@@ -273,5 +281,8 @@ pub fn rros_program_proxy_tick(clock: &RrosClock) {
 
 #[cfg(CONFIG_SMP)]
 pub fn rros_send_timer_ipi(_clock: &RrosClock, rq: *mut RrosRq) {
-    irq_send_oob_ipi(irq_get_timer_oob_ipi(), CpumaskT::cpumask_of(rros_rq_cpu(rq) as u32));
+    irq_send_oob_ipi(
+        irq_get_timer_oob_ipi(),
+        CpumaskT::cpumask_of(rros_rq_cpu(rq) as u32),
+    );
 }

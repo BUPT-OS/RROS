@@ -596,7 +596,9 @@ pub fn inbound_lock(ring: &XbufRing) -> u64 {
 
 pub fn inbound_unlock(ring: &XbufRing, flags: u64) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, ibnd.ring) as *mut RrosXbuf;
-    unsafe { (*xbuf).ibnd.lock.irq_unlock_noguard(flags); }
+    unsafe {
+        (*xbuf).ibnd.lock.irq_unlock_noguard(flags);
+    }
 }
 
 pub fn inbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {
@@ -726,7 +728,9 @@ pub fn outbound_lock(ring: &XbufRing) -> u64 {
 
 pub fn outbound_unlock(ring: &XbufRing, flags: u64) {
     let xbuf = kernel::container_of!(ring, RrosXbuf, obnd.ring) as *mut RrosXbuf;
-    unsafe { (*xbuf).obnd.i_event.lock.raw_spin_unlock_irqrestore(flags); }
+    unsafe {
+        (*xbuf).obnd.i_event.lock.raw_spin_unlock_irqrestore(flags);
+    }
 }
 
 pub fn outbound_wait_input(ring: &XbufRing, len: usize, avail: usize) -> i32 {

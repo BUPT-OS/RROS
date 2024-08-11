@@ -126,16 +126,17 @@ impl<T: ?Sized> SpinLock<T> {
     /// The `raw_spin_lock` method acquires the lock.
     pub fn raw_spin_lock(&self) {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
-        unsafe {
-            rust_helper_raw_spin_lock(self.spin_lock.get() as *mut bindings::hard_spinlock_t)
-        }
+        unsafe { rust_helper_raw_spin_lock(self.spin_lock.get() as *mut bindings::hard_spinlock_t) }
     }
 
     /// The `raw_spin_lock_nested` method acquires the lock nestly.
     pub fn raw_spin_lock_nested(&self, depth: u32) {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
         unsafe {
-            rust_helper_raw_spin_lock_nested(self.spin_lock.get() as *mut bindings::hard_spinlock_t, depth)
+            rust_helper_raw_spin_lock_nested(
+                self.spin_lock.get() as *mut bindings::hard_spinlock_t,
+                depth,
+            )
         }
     }
 
@@ -258,7 +259,10 @@ impl HardSpinlock {
     pub fn raw_spin_lock_nested(&mut self, depth: u32) {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
         unsafe {
-            rust_helper_raw_spin_lock_nested(&mut self.lock as *mut bindings::hard_spinlock_t, depth)
+            rust_helper_raw_spin_lock_nested(
+                &mut self.lock as *mut bindings::hard_spinlock_t,
+                depth,
+            )
         }
     }
 }

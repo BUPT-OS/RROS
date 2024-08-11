@@ -3,8 +3,7 @@ use crate::{
     factory::{self, rros_init_element, RrosElement, RrosFactory},
     fifo::{self, RROS_SCHED_FIFO},
     file::RrosFileBinding,
-    idle,
-    lock,
+    idle, lock,
     sched::*,
     timeout,
     timer::{self, program_timer, rros_dequeue_timer, rros_stop_timer, rros_update_timer_date},
@@ -18,8 +17,8 @@ use core::{
     cell::RefCell,
     clone::Clone,
     ops::DerefMut,
-    result::Result::{Err, Ok},
     ptr,
+    result::Result::{Err, Ok},
 };
 
 #[warn(unused_mut)]
@@ -325,7 +324,8 @@ pub fn rros_init_thread(
     // }
 
     unsafe {
-        (*thread_unwrap.locked_data().get()).affinity = (*iattr_ptr.affinity).clone() & RROS_CPU_AFFINITY.clone();
+        (*thread_unwrap.locked_data().get()).affinity =
+            (*iattr_ptr.affinity).clone() & RROS_CPU_AFFINITY.clone();
     }
 
     thread_unwrap.lock().rq = Some(rq);
@@ -761,12 +761,18 @@ pub fn pin_to_initial_cpu(thread: Arc<SpinLock<RrosThread>>) {
     let name = unsafe { (*thread.locked_data().get()).name };
     pr_debug!("[smp_test]: thread name is {:?}, cpu is {:?}", name, cpu);
 
-    unsafe { bindings::set_cpus_allowed_ptr(current_ptr, CpumaskT::cpumask_of(cpu) as *const _); }
+    unsafe {
+        bindings::set_cpus_allowed_ptr(current_ptr, CpumaskT::cpumask_of(cpu) as *const _);
+    }
 
     let rq = rros_cpu_rq(cpu as i32);
     let flags: u64 = unsafe { (*thread.locked_data().get()).lock.raw_spin_lock_irqsave() };
     rros_migrate_thread(thread.clone(), rq);
-    unsafe { (*thread.locked_data().get()).lock.raw_spin_unlock_irqrestore(flags); }
+    unsafe {
+        (*thread.locked_data().get())
+            .lock
+            .raw_spin_unlock_irqrestore(flags);
+    }
 }
 
 fn map_kthread_self(kthread: &mut RrosKthread) -> Result<usize> {
@@ -2504,11 +2510,9 @@ pub fn rros_set_period(
     // TODO: we should use a guard to avoid manully locking and releasing of locks.
     let flags = thread.irq_lock_noguard();
 
-    timer::rros_prepare_timed_wait(
-        timer.clone(),
-        clock,
-        unsafe { (*thread.locked_data().get()).rq.unwrap() }
-    );
+    timer::rros_prepare_timed_wait(timer.clone(), clock, unsafe {
+        (*thread.locked_data().get()).rq.unwrap()
+    });
 
     // TODO: add this function
     // if (timeout_infinite(idate))

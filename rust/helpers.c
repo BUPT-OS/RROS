@@ -69,6 +69,7 @@
 #include <linux/hashtable.h>
 #include <linux/kdev_t.h>
 #include <linux/sched.h>
+#include <asm/cpufeature.h>
 void rust_helper_BUG(void)
 {
 	BUG();
@@ -1207,6 +1208,16 @@ unsigned int rust_helper_minor(dev_t dev) {
 	return MINOR(dev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_minor);
+
+bool rust_helper_system_supports_fpsimd(void) {
+	return system_supports_fpsimd();
+}
+EXPORT_SYMBOL_GPL(rust_helper_system_supports_fpsimd);
+
+bool rust_helper_system_supports_sve(void) {
+	return system_supports_sve();
+}
+EXPORT_SYMBOL_GPL(rust_helper_system_supports_sve);
 
 // void rust_helper_anon_inode_getfile(const char *name,
 // 				const struct file_operations *fops,

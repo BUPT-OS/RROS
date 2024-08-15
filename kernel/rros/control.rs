@@ -1,6 +1,9 @@
 use core::{convert::TryInto, result::Result::Ok};
 
-use crate::factory::{CloneData, RrosFactory, RrosFactoryInside};
+use crate::{
+    arch::arm64::fptest::rros_detect_fpu,
+    factory::{CloneData, RrosFactory, RrosFactoryInside},
+};
 
 use kernel::{
     bindings,
@@ -129,9 +132,12 @@ fn control_ioctl(file: &File, cmd: &mut IoctlCommand) -> Result<i32> {
         RROS_CTLIOC_GET_COREINFO => {
             info.abi_base = RROS_ABI_BASE;
             info.abi_current = RROS_ABI_LEVEL;
-            // in arch/arm64/include/asm/rros/fptest.h
-            // TODO: There should be a function rros_detect_fpu() related to the arm64 architecture, the result of the function is 0.
-            info.fpu_features = 0;
+
+            // TODO: Currently, FPU support is only implemented for the ARM64 architecture.
+            // When RROS is adapted to other architectures, FPU support for those architectures
+            // will need to be enabled as well.
+            info.fpu_features = rros_detect_fpu();
+
             unsafe {
                 pr_debug!(
                     "the value of info.shm_size and RROS_SHM_SIZE is {}, {}",

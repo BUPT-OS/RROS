@@ -494,7 +494,7 @@ impl RrosSkbQueueInner {
 
     #[allow(dead_code)]
     #[inline]
-    pub fn destory(&mut self) {
+    pub fn destroy(&mut self) {
         // rros_net_destroy_skb_queue
         free_skb_list(&mut self.list as *mut bindings::list_head);
     }

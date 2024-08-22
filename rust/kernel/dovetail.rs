@@ -16,6 +16,58 @@ extern "C" {
     fn rust_helper_dovetail_mm_state() -> *mut bindings::oob_mm_state;
     #[allow(improper_ctypes)]
     fn rust_helper_dovetail_send_mayday(task: *mut bindings::task_struct);
+    #[allow(improper_ctypes)]
+    fn rust_helper_dovetail_task_state(
+        task: *mut bindings::task_struct,
+    ) -> *mut bindings::oob_thread_state;
+}
+
+/// A wrapper for [`inband_event_type`].
+pub enum InbandEventType {
+    /// Inband signal event for task state changes.
+    InbandTaskSignal,
+
+    /// Inband event for task migration between CPUs.
+    InbandTaskMigration,
+
+    /// Inband event indicating task termination.
+    InbandTaskExit,
+
+    /// Inband event for returning from kernel to user mode.
+    InbandTaskRetuser,
+
+    /// Inband single-step execution event, typically for debugging.
+    InbandTaskPtstep,
+
+    /// Inband event for pausing task execution.
+    InbandTaskPtstop,
+
+    /// Inband event for resuming a paused task.
+    InbandTaskPtcont,
+
+    /// Inband process cleanup event after termination.
+    InbandProcessCleanup,
+}
+
+impl From<bindings::inband_event_type> for InbandEventType {
+    #[inline]
+    fn from(event: bindings::inband_event_type) -> Self {
+        match event {
+            bindings::inband_event_type_INBAND_TASK_SIGNAL => InbandEventType::InbandTaskSignal,
+            bindings::inband_event_type_INBAND_TASK_MIGRATION => {
+                InbandEventType::InbandTaskMigration
+            }
+            bindings::inband_event_type_INBAND_TASK_EXIT => InbandEventType::InbandTaskExit,
+            bindings::inband_event_type_INBAND_TASK_RETUSER => InbandEventType::InbandTaskRetuser,
+            bindings::inband_event_type_INBAND_TASK_PTSTEP => InbandEventType::InbandTaskPtstep,
+            bindings::inband_event_type_INBAND_TASK_PTSTOP => InbandEventType::InbandTaskPtstop,
+            bindings::inband_event_type_INBAND_TASK_PTCONT => InbandEventType::InbandTaskPtcont,
+            bindings::inband_event_type_INBAND_PROCESS_CLEANUP => {
+                InbandEventType::InbandProcessCleanup
+            }
+            _ => panic!("Invalid inband event type"),
+        }
+    }
 }
 
 /// The `dovetail_start` function is a wrapper around the `bindings::dovetail_start` function from the kernel bindings. It starts the Dovetail interface in the kernel.
@@ -84,6 +136,12 @@ impl OobThreadState {
 /// Constructs a new struct from current's state.
 pub fn dovetail_current_state() -> OobThreadState {
     let ptr = unsafe { rust_helper_dovetail_current_state() };
+    unsafe { OobThreadState::from_ptr(ptr) }
+}
+
+/// Constructs a new struct from task's state.
+pub fn dovetail_task_state(task: *mut bindings::task_struct) -> OobThreadState {
+    let ptr = unsafe { rust_helper_dovetail_task_state(task) };
     unsafe { OobThreadState::from_ptr(ptr) }
 }
 

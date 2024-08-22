@@ -40,8 +40,8 @@ impl RrosFlag {
 
     #[allow(dead_code)]
     #[inline]
-    pub fn destory(&mut self) {
-        self.wait.destory();
+    pub fn destroy(&mut self) {
+        self.wait.destroy();
     }
 
     // #[inline]

@@ -2652,7 +2652,7 @@ pub fn rros_force_thread(thread: Arc<SpinLock<RrosThread>>) {
     // assert_thread_pinned(thread);
     {
         let guard = thread.lock();
-        if guard.base_class.is_some() {
+        if guard.base_class.is_some() && guard.base_class.unwrap().sched_kick.is_some() {
             guard.base_class.unwrap().sched_kick.unwrap()(thread.clone());
         }
     }

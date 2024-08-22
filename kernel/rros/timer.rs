@@ -51,6 +51,8 @@ pub struct RrosTimer {
     #[cfg(CONFIG_SMP)]
     rq: *mut RrosRq,
     pub thread: Option<Arc<SpinLock<RrosThread>>>,
+    // FIXME: In RROS, the timer is wrapped by various pointers, so container_of cannot be used. A raw pointer pointing to the structure referencing it has to be added.
+    pub pointer: *mut u8,
 }
 
 impl RrosTimer {
@@ -69,6 +71,7 @@ impl RrosTimer {
             #[cfg(CONFIG_SMP)]
             rq: 0 as *mut RrosRq,
             thread: None,
+            pointer: 0 as *mut u8,
         }
     }
 

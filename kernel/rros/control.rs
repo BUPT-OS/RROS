@@ -133,7 +133,7 @@ fn control_ioctl(file: &File, cmd: &mut IoctlCommand) -> Result<i32> {
             info.abi_base = RROS_ABI_BASE;
             info.abi_current = RROS_ABI_LEVEL;
 
-            // TODO: Currently, FPU support is only implemented for the ARM64 architecture.
+            // FIXME: Currently, FPU support is only implemented for the ARM64 architecture.
             // When RROS is adapted to other architectures, FPU support for those architectures
             // will need to be enabled as well.
             info.fpu_features = rros_detect_fpu();

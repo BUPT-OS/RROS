@@ -1,4 +1,4 @@
-// To be removed once updated to the latest version of the Liunx.
+// To be removed once updated to the latest version of the Linux.
 use kernel::error::Result;
 
 /// Allows mutual exclusion primitives that implement the [`RrosLock`] trait to automatically unlock

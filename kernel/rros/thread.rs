@@ -12,12 +12,13 @@ use crate::{
 };
 
 use alloc::rc::Rc;
+use kernel::dovetail::InbandEventType;
 
 use core::{
     cell::RefCell,
     clone::Clone,
     ops::DerefMut,
-    ptr,
+    ptr::{self, null_mut},
     result::Result::{Err, Ok},
 };
 
@@ -1311,13 +1312,54 @@ pub fn __rros_propagate_schedparam_change(_curr: &mut SpinLock<RrosThread>) {
     //todo
 }
 
+pub fn handle_sigwake_event(p: *mut bindings::task_struct) {
+    let thread;
+    // TODO: let _sigpending;
+    // let mut _ptsync = false;
+    let info = 0;
+
+    thread = match rros_thread_from_task(p) {
+        Ok(t) => t,
+        Err(_) => {
+            pr_warn!("handle_sigwake_event: thread not found");
+            return;
+        }
+    };
+
+    // TODO: Some options related to the signal are not implemented.
+
+    /*
+    A thread running on the oob stage may not be picked by the
+    in-band scheduler as it bears the _TLF_OFFSTAGE flag. We
+    need to force that thread to switch to in-band context,
+    which will clear that flag. If we got there due to a ptrace
+    signal, then setting T_PTSTOP ensures that @thread will be
+    released from T_PTSYNC and will not receive any WOSS alert
+    next time it switches in-band.
+    */
+    rros_kick_thread(thread.clone(), info);
+
+    // TODO:
+    // if ptsync {
+    //     rros_start_ptsync(thread.clone());
+    // }
+
+    unsafe {
+        rros_schedule();
+    }
+}
+
 #[no_mangle]
-unsafe extern "C" fn rust_handle_inband_event(event: u32, _data: *mut c_types::c_void) {
+unsafe extern "C" fn rust_handle_inband_event(
+    event: bindings::inband_event_type,
+    data: *mut c_types::c_void,
+) {
+    let event: InbandEventType = event.into();
     match event {
-        // case INBAND_TASK_SIGNAL:
-        // 	handle_sigwake_event(data);
-        // 	break;
-        bindings::inband_event_type_INBAND_TASK_EXIT => {
+        InbandEventType::InbandTaskSignal => {
+            handle_sigwake_event(data as *mut bindings::task_struct);
+        }
+        InbandEventType::InbandTaskExit => {
             // pr_debug!("{}",rust_helper_dovetail_current_state().subscriber);
             // rros_drop_subscriptions(rros_get_subscriber()); // sbr in rros is NULL, comment here first.
             if rros_current() != 0 as *mut SpinLock<RrosThread> {
@@ -2753,13 +2795,15 @@ pub fn rros_kick_thread(thread: Arc<SpinLock<RrosThread>>, mut info: u32) {
     let mut flags = 0u64;
     let rq = rros_get_thread_rq(Some(thread.clone()), &mut flags);
     loop {
-        let mut guard: Guard<'_, SpinLock<RrosThread>> = thread.lock();
-        if guard.state & T_INBAND != 0 {
-            break;
-        }
+        {
+            let guard: Guard<'_, SpinLock<RrosThread>> = thread.lock();
+            if guard.state & T_INBAND != 0 {
+                break;
+            }
 
-        if (info & T_PTSIG == 0) && (guard.info & T_KICKED != 0) {
-            break;
+            if (info & T_PTSIG == 0) && (guard.info & T_KICKED != 0) {
+                break;
+            }
         }
 
         rros_wakeup_thread_locked(
@@ -2768,37 +2812,130 @@ pub fn rros_kick_thread(thread: Arc<SpinLock<RrosThread>>, mut info: u32) {
             (T_KICKED | T_BREAK) as i32,
         );
 
-        if guard.info & T_PTSTOP != 0 {
-            if guard.info & T_PTJOIN != 0 {
-                guard.info &= !T_PTJOIN;
-            } else {
-                info &= !T_PTJOIN;
+        {
+            let mut guard = thread.lock();
+
+            if guard.info & T_PTSTOP != 0 {
+                if guard.info & T_PTJOIN != 0 {
+                    guard.info &= !T_PTJOIN;
+                } else {
+                    info &= !T_PTJOIN;
+                }
             }
         }
 
         rros_release_thread_locked(thread.clone(), T_SUSP | T_HALT | T_PTSYNC, T_KICKED);
 
-        if guard.state & T_USER != 0 {
-            match this_rros_rq_thread() {
-                Some(_) => {
-                    dovetail::dovetail_send_mayday(guard.altsched.0.task);
+        {
+            let mut guard = thread.lock();
+            if guard.state & T_USER != 0 {
+                match this_rros_rq_thread() {
+                    Some(_) => {
+                        dovetail::dovetail_send_mayday(guard.altsched.0.task);
+                    }
+                    None => {}
                 }
-                None => {}
             }
+
+            guard.info |= T_KICKED;
         }
 
-        guard.info |= T_KICKED;
-
-        if guard.state & T_READY != 0 {
+        if thread.lock().state & T_READY != 0 {
             rros_force_thread(thread.clone());
-            rros_set_resched(guard.rq);
+            rros_set_resched(thread.lock().rq);
         }
 
         if info != 0 {
-            guard.info |= info;
+            thread.lock().info |= info;
         }
         break;
     }
 
     rros_put_thread_rq(Some(thread.clone()), rq, flags).unwrap();
+}
+
+#[inline]
+pub fn rros_thread_from_task(p: *mut bindings::task_struct) -> Result<Arc<SpinLock<RrosThread>>> {
+    let thread: Arc<SpinLock<RrosThread>>;
+    let thread_ptr = dovetail::dovetail_task_state(p).thread() as *mut SpinLock<RrosThread>;
+    if thread_ptr == 0 as *mut SpinLock<RrosThread> {
+        return Err(kernel::Error::EINVAL);
+    }
+
+    // SAFETY: the pointer is valid
+    unsafe {
+        thread = Arc::from_raw(thread_ptr);
+        Arc::increment_strong_count(thread_ptr);
+    }
+
+    Ok(thread)
+}
+
+pub fn rros_run_kthread_on_cpu(
+    kthread: &mut RrosKthread,
+    cpu: u32,
+    kthread_fn: Box<dyn FnOnce()>,
+    clone_flags: i32,
+    fmt: &'static CStr,
+) -> Result<usize> {
+    let mut iattr: RrosInitThreadAttr;
+    let sched_param: Arc<SpinLock<RrosSchedParam>>;
+    let mut thread: Arc<SpinLock<RrosThread>>;
+
+    /* this unsafe block is used to initialize RrosInitThreadAttr. */
+    unsafe {
+        iattr = RrosInitThreadAttr::new();
+        iattr.affinity = CpumaskT::cpumask_of(cpu);
+        iattr.sched_class = Some(&RROS_SCHED_FIFO);
+        sched_param = Arc::try_new(SpinLock::new(RrosSchedParam::new()))?;
+        (*sched_param.locked_data().get()).fifo.prio = 1;
+        iattr.sched_param = Some(sched_param);
+    }
+
+    /* this unsafe block is used to initialize RrosThread. */
+    unsafe {
+        let r = Arc::try_new(SpinLock::new(timer::RrosTimer::new(1)))?;
+        let p = Arc::try_new(SpinLock::new(timer::RrosTimer::new(1)))?;
+
+        thread = Arc::try_new(SpinLock::new(RrosThread::new()?))?;
+        let thread_ref = Arc::get_mut(&mut thread).unwrap();
+        let pinned = Pin::new_unchecked(thread_ref);
+        spinlock_init!(pinned, "kthread");
+
+        thread.lock().init()?;
+        thread.lock().rtimer = Some(r);
+        thread.lock().ptimer = Some(p);
+
+        let mut thread_guard = thread.lock();
+        let mut r_opt = thread_guard.rtimer.as_mut().unwrap();
+        let r_ref = Arc::get_mut(&mut r_opt).unwrap();
+        let pinned_r = Pin::new_unchecked(r_ref);
+        spinlock_init!(pinned_r, "rtimer");
+
+        let mut p_opt = thread_guard.ptimer.as_mut().unwrap();
+        let p_ref = Arc::get_mut(&mut p_opt).unwrap();
+        let pinned_p = Pin::new_unchecked(p_ref);
+        spinlock_init!(pinned_p, "ptimer");
+    }
+
+    kthread.thread = Some(thread);
+    kthread.kthread_fn = Some(kthread_fn);
+    kthread.status = 0;
+    kthread.done.init_completion();
+
+    rros_init_thread(&kthread.thread, iattr, null_mut(), fmt)?;
+    __rros_run_kthread(kthread, clone_flags)
+}
+
+#[inline]
+pub fn rros_stop_kthread(kthread: &RrosKthread) {
+    rros_cancel_thread(kthread.thread.clone().unwrap());
+    // TODO: rros_join_thread();
+}
+
+#[inline]
+pub fn rros_kthread_should_stop() -> bool {
+    let curr = unsafe { &mut *rros_current() };
+    let info = curr.lock().info;
+    info & T_CANCELD != 0
 }

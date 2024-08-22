@@ -134,7 +134,7 @@ impl<T: ?Sized> RrosLock for Stax<T> {
 
 impl<T: ?Sized> Drop for Stax<T> {
     fn drop(&mut self) {
-        self.stax.destory();
+        self.stax.destroy();
     }
 }
 /// A lock used to block access to a resource by both in-band and out-of-band threads
@@ -179,10 +179,10 @@ impl RrosStax {
         self.irq_work.init_irq_work(c_wakeup_inband_waiters)?;
         Ok(())
     }
-    /// Destory the RrosStax.
+    /// destroy the RrosStax.
     #[allow(dead_code)]
-    fn destory(&mut self) {
-        self.oob_wait.destory();
+    fn destroy(&mut self) {
+        self.oob_wait.destroy();
     }
     /// Lock the RrosStax.
     /// When a lock is held by a thread in the converse stage, the current thread is blocked.

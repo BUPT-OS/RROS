@@ -91,7 +91,7 @@ impl RrosWaitQueue {
         }
     }
 
-    pub fn destory(&mut self) {
+    pub fn destroy(&mut self) {
         self.flush(T_RMID as i32);
         unsafe { rros_schedule() };
     }

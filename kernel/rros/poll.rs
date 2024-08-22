@@ -931,7 +931,7 @@ fn wait_events(
         clear_wait();
         break;
     }
-    waiter_flag_mut.destory();
+    waiter_flag_mut.destroy();
 
     return count;
 }

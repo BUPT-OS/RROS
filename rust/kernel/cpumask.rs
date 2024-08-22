@@ -12,6 +12,7 @@ use crate::{
 use core::{iter::Iterator, ops::BitAnd};
 
 extern "C" {
+    fn rust_helper_num_online_cpus() -> u32;
     fn rust_helper_num_possible_cpus() -> u32;
     fn rust_helper_cpulist_parse(
         buf: *const c_types::c_char,
@@ -301,7 +302,16 @@ impl CpumaskVarT {
     // todo: implement for x86_64/x86
 }
 
+/// The `num_online_cpus` function returns the number of online CPUs. It does this by calling the unsafe `rust_helper_num_online_cpus` function.
+pub fn num_online_cpus() -> u32 {
+    // SAFETY: `num_online_cpus()` only queries the current CPU state
+    // and does not involve pointers, memory allocation, or complex state changes.
+    unsafe { rust_helper_num_online_cpus() }
+}
+
 /// The `num_possible_cpus` function returns the number of possible CPUs. It does this by calling the unsafe `rust_helper_num_possible_cpus` function.
 pub fn num_possible_cpus() -> u32 {
+    // SAFETY: `num_possible_cpus()` only queries the total number of CPUs the system can potentially use
+    // and does not involve pointers, memory allocation, or complex state changes.
     unsafe { rust_helper_num_possible_cpus() }
 }

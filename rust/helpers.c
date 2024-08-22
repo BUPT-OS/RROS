@@ -695,6 +695,11 @@ int rust_helper_test_and_set_bit(unsigned int bit, volatile unsigned long *p) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_test_and_set_bit);
 
+unsigned int rust_helper_num_online_cpus(void) {
+	return num_online_cpus();
+}
+EXPORT_SYMBOL_GPL(rust_helper_num_online_cpus);
+
 unsigned int rust_helper_num_possible_cpus(void) {
 	return num_possible_cpus();
 }
@@ -714,6 +719,11 @@ struct oob_thread_state *rust_helper_dovetail_current_state(void) {
 	return dovetail_current_state();
 }
 EXPORT_SYMBOL_GPL(rust_helper_dovetail_current_state);
+
+struct oob_thread_state *rust_helper_dovetail_task_state(struct task_struct *task) {
+	return dovetail_task_state(task);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dovetail_task_state);
 
 bool rust_helper_test_bit(long nr, const volatile unsigned long *addr) {
 	return test_bit(nr,addr);
@@ -1218,6 +1228,11 @@ bool rust_helper_system_supports_sve(void) {
 	return system_supports_sve();
 }
 EXPORT_SYMBOL_GPL(rust_helper_system_supports_sve);
+
+void rust_helper_sema_init(struct semaphore *sem, int val) {
+	sema_init(sem, val);
+}
+EXPORT_SYMBOL_GPL(rust_helper_sema_init);
 
 // void rust_helper_anon_inode_getfile(const char *name,
 // 				const struct file_operations *fops,

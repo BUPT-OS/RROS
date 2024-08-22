@@ -29,6 +29,7 @@ mod condvar;
 mod guard;
 mod locked_by;
 mod mutex;
+mod semaphore;
 mod spinlock;
 
 pub use arc::{Ref, RefBorrow};
@@ -36,6 +37,7 @@ pub use condvar::CondVar;
 pub use guard::{Guard, Lock};
 pub use locked_by::LockedBy;
 pub use mutex::{mutex_lock, mutex_unlock, Mutex};
+pub use semaphore::Semaphore;
 pub use spinlock::{HardSpinlock, RawSpinLock, SpinLock};
 
 extern "C" {

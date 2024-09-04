@@ -37,7 +37,7 @@ static irqreturn_t constant_timer_interrupt(int irq, void *data)
 	/* Clear Timer Interrupt */
 	write_csr_tintclear(CSR_TINTCLR_TI);
 	cd = &per_cpu(constant_clockevent_device, cpu);
-	cd->event_handler(cd);
+	clockevents_handle_event(cd);
 
 	return IRQ_HANDLED;
 }
@@ -155,8 +155,7 @@ int constant_clockevent_init(void)
 	cd = &per_cpu(constant_clockevent_device, cpu);
 
 	cd->name = "Constant";
-	cd->features = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_PERCPU;
-
+	cd->features = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_PERCPU | CLOCK_EVT_FEAT_PIPELINE;
 	cd->irq = irq;
 	cd->rating = 320;
 	cd->cpumask = cpumask_of(cpu);
@@ -178,6 +177,8 @@ int constant_clockevent_init(void)
 
 	if (request_irq(irq, constant_timer_interrupt, IRQF_PERCPU | IRQF_TIMER, "timer", NULL))
 		pr_err("Failed to request irq %d (timer)\n", irq);
+
+	irq_set_percpu_devid(irq);
 
 	lpj_fine = get_loops_per_jiffy();
 	pr_info("Constant clock event device register\n");

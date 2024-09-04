@@ -289,11 +289,11 @@ static void loongarch_pmu_disable_event(int idx)
 
 	WARN_ON(idx < 0 || idx >= loongarch_pmu.num_counters);
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	cpuc->saved_ctrl[idx] = loongarch_pmu_read_control(idx) &
 		~M_PERFCTL_COUNT_EVENT_WHENEVER;
 	loongarch_pmu_write_control(idx, cpuc->saved_ctrl[idx]);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static int loongarch_pmu_event_set_period(struct perf_event *event,
@@ -826,14 +826,14 @@ static void pause_local_counters(void)
 	int ctr = loongarch_pmu.num_counters;
 	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	do {
 		ctr--;
 		cpuc->saved_ctrl[ctr] = loongarch_pmu_read_control(ctr);
 		loongarch_pmu_write_control(ctr, cpuc->saved_ctrl[ctr] &
 					 ~M_PERFCTL_COUNT_EVENT_WHENEVER);
 	} while (ctr > 0);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static void resume_local_counters(void)

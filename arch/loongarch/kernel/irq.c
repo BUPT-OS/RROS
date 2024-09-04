@@ -16,6 +16,7 @@
 #include <linux/seq_file.h>
 #include <linux/kallsyms.h>
 #include <linux/uaccess.h>
+#include <linux/irq_pipeline.h>
 
 #include <asm/irq.h>
 #include <asm/loongson.h>
@@ -135,3 +136,19 @@ void __init init_IRQ(void)
 
 	set_csr_ecfg(ECFGF_IP0 | ECFGF_IP1 | ECFGF_IP2 | ECFGF_IPI | ECFGF_PMC);
 }
+
+DEFINE_PER_CPU(int, irq_nesting);
+
+#ifdef CONFIG_IRQ_PIPELINE
+asmlinkage int 
+handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	if (this_cpu_inc_return(irq_nesting) == 1) {
+		handle_irq_pipelined(regs);
+		this_cpu_dec(irq_nesting);
+		return running_inband() && !arch_irqs_disabled();
+	}
+
+	return handle_irq_pipelined(regs);
+}
+#endif

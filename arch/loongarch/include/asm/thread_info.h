@@ -12,6 +12,7 @@
 
 #ifndef __ASSEMBLY__
 
+#include <dovetail/thread_info.h>
 #include <asm/processor.h>
 
 /*
@@ -24,12 +25,14 @@
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
 	unsigned long		flags;		/* low level flags */
+	unsigned long		local_flags;	/* local (synchronous) flags */
 	unsigned long		tp_value;	/* thread pointer */
 	__u32			cpu;		/* current CPU */
 	int			preempt_count;	/* 0 => preemptible, <0 => BUG */
 	struct pt_regs		*regs;
 	unsigned long		syscall;	/* syscall number */
 	unsigned long		syscall_work;	/* SYSCALL_WORK_ flags */
+	struct oob_thread_state	oob_state;
 };
 
 /*
@@ -40,9 +43,11 @@ struct thread_info {
 	.task		= &tsk,			\
 	.flags		= _TIF_FIXADE,		\
 	.cpu		= 0,			\
+ 	.local_flags	= 0,						\
 	.preempt_count	= INIT_PREEMPT_COUNT,	\
 }
 
+#define ti_local_flags(__ti)	((__ti)->local_flags)
 /* How to get the thread information struct from C. */
 register struct thread_info *__current_thread_info __asm__("$tp");
 
@@ -86,6 +91,8 @@ register unsigned long current_stack_pointer __asm__("$sp");
 #define TIF_LASX_CTX_LIVE	18	/* LASX context must be preserved */
 #define TIF_USEDLBT		19	/* LBT was used by this task this quantum (SMP) */
 #define TIF_LBT_CTX_LIVE	20	/* LBT context must be preserved */
+#define TIF_RETUSER		21	/* INBAND_TASK_RETUSER is pending */
+#define TIF_MAYDAY		22	/* Emergency trap pending */
 
 #define _TIF_SIGPENDING		(1<<TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1<<TIF_NEED_RESCHED)
@@ -105,6 +112,16 @@ register unsigned long current_stack_pointer __asm__("$sp");
 #define _TIF_LASX_CTX_LIVE	(1<<TIF_LASX_CTX_LIVE)
 #define _TIF_USEDLBT		(1<<TIF_USEDLBT)
 #define _TIF_LBT_CTX_LIVE	(1<<TIF_LBT_CTX_LIVE)
+#define _TIF_RETUSER		(1 << TIF_RETUSER)
+#define _TIF_SINGLESTEP         (1<<TIF_SINGLESTEP)
+
+/*
+ * Local (synchronous) thread flags.
+ */
+#define _TLF_OOB		0x0001
+#define _TLF_DOVETAIL		0x0002
+#define _TLF_OFFSTAGE		0x0004
+#define _TLF_OOBTRAP		0x0008
 
 #endif /* __KERNEL__ */
 #endif /* _ASM_THREAD_INFO_H */

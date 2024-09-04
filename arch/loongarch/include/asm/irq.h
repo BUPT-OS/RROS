@@ -121,4 +121,6 @@ extern irqreturn_t loongson_ipi_interrupt(int irq, void *dev);
 
 #include <asm-generic/irq.h>
 
+int handle_arch_irq_pipelined(struct pt_regs *regs);
+
 #endif /* _ASM_IRQ_H */

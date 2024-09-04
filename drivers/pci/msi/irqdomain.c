@@ -132,6 +132,8 @@ struct irq_domain *pci_msi_create_irq_domain(struct fwnode_handle *fwnode,
 
 	/* PCI-MSI is oneshot-safe */
 	info->chip->flags |= IRQCHIP_ONESHOT_SAFE;
+
+	info->chip->flags |= IRQCHIP_PIPELINE_SAFE;
 	/* Let the core update the bus token */
 	info->bus_token = DOMAIN_BUS_PCI_MSI;
 

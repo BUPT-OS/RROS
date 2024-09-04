@@ -178,7 +178,9 @@ int constant_clockevent_init(void)
 	if (request_irq(irq, constant_timer_interrupt, IRQF_PERCPU | IRQF_TIMER, "timer", NULL))
 		pr_err("Failed to request irq %d (timer)\n", irq);
 
+#ifdef CONFIG_IRQ_PIPELINE
 	irq_set_percpu_devid(irq);
+#endif
 
 	lpj_fine = get_loops_per_jiffy();
 	pr_info("Constant clock event device register\n");

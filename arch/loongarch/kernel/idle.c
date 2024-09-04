@@ -4,7 +4,6 @@
  *
  * Copyright (C) 2020-2022 Loongson Technology Corporation Limited
  */
-#include "asm-generic/irq_pipeline.h"
 #include <linux/cpu.h>
 #include <linux/irqflags.h>
 #include <asm/cpu.h>

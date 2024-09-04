@@ -3,7 +3,6 @@
  * Author: Huacai Chen <chenhuacai@loongson.cn>
  * Copyright (C) 2020-2022 Loongson Technology Corporation Limited
  */
-#include "linux/dovetail.h"
 #include <linux/bitfield.h>
 #include <linux/bitops.h>
 #include <linux/bug.h>

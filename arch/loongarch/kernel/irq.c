@@ -151,4 +151,10 @@ handle_arch_irq_pipelined(struct pt_regs *regs)
 
 	return handle_irq_pipelined(regs);
 }
+#else
+asmlinkage int 
+handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	return handle_irq_pipelined(regs);
+}
 #endif

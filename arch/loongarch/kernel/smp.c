@@ -8,7 +8,6 @@
  * Copyright (C) 2000, 2001 Silicon Graphics, Inc.
  * Copyright (C) 2000, 2001, 2003 Broadcom Corporation
  */
-#include "linux/kern_levels.h"
 #include <linux/acpi.h>
 #include <linux/cpu.h>
 #include <linux/cpumask.h>

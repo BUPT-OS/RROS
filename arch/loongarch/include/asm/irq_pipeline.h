@@ -9,15 +9,11 @@
 #define _ASM_LOONGARCH64_IRQ_PIPELINE_H
 
 #include <asm-generic/irq_pipeline.h>
-
 #include <asm/loongarch.h>
 #include <asm/ptrace.h>
 
 
-static inline int arch_irqs_disabled_flags(unsigned long flags);
-
 #ifdef CONFIG_IRQ_PIPELINE
-
 #define OOB_NR_IPI		2
 #define OOB_IPI_OFFSET		1 /* SGI1 */
 #define TIMER_OOB_IPI		(ipi_irq_base + OOB_IPI_OFFSET)

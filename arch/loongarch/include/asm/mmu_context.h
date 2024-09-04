@@ -12,6 +12,7 @@
 #include <linux/mm_types.h>
 #include <linux/smp.h>
 #include <linux/slab.h>
+#include <linux/irq_pipeline.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
@@ -99,14 +100,14 @@ static inline void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *
 
 #define switch_mm_irqs_off switch_mm_irqs_off
 
-static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next,
+static inline void do_switch_mm(struct mm_struct *prev, struct mm_struct *next,
 			     struct task_struct *tsk)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	switch_mm_irqs_off(prev, next, tsk);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 /*
@@ -117,8 +118,26 @@ static inline void destroy_context(struct mm_struct *mm)
 {
 }
 
-#define activate_mm(prev, next)	switch_mm(prev, next, current)
+static inline void
+switch_mm(struct mm_struct *prev, struct mm_struct *next,
+	  struct task_struct *tsk)
+{
+	unsigned long flags;
+
+	protect_inband_mm(flags);
+	do_switch_mm(prev, next, tsk);
+	unprotect_inband_mm(flags);
+}
+
+#define activate_mm(prev, next)	do_switch_mm(prev, next, current)
 #define deactivate_mm(task, mm)	do { } while (0)
+
+static inline void
+switch_oob_mm(struct mm_struct *prev, struct mm_struct *next,
+	      struct task_struct *tsk)
+{
+	do_switch_mm(prev, next, tsk);
+}
 
 /*
  * If mm is currently active, we can't really drop it.
@@ -130,7 +149,7 @@ drop_mmu_context(struct mm_struct *mm, unsigned int cpu)
 	int asid;
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	asid = read_csr_asid() & cpu_asid_mask(&current_cpu_data);
 
@@ -146,7 +165,7 @@ drop_mmu_context(struct mm_struct *mm, unsigned int cpu)
 	cpu_context(cpu, mm) = 0;
 	cpumask_clear_cpu(cpu, mm_cpumask(mm));
 out:
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 #endif /* _ASM_MMU_CONTEXT_H */

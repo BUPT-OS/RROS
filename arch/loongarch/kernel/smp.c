@@ -8,6 +8,7 @@
  * Copyright (C) 2000, 2001 Silicon Graphics, Inc.
  * Copyright (C) 2000, 2001, 2003 Broadcom Corporation
  */
+#include "linux/kern_levels.h"
 #include <linux/acpi.h>
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
@@ -301,10 +302,10 @@ int loongson_cpu_disable(void)
 #endif
 	set_cpu_online(cpu, false);
 	calculate_cpu_foreign_map();
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	irq_migrate_all_off_this_cpu();
 	clear_csr_ecfg(ECFG0_IM);
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 	local_flush_tlb_all();
 
 	return 0;
@@ -698,3 +699,26 @@ void flush_tlb_one(unsigned long vaddr)
 	on_each_cpu(flush_tlb_one_ipi, (void *)vaddr, 1);
 }
 EXPORT_SYMBOL(flush_tlb_one);
+
+// FIXME: ipi irq handling
+// not doing any thing yet
+
+int ipi_irq_base __read_mostly = 12;
+static void __smp_cross_call(const struct cpumask *target, unsigned int ipinr)
+{
+}
+
+void irq_send_oob_ipi(unsigned int irq,
+		const struct cpumask *cpumask)
+{
+	unsigned int sgi = irq - ipi_irq_base;
+
+	/**if (WARN_ON(irq_pipeline_debug() &&*/
+	/**      (sgi < OOB_IPI_OFFSET ||*/
+	/**       sgi >= OOB_IPI_OFFSET + OOB_NR_IPI)))*/
+	/**  return;*/
+
+	/* Out-of-band IPI (SGI1-2). */
+	__smp_cross_call(cpumask, sgi);
+}
+EXPORT_SYMBOL_GPL(irq_send_oob_ipi);

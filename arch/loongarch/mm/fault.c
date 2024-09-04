@@ -260,11 +260,11 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 
 	/* Enable interrupt if enabled in parent context */
 	if (likely(regs->csr_prmd & CSR_PRMD_PIE))
-		local_irq_enable();
+		hard_local_irq_enable();
 
 	__do_page_fault(regs, write, address);
 
-	local_irq_disable();
+	hard_local_irq_disable();
 
 	irqentry_exit(regs, state);
 }

@@ -160,12 +160,12 @@ static void *__init_or_module text_poke_early(union loongarch_instruction *insn,
 	int i;
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	for (i = 0; i < nr; i++)
 		insn[i].word = buf[i].word;
 
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 
 	wbflush();
 	flush_icache_range((unsigned long)insn, (unsigned long)(insn + nr));

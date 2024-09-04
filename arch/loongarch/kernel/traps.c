@@ -3,6 +3,7 @@
  * Author: Huacai Chen <chenhuacai@loongson.cn>
  * Copyright (C) 2020-2022 Loongson Technology Corporation Limited
  */
+#include "linux/dovetail.h"
 #include <linux/bitfield.h>
 #include <linux/bitops.h>
 #include <linux/bug.h>
@@ -484,13 +485,14 @@ asmlinkage void noinstr do_fpe(struct pt_regs *regs, unsigned long fcsr)
 	void __user *fault_addr;
 	irqentry_state_t state = irqentry_enter(regs);
 
+	oob_trap_notify(LOONGARCH64_TRAP_FPE, regs);
 	if (notify_die(DIE_FP, "FP exception", regs, 0, current->thread.trap_nr,
 		       SIGFPE) == NOTIFY_STOP)
 		goto out;
 
 	/* Clear FCSR.Cause before enabling interrupts */
 	write_fcsr(LOONGARCH_FCSR0, fcsr & ~mask_fcsr_x(fcsr));
-	local_irq_enable();
+	hard_local_irq_enable();
 
 	die_if_kernel("FP exception in kernel code", regs);
 
@@ -501,7 +503,8 @@ asmlinkage void noinstr do_fpe(struct pt_regs *regs, unsigned long fcsr)
 	process_fpemu_return(sig, fault_addr, fcsr);
 
 out:
-	local_irq_disable();
+	hard_local_irq_disable();
+	oob_trap_unwind(LOONGARCH64_TRAP_FPE, regs);
 	irqentry_exit(regs, state);
 }
 
@@ -676,8 +679,10 @@ asmlinkage void noinstr do_bp(struct pt_regs *regs)
 	unsigned long era = exception_era(regs);
 	irqentry_state_t state = irqentry_enter(regs);
 
+
+	oob_trap_notify(LOONGARCH64_TRAP_BP, regs);
 	if (regs->csr_prmd & CSR_PRMD_PIE)
-		local_irq_enable();
+		hard_local_irq_enable();
 
 	if (__get_inst(&opcode, (u32 *)era, user))
 		goto out_sigsegv;
@@ -743,7 +748,9 @@ asmlinkage void noinstr do_bp(struct pt_regs *regs)
 
 out:
 	if (regs->csr_prmd & CSR_PRMD_PIE)
-		local_irq_disable();
+		hard_local_irq_disable();
+
+	oob_trap_unwind(LOONGARCH64_TRAP_BP, regs);
 
 	irqentry_exit(regs, state);
 	return;
@@ -813,7 +820,7 @@ asmlinkage void noinstr do_ri(struct pt_regs *regs)
 	unsigned int __user *era = (unsigned int __user *)exception_era(regs);
 	irqentry_state_t state = irqentry_enter(regs);
 
-	local_irq_enable();
+	hard_local_irq_enable();
 	current->thread.trap_nr = read_csr_excode();
 
 	if (notify_die(DIE_RI, "RI Fault", regs, 0, current->thread.trap_nr,
@@ -830,7 +837,7 @@ asmlinkage void noinstr do_ri(struct pt_regs *regs)
 	force_sig(status);
 
 out:
-	local_irq_disable();
+	hard_local_irq_disable();
 	irqentry_exit(regs, state);
 }
 
@@ -847,6 +854,19 @@ static void init_restore_fp(void)
 
 	BUG_ON(!is_fp_enabled());
 }
+
+#ifdef CONFIG_DOVETAIL
+void restore_fp_current_oob(void)
+{
+	unsigned long __flags;
+	
+	if (current->mm && used_math() && !is_fpu_owner()) {
+		__flags = hard_preempt_disable();
+		own_fpu_inatomic(1);
+		hard_preempt_enable(__flags);
+	}
+}
+#endif
 
 static void init_restore_lsx(void)
 {
@@ -905,7 +925,7 @@ asmlinkage void noinstr do_fpu(struct pt_regs *regs)
 {
 	irqentry_state_t state = irqentry_enter(regs);
 
-	local_irq_enable();
+	hard_local_irq_enable();
 	die_if_kernel("do_fpu invoked from kernel context!", regs);
 	BUG_ON(is_lsx_enabled());
 	BUG_ON(is_lasx_enabled());
@@ -914,7 +934,7 @@ asmlinkage void noinstr do_fpu(struct pt_regs *regs)
 	init_restore_fp();
 	preempt_enable();
 
-	local_irq_disable();
+	hard_local_irq_disable();
 	irqentry_exit(regs, state);
 }
 
@@ -922,7 +942,7 @@ asmlinkage void noinstr do_lsx(struct pt_regs *regs)
 {
 	irqentry_state_t state = irqentry_enter(regs);
 
-	local_irq_enable();
+	hard_local_irq_enable();
 	if (!cpu_has_lsx) {
 		force_sig(SIGILL);
 		goto out;
@@ -936,7 +956,7 @@ asmlinkage void noinstr do_lsx(struct pt_regs *regs)
 	preempt_enable();
 
 out:
-	local_irq_disable();
+	hard_local_irq_disable();
 	irqentry_exit(regs, state);
 }
 
@@ -1040,7 +1060,7 @@ asmlinkage void noinstr handle_loongarch_irq(struct pt_regs *regs)
 
 	irq_enter_rcu();
 	old_regs = set_irq_regs(regs);
-	handle_arch_irq(regs);
+ 	handle_arch_irq(regs);
 	set_irq_regs(old_regs);
 	irq_exit_rcu();
 }
@@ -1053,8 +1073,13 @@ asmlinkage void noinstr do_vint(struct pt_regs *regs, unsigned long sp)
 
 	cpu = smp_processor_id();
 
-	if (on_irq_stack(cpu, sp))
-		handle_loongarch_irq(regs);
+	if (on_irq_stack(cpu, sp)) {
+#ifdef CONFIG_IRQ_PIPELINE
+	  handle_arch_irq_pipelined(regs);
+#else
+    handle_arch_irq(regs);
+#endif
+	}
 	else {
 		stack = per_cpu(irq_stack, cpu) + IRQ_STACK_START;
 
@@ -1065,7 +1090,11 @@ asmlinkage void noinstr do_vint(struct pt_regs *regs, unsigned long sp)
 		"move	$s0, $sp		\n" /* Preserve sp */
 		"move	$sp, %[stk]		\n" /* Switch stack */
 		"move	$a0, %[regs]		\n"
+#ifdef CONFIG_IRQ_PIPELINE
+		"bl	handle_arch_irq_pipelined	\n"
+#else
 		"bl	handle_loongarch_irq	\n"
+#endif
 		"move	$sp, $s0		\n" /* Restore sp */
 		: /* No outputs */
 		: [stk] "r" (stack), [regs] "r" (regs)

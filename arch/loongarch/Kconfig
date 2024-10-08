@@ -130,6 +130,8 @@ config LOONGARCH
 	select HAVE_KPROBES_ON_FTRACE
 	select HAVE_KRETPROBES
 	select HAVE_MOD_ARCH_SPECIFIC
+	select HAVE_IRQ_PIPELINE
+	select HAVE_DOVETAIL
 	select HAVE_NMI
 	select HAVE_PCI
 	select HAVE_PERF_EVENTS
@@ -138,6 +140,7 @@ config LOONGARCH
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select HAVE_RETHOOK
 	select HAVE_RSEQ
+	select HAVE_RUST
 	select HAVE_SAMPLE_FTRACE_DIRECT
 	select HAVE_SAMPLE_FTRACE_DIRECT_MULTI
 	select HAVE_SETUP_PER_CPU_AREA if NUMA
@@ -266,6 +269,7 @@ config AS_HAS_LBT_EXTENSION
 menu "Kernel type and options"
 
 source "kernel/Kconfig.hz"
+source "kernel/Kconfig.dovetail"
 
 choice
 	prompt "Page Table Layout"

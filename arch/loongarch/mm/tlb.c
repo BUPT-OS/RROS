@@ -62,7 +62,7 @@ void local_flush_tlb_range(struct vm_area_struct *vma, unsigned long start,
 	if (asid_valid(mm, cpu)) {
 		unsigned long size, flags;
 
-		local_irq_save(flags);
+		flags = hard_local_irq_save();
 		start = round_down(start, PAGE_SIZE << 1);
 		end = round_up(end, PAGE_SIZE << 1);
 		size = (end - start) >> (PAGE_SHIFT + 1);
@@ -78,7 +78,7 @@ void local_flush_tlb_range(struct vm_area_struct *vma, unsigned long start,
 		} else {
 			drop_mmu_context(mm, cpu);
 		}
-		local_irq_restore(flags);
+		hard_local_irq_restore(flags);
 	} else {
 		cpumask_clear_cpu(cpu, mm_cpumask(mm));
 	}
@@ -88,7 +88,7 @@ void local_flush_tlb_kernel_range(unsigned long start, unsigned long end)
 {
 	unsigned long size, flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 	size = (end - start + (PAGE_SIZE - 1)) >> PAGE_SHIFT;
 	size = (size + 1) >> 1;
 	if (size <= (current_cpu_data.tlbsizestlbsets ?
@@ -106,7 +106,7 @@ void local_flush_tlb_kernel_range(unsigned long start, unsigned long end)
 	} else {
 		local_flush_tlb_kernel();
 	}
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
@@ -141,7 +141,7 @@ static void __update_hugetlb(struct vm_area_struct *vma, unsigned long address, 
 	unsigned long lo;
 	unsigned long flags;
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	address &= (PAGE_MASK << 1);
 	write_csr_entryhi(address);
@@ -158,7 +158,7 @@ static void __update_hugetlb(struct vm_area_struct *vma, unsigned long address, 
 		tlb_write_indexed();
 	write_csr_pagesize(PS_DEFAULT_SIZE);
 
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 #endif
 }
 
@@ -181,7 +181,7 @@ void __update_tlb(struct vm_area_struct *vma, unsigned long address, pte_t *ptep
 		return;
 	}
 
-	local_irq_save(flags);
+	flags = hard_local_irq_save();
 
 	if ((unsigned long)ptep & sizeof(pte_t))
 		ptep--;
@@ -198,7 +198,7 @@ void __update_tlb(struct vm_area_struct *vma, unsigned long address, pte_t *ptep
 	else
 		tlb_write_indexed();
 
-	local_irq_restore(flags);
+	hard_local_irq_restore(flags);
 }
 
 static void setup_ptwalker(void)

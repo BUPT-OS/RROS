@@ -10,8 +10,9 @@
 #include <linux/compiler.h>
 #include <linux/stringify.h>
 #include <asm/loongarch.h>
+#include <asm/irq_pipeline.h>
 
-static inline void arch_local_irq_enable(void)
+static inline void native_irq_enable(void)
 {
 	u32 flags = CSR_CRMD_IE;
 	__asm__ __volatile__(
@@ -21,7 +22,7 @@ static inline void arch_local_irq_enable(void)
 		: "memory");
 }
 
-static inline void arch_local_irq_disable(void)
+static inline void native_irq_disable(void)
 {
 	u32 flags = 0;
 	__asm__ __volatile__(
@@ -31,7 +32,14 @@ static inline void arch_local_irq_disable(void)
 		: "memory");
 }
 
-static inline unsigned long arch_local_irq_save(void)
+static inline void native_irq_sync(void)
+{
+	native_irq_enable();
+	barrier();
+	native_irq_disable();
+}
+
+static inline unsigned long native_irq_save(void)
 {
 	u32 flags = 0;
 	__asm__ __volatile__(
@@ -42,7 +50,7 @@ static inline unsigned long arch_local_irq_save(void)
 	return flags;
 }
 
-static inline void arch_local_irq_restore(unsigned long flags)
+static inline void native_irq_restore(unsigned long flags)
 {
 	__asm__ __volatile__(
 		"csrxchg %[val], %[mask], %[reg]\n\t"
@@ -51,7 +59,7 @@ static inline void arch_local_irq_restore(unsigned long flags)
 		: "memory");
 }
 
-static inline unsigned long arch_local_save_flags(void)
+static inline unsigned long native_save_flags(void)
 {
 	u32 flags;
 	__asm__ __volatile__(
@@ -62,16 +70,42 @@ static inline unsigned long arch_local_save_flags(void)
 	return flags;
 }
 
-static inline int arch_irqs_disabled_flags(unsigned long flags)
-{
-	return !(flags & CSR_CRMD_IE);
-}
 
-static inline int arch_irqs_disabled(void)
+static inline int native_irqs_disabled(void)
 {
-	return arch_irqs_disabled_flags(arch_local_save_flags());
+	return native_irqs_disabled_flags(native_save_flags());
 }
 
 #endif /* #ifndef __ASSEMBLY__ */
+
+/*
+ * Do the CPU's IRQ-state tracing from assembly code.
+ */
+#ifdef CONFIG_TRACE_IRQFLAGS
+/* Reload some registers clobbered by trace_hardirqs_on */
+# define TRACE_IRQS_RELOAD_REGS \
+	LONG_L  $r11, sp, PT_R11; \
+	LONG_L  $r10, sp, PT_R10; \
+	LONG_L  $r9, sp, PT_R9; \
+	LONG_L  $r8, sp, PT_R8; \
+	LONG_L  $r7, sp, PT_R7; \
+	LONG_L  $r6, sp, PT_R6; \
+	LONG_L  $r5, sp, PT_R5; \
+	LONG_L  $r4, sp, PT_R4
+# define TRACE_IRQS_ON \
+	CLI;    /* make sure trace_hardirqs_on() is called in kernel level */ \
+	la.abs  t0, trace_hardirqs_on_pipelined; \
+	jirl    ra, t0, 0
+# define TRACE_IRQS_ON_RELOAD \
+	TRACE_IRQS_ON; \
+	TRACE_IRQS_RELOAD_REGS
+# define TRACE_IRQS_OFF \
+	la.abs  t0, trace_hardirqs_off_pipelined; \
+	jirl    ra, t0, 0
+#else
+# define TRACE_IRQS_ON
+# define TRACE_IRQS_ON_RELOAD
+# define TRACE_IRQS_OFF
+#endif
 
 #endif /* _ASM_IRQFLAGS_H */

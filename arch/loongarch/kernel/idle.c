@@ -11,6 +11,7 @@
 
 void __cpuidle arch_cpu_idle(void)
 {
+	hard_local_irq_enable();
 	raw_local_irq_enable();
 	__arch_cpu_idle(); /* idle instruction needs irq enabled */
 	raw_local_irq_disable();

@@ -97,7 +97,7 @@ static const struct irq_chip pch_lpc_irq_chip = {
 	.irq_unmask		= lpc_irq_unmask,
 	.irq_ack		= lpc_irq_ack,
 	.irq_set_type		= lpc_irq_set_type,
-	.flags			= IRQCHIP_SKIP_SET_WAKE,
+	.flags			= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_PIPELINE_SAFE,
 };
 
 static void lpc_irq_dispatch(struct irq_desc *desc)

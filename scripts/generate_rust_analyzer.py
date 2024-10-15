@@ -95,6 +95,12 @@ def generate_crates(srctree, objtree, sysroot_src, bindings_file):
         "exclude_dirs": [],
     }
 
+    def is_root_crate(build_file, target):
+        try:
+            return f"{target}.o" in open(build_file).read()
+        except FileNotFoundError:
+            return False
+    
     # Then, the rest outside of `rust/`.
     #
     # We explicitly mention the top-level folders we want to cover.
@@ -102,11 +108,9 @@ def generate_crates(srctree, objtree, sysroot_src, bindings_file):
         for path in (srctree / folder).rglob("*.rs"):
             logging.info("Checking %s", path)
             name = path.name.replace(".rs", "")
-
             # Skip those that are not crate roots.
-            if f"{name}.o" not in open(path.parent / "Makefile").read():
+            if not is_root_crate(path.parent / "Makefile", name):
                 continue
-
             logging.info("Adding %s", name)
             append_crate(
                 name,

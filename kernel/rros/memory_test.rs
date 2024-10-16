@@ -5,6 +5,7 @@ use kernel::{
 use alloc::alloc::*;
 use alloc::alloc_rros::*;
 
+#[allow(dead_code)]
 pub fn mem_test() {
     // mem_test1();
     // mem_test2();

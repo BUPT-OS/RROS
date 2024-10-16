@@ -26,9 +26,12 @@ use kernel::{c_str, prelude::*};
 // // static mut KTHREAD_RUNNER_1:Option<> = ;
 // static mut KTHREAD_RUNNER_1: Option<KthreadRunner> = None;
 // static mut KTHREAD_RUNNER_2: Option<KthreadRunner> = None;
+#[allow(dead_code)]
 static mut KTHREAD_RUNNER_1: KthreadRunner = KthreadRunner::new_empty();
+#[allow(dead_code)]
 static mut KTHREAD_RUNNER_2: KthreadRunner = KthreadRunner::new_empty();
 
+#[allow(dead_code)]
 pub fn test_thread_context_switch() {
     let rq = this_rros_rq();
 
@@ -209,6 +212,7 @@ pub fn test_thread_context_switch() {
 //     1 as c_types::c_int
 // }
 
+#[allow(dead_code)]
 fn kfn_1() {
     for _i in 0..10 {
         pr_emerg!("hello! from rros~~~~~~~~~~~~");
@@ -264,6 +268,7 @@ fn kfn_1() {
 
 // static mut aa:i32 = 0;
 // static mut aa:i32 = 0;
+#[allow(dead_code)]
 pub fn kfn_2() {
     //     for t in 0..1000000 {
     //         // thread::rros_sleep(1000000000);

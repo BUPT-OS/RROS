@@ -5,8 +5,10 @@ use crate::{
 use kernel::prelude::*;
 use kernel::{c_str, c_types, ktime};
 
+#[allow(dead_code)]
 static mut KTHREAD_RUNNER_1: KthreadRunner = KthreadRunner::new_empty();
 
+#[allow(dead_code)]
 fn kthread_handler(ptr: *mut c_types::c_void) {
     // thread::rros_sleep(10000000000);
     let k_runner = unsafe { &mut *(ptr as *mut KthreadRunner) };
@@ -115,6 +117,7 @@ fn kthread_handler(ptr: *mut c_types::c_void) {
     // }
 }
 
+#[allow(dead_code)]
 pub fn test_latmus() {
     unsafe {
         KTHREAD_RUNNER_1.init(
@@ -134,6 +137,7 @@ pub fn test_latmus() {
     }
 }
 
+#[allow(dead_code)]
 fn add_measurement_sample(runner: &mut KthreadRunner, timestamp: ktime::KtimeT) -> i32 {
     let period = runner.2.period as i64;
     let mut state = &mut runner.2.state;

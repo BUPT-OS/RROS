@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config RROS_SMP_TEST
+    bool "SMP test"
+	default n
+	help
+	    Test the SMP function of RROS.
+
+config RROS_TIMER_TEST
+    bool "Timer test"
+    default n
+    help
+        Test whether the timer in RROS is functioning properly.
+
+config RROS_DOUBLE_LINKED_LIST
+    bool "Double linked list test"
+    default n
+    help
+        Test whether the double linked list in RROS is functioning properly.
+
+config RROS_CLOCK_TEST
+    bool "Clock test"
+    default n
+    help
+        Test whether the clock in RROS is functioning properly.
+
+config RROS_THREAD_TEST
+    bool "Thread test"
+    default n
+    help
+        Test whether the thread in RROS is functioning properly.
+
+config RROS_WAIT_TEST
+    bool "RrosWaitQueue test"
+    default n
+    help
+        Test whether the wait queue in RROS is functioning properly.
+
+config RROS_MEM_TEST
+    bool "Memory test"
+    default n
+    help
+        Test whether the memory management in RROS is functioning properly.
+
+config RROS_LATENCY_TEST
+    bool "Latency test"
+    default n
+    help
+        Test the latmus of RROS.

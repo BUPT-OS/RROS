@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 config RROS_OOB_NET
-        bool "Out-of-band networking (EXPERIMENTAL)"
+	bool "Out-of-band networking (EXPERIMENTAL)"
 	default n
 	select NET_OOB
 	select NET_SCHED
@@ -9,4 +9,16 @@ config RROS_OOB_NET
 	select INET
 	select VLAN_8021Q
 	help
-	This option enables preliminary networking support for Rros.
+		This option enables preliminary networking support for Rros.
+
+menuconfig RROS_TEST
+	bool "Open the test point of RROS"
+	default n
+	depends on Rros
+	help
+		Let the test code test whether RROS works properly when the system
+		starts. Turning on this CONFIG will slow down the startup.
+
+if RROS_TEST
+	source "kernel/rros/Kconfig.rros_test"
+endif

@@ -61,7 +61,9 @@ extern "C" {
     fn rust_helper_preempt_enable();
     #[allow(dead_code)]
     fn rust_helper_preempt_disable();
+    #[allow(dead_code)]
     fn rust_helper_hard_local_irq_save() -> c_types::c_ulong;
+    #[allow(dead_code)]
     fn rust_helper_hard_local_irq_restore(flags: c_types::c_ulong);
     // fn rust_helper_doveail_mm_state() -> *mut bindings::oob_mm_state;
 }
@@ -2499,6 +2501,7 @@ impl KthreadRunner {
     }
 }
 
+#[allow(dead_code)]
 pub fn rros_set_period(
     clock: &mut clock::RrosClock,
     idate: ktime::KtimeT,
@@ -2570,6 +2573,7 @@ pub fn rros_set_period(
     // EXPORT_SYMBOL_GPL(rros_set_period);
 }
 
+#[allow(dead_code)]
 pub fn rros_wait_period() -> Result<usize> {
     let curr = rros_current();
     let thread = unsafe { Arc::from_raw(curr as *mut SpinLock<RrosThread>) };
@@ -2652,6 +2656,7 @@ pub fn rros_wait_period() -> Result<usize> {
     // EXPORT_SYMBOL_GPL(rros_wait_period);
 }
 
+#[allow(dead_code)]
 fn rros_get_timer_overruns(timer: Arc<SpinLock<timer::RrosTimer>>) -> Result<u32> {
     // unsigned long rros_get_timer_overruns(struct rros_timer *timer)
     // {

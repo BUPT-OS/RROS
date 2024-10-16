@@ -295,6 +295,7 @@ fn test_double_linked_list() {
     }
 }
 
+#[allow(dead_code)]
 fn test_thread() {
     thread_test::test_thread_context_switch();
     // thread_test::test_NetKthreadRunner();
@@ -327,11 +328,13 @@ fn test_fifo() {
         }
     }
 }
+#[allow(dead_code)]
 fn test_mem() {
     memory_test::mem_test();
 }
 
-fn test_lantency() {
+#[allow(dead_code)]
+fn test_latency() {
     rros::latmus::test_latmus();
 }
 
@@ -384,13 +387,21 @@ impl KernelModule for Rros {
         let res = init_core(); //*sysheap_size_arg.read()
         let fac_reg;
 
-        // test_timer();
-        // test_double_linked_list();
+        #[cfg(CONFIG_RROS_TIMER_TEST)]
+        test_timer();
 
-        // test_clock();
+        #[cfg(CONFIG_RROS_DOUBLE_LINKED_LIST)]
+        test_double_linked_list();
+
+        #[cfg(CONFIG_RROS_CLOCK_TEST)]
+        test_clock();
+
+        #[cfg(CONFIG_RROS_THREAD_TEST)]
         test_thread();
-        //test_double_linked_list();
-        // wait::wait_test();
+
+        #[cfg(CONFIG_RROS_WAIT_TEST)]
+        wait::wait_test();
+
         let ret = net::init();
         match ret {
             Ok(_o) => (),
@@ -400,7 +411,9 @@ impl KernelModule for Rros {
             }
         }
 
+        #[cfg(CONFIG_RROS_MEM_TEST)]
         test_mem();
+
         match res {
             Ok(_o) => {
                 pr_info!("Success boot the rros.");
@@ -411,8 +424,11 @@ impl KernelModule for Rros {
                 return Err(_e);
             }
         }
-        test_lantency();
 
+        #[cfg(CONFIG_RROS_LATENCY_TEST)]
+        test_latency();
+
+        #[cfg(CONFIG_RROS_SMP_TEST)]
         test_smp();
 
         // let mut rros_kthread1 = rros_kthread::new(fn1);

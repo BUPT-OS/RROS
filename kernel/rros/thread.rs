@@ -1367,26 +1367,24 @@ unsafe extern "C" fn rust_handle_inband_event(
             if rros_current() != 0 as *mut SpinLock<RrosThread> {
                 let _ret = put_current_thread();
             }
-        } // case INBAND_TASK_MIGRATION:
-        // 	handle_migration_event(data);
-        // 	break;
-        // case INBAND_TASK_RETUSER:
-        // 	handle_retuser_event();
-        // 	break;
-        // case INBAND_TASK_PTSTOP:
-        // 	handle_ptstop_event();
-        // 	break;
-        // case INBAND_TASK_PTCONT:
-        // 	handle_ptcont_event();
-        // 	break;
-        // case INBAND_TASK_PTSTEP:
-        // 	handle_ptstep_event(data);
-        // 	break;
-        // case INBAND_PROCESS_CLEANUP:
-        // 	handle_cleanup_event(data);
-        // 	break;
-        _ => {
-            pr_warn!("unknown inband event");
+        }
+        InbandEventType::InbandTaskMigration => {
+            pr_debug!("InbandTaskMigration is not implemented");
+        }
+        InbandEventType::InbandTaskRetuser => {
+            pr_debug!("InbandTaskRetuser is not implemented");
+        }
+        InbandEventType::InbandTaskPtstop => {
+            pr_debug!("InbandTaskPtstop is not implemented");
+        }
+        InbandEventType::InbandTaskPtcont => {
+            pr_debug!("InbandTaskPtcont is not implemented");
+        }
+        InbandEventType::InbandTaskPtstep => {
+            pr_debug!("InbandTaskPtstep is not implemented");
+        }
+        InbandEventType::InbandProcessCleanup => {
+            pr_debug!("InbandProcessCleanup is not implemented");
         }
     }
 }

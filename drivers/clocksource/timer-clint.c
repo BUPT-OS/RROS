@@ -121,7 +121,7 @@ static int clint_clock_next_event(unsigned long delta,
 
 static DEFINE_PER_CPU(struct clock_event_device, clint_clock_event) = {
 	.name		= "clint_clockevent",
-	.features	= CLOCK_EVT_FEAT_ONESHOT,
+	.features	= CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_PIPELINE,
 	.rating		= 100,
 	.set_next_event	= clint_clock_next_event,
 };
@@ -156,7 +156,7 @@ static irqreturn_t clint_timer_interrupt(int irq, void *dev_id)
 	struct clock_event_device *evdev = this_cpu_ptr(&clint_clock_event);
 
 	csr_clear(CSR_IE, IE_TIE);
-	evdev->event_handler(evdev);
+	clockevents_handle_event(evdev);
 
 	return IRQ_HANDLED;
 }

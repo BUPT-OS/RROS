@@ -7,11 +7,15 @@
 #ifndef _ASM_RISCV_MMU_CONTEXT_H
 #define _ASM_RISCV_MMU_CONTEXT_H
 
+#include "asm/mmu_context.h"
 #include <linux/mm_types.h>
 #include <asm-generic/mm_hooks.h>
 
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/dovetail.h>
+#include <linux/irq_pipeline.h>
+#include <linux/compiler.h>
 
 void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	struct task_struct *task);
@@ -20,7 +24,11 @@ void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 static inline void activate_mm(struct mm_struct *prev,
 			       struct mm_struct *next)
 {
+	unsigned long flags;
+
+	protect_inband_mm(flags);
 	switch_mm(prev, next, NULL);
+	unprotect_inband_mm(flags);
 }
 
 #define init_new_context init_new_context
@@ -31,6 +39,11 @@ static inline int init_new_context(struct task_struct *tsk,
 	atomic_long_set(&mm->context.id, 0);
 #endif
 	return 0;
+}
+
+static inline void switch_oob_mm(struct mm_struct *prev, struct mm_struct *next, struct task_struct *tsk)
+{
+	switch_mm(prev, next, tsk);
 }
 
 DECLARE_STATIC_KEY_FALSE(use_asid_allocator);

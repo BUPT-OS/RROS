@@ -10,6 +10,7 @@
 #include <linux/irqdomain.h>
 #include <linux/module.h>
 #include <linux/seq_file.h>
+#include <linux/irq_pipeline.h>
 #include <asm/sbi.h>
 #include <asm/smp.h>
 #include <asm/softirq_stack.h>
@@ -49,7 +50,7 @@ static void init_irq_stacks(void)
 }
 #else
 /* irq stack only needs to be 16 byte aligned - not IRQ_STACK_SIZE aligned. */
-DEFINE_PER_CPU_ALIGNED(ulong [IRQ_STACK_SIZE/sizeof(ulong)], irq_stack);
+DEFINE_PER_CPU_ALIGNED(ulong[IRQ_STACK_SIZE / sizeof(ulong)], irq_stack);
 
 static void init_irq_stacks(void)
 {
@@ -60,42 +61,44 @@ static void init_irq_stacks(void)
 }
 #endif /* CONFIG_VMAP_STACK */
 
-#ifdef CONFIG_HAVE_SOFTIRQ_ON_OWN_STACK
+#ifdef CONFIG_SOFTIRQ_ON_OWN_STACK
 void do_softirq_own_stack(void)
 {
 #ifdef CONFIG_IRQ_STACKS
 	if (on_thread_stack()) {
-		ulong *sp = per_cpu(irq_stack_ptr, smp_processor_id())
-					+ IRQ_STACK_SIZE/sizeof(ulong);
-		__asm__ __volatile(
-		"addi	sp, sp, -"RISCV_SZPTR  "\n"
-		REG_S"  ra, (sp)		\n"
-		"addi	sp, sp, -"RISCV_SZPTR  "\n"
-		REG_S"  s0, (sp)		\n"
-		"addi	s0, sp, 2*"RISCV_SZPTR "\n"
-		"move	sp, %[sp]		\n"
-		"call	__do_softirq		\n"
-		"addi	sp, s0, -2*"RISCV_SZPTR"\n"
-		REG_L"  s0, (sp)		\n"
-		"addi	sp, sp, "RISCV_SZPTR   "\n"
-		REG_L"  ra, (sp)		\n"
-		"addi	sp, sp, "RISCV_SZPTR   "\n"
-		:
-		: [sp] "r" (sp)
-		: "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
-		  "t0", "t1", "t2", "t3", "t4", "t5", "t6",
+		ulong *sp = per_cpu(irq_stack_ptr, smp_processor_id()) +
+			    IRQ_STACK_SIZE / sizeof(ulong);
+		__asm__ __volatile("addi	sp, sp, -" RISCV_SZPTR "\n" REG_S
+				   "  ra, (sp)		\n"
+				   "addi	sp, sp, -" RISCV_SZPTR "\n" REG_S
+				   "  s0, (sp)		\n"
+				   "addi	s0, sp, 2*" RISCV_SZPTR "\n"
+				   "move	sp, %[sp]		\n"
+				   "call	__do_softirq		\n"
+				   "addi	sp, s0, -2*" RISCV_SZPTR "\n" REG_L
+				   "  s0, (sp)		\n"
+				   "addi	sp, sp, " RISCV_SZPTR "\n" REG_L
+				   "  ra, (sp)		\n"
+				   "addi	sp, sp, " RISCV_SZPTR "\n"
+				   :
+				   : [sp] "r"(sp)
+				   : "a0", "a1", "a2", "a3", "a4", "a5", "a6",
+				     "a7", "t0", "t1", "t2", "t3", "t4", "t5",
+				     "t6",
 #ifndef CONFIG_FRAME_POINTER
-		  "s0",
+				     "s0",
 #endif
-		  "memory");
+				     "memory");
 	} else
 #endif
 		__do_softirq();
 }
-#endif /* CONFIG_HAVE_SOFTIRQ_ON_OWN_STACK */
+#endif /* CONFIG_SOFTIRQ_ON_OWN_STACK */
 
 #else
-static void init_irq_stacks(void) {}
+static void init_irq_stacks(void)
+{
+}
 #endif /* CONFIG_IRQ_STACKS */
 
 int arch_show_interrupts(struct seq_file *p, int prec)
@@ -112,3 +115,26 @@ void __init init_IRQ(void)
 		panic("No interrupt controller found.");
 	sbi_ipi_init();
 }
+
+DEFINE_PER_CPU(int, irq_nesting);
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+asmlinkage int notrace handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	if (this_cpu_inc_return(irq_nesting) == 1) {
+		handle_irq_pipelined(regs);
+		this_cpu_dec(irq_nesting);
+		return running_inband() && !arch_irqs_disabled();
+	}
+
+	return handle_irq_pipelined(regs);
+}
+
+#else
+asmlinkage int notrace handle_arch_irq_pipelined(struct pt_regs *regs)
+{
+	return handle_irq_pipelined(regs);
+}
+
+#endif /* CONFIG_IRQ_PIPELINE */

@@ -16,6 +16,8 @@
 #include <asm/cacheflush.h>
 #include <asm/mmu_context.h>
 
+// TODO: change tlb relevant functions to support dovetail
+
 #ifdef CONFIG_MMU
 
 DEFINE_STATIC_KEY_FALSE(use_asid_allocator);

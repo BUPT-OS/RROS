@@ -6,7 +6,6 @@
  * Copyright (C) 2012 Regents of the University of California
  */
 
-
 #include <linux/mm.h>
 #include <linux/kernel.h>
 #include <linux/interrupt.h>
@@ -22,13 +21,15 @@
 
 #include "../kernel/head.h"
 
+// TODO: add mark_trap_entry and mark_trap_exit to support dovetail.
+
 static void die_kernel_fault(const char *msg, unsigned long addr,
-		struct pt_regs *regs)
+			     struct pt_regs *regs)
 {
 	bust_spinlocks(1);
 
-	pr_alert("Unable to handle kernel %s at virtual address " REG_FMT "\n", msg,
-		addr);
+	pr_alert("Unable to handle kernel %s at virtual address " REG_FMT "\n",
+		 msg, addr);
 
 	bust_spinlocks(0);
 	die(regs, "Oops");
@@ -50,7 +51,8 @@ static inline void no_context(struct pt_regs *regs, unsigned long addr)
 	if (addr < PAGE_SIZE)
 		msg = "NULL pointer dereference";
 	else {
-		if (kfence_handle_page_fault(addr, regs->cause == EXC_STORE_PAGE_FAULT, regs))
+		if (kfence_handle_page_fault(
+			    addr, regs->cause == EXC_STORE_PAGE_FAULT, regs))
 			return;
 
 		msg = "paging request";
@@ -59,7 +61,8 @@ static inline void no_context(struct pt_regs *regs, unsigned long addr)
 	die_kernel_fault(msg, addr, regs);
 }
 
-static inline void mm_fault_error(struct pt_regs *regs, unsigned long addr, vm_fault_t fault)
+static inline void mm_fault_error(struct pt_regs *regs, unsigned long addr,
+				  vm_fault_t fault)
 {
 	if (fault & VM_FAULT_OOM) {
 		/*
@@ -72,7 +75,8 @@ static inline void mm_fault_error(struct pt_regs *regs, unsigned long addr, vm_f
 		}
 		pagefault_out_of_memory();
 		return;
-	} else if (fault & VM_FAULT_SIGBUS) {
+	} else if (fault & (VM_FAULT_SIGBUS | VM_FAULT_HWPOISON |
+			    VM_FAULT_HWPOISON_LARGE)) {
 		/* Kernel mode? Handle exceptions or die */
 		if (!user_mode(regs)) {
 			no_context(regs, addr);
@@ -84,8 +88,8 @@ static inline void mm_fault_error(struct pt_regs *regs, unsigned long addr, vm_f
 	BUG();
 }
 
-static inline void
-bad_area_nosemaphore(struct pt_regs *regs, int code, unsigned long addr)
+static inline void bad_area_nosemaphore(struct pt_regs *regs, int code,
+					unsigned long addr)
 {
 	/*
 	 * Something tried to access memory that isn't in our memory map.
@@ -93,23 +97,25 @@ bad_area_nosemaphore(struct pt_regs *regs, int code, unsigned long addr)
 	 */
 	/* User mode accesses just cause a SIGSEGV */
 	if (user_mode(regs)) {
+		mark_trap_entry(regs->cause, regs);
 		do_trap(regs, SIGSEGV, code, addr);
+		mark_trap_exit(regs->cause, regs);
 		return;
 	}
 
 	no_context(regs, addr);
 }
 
-static inline void
-bad_area(struct pt_regs *regs, struct mm_struct *mm, int code,
-	 unsigned long addr)
+static inline void bad_area(struct pt_regs *regs, struct mm_struct *mm,
+			    int code, unsigned long addr)
 {
 	mmap_read_unlock(mm);
 
 	bad_area_nosemaphore(regs, code, addr);
 }
 
-static inline void vmalloc_fault(struct pt_regs *regs, int code, unsigned long addr)
+static inline void vmalloc_fault(struct pt_regs *regs, int code,
+				 unsigned long addr)
 {
 	pgd_t *pgd, *pgd_k;
 	pud_t *pud_k;
@@ -238,6 +244,7 @@ void handle_page_fault(struct pt_regs *regs)
 	if (kprobe_page_fault(regs, cause))
 		return;
 
+	mark_trap_entry(regs->cause, regs);
 	/*
 	 * Fault-in kernel-space virtual memory on-demand.
 	 * The 'reference' page table is init_mm.pgd.
@@ -255,7 +262,7 @@ void handle_page_fault(struct pt_regs *regs)
 
 	/* Enable interrupts if they were enabled in the parent context. */
 	if (!regs_irqs_disabled(regs))
-		local_irq_enable();
+		hard_local_irq_enable();
 
 	/*
 	 * If we're in an interrupt, have no user context, or are running
@@ -270,11 +277,14 @@ void handle_page_fault(struct pt_regs *regs)
 	if (user_mode(regs))
 		flags |= FAULT_FLAG_USER;
 
-	if (!user_mode(regs) && addr < TASK_SIZE && unlikely(!(regs->status & SR_SUM))) {
+	if (!user_mode(regs) && addr < TASK_SIZE &&
+	    unlikely(!(regs->status & SR_SUM))) {
 		if (fixup_exception(regs))
 			return;
 
-		die_kernel_fault("access to user memory without uaccess routines", addr, regs);
+		die_kernel_fault(
+			"access to user memory without uaccess routines", addr,
+			regs);
 	}
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, addr);
@@ -347,7 +357,7 @@ retry:
 	if (fault_signal_pending(fault, regs)) {
 		if (!user_mode(regs))
 			no_context(regs, addr);
-		return;
+		goto out;
 	}
 
 	/* The fault is fully completed (including releasing mmap lock) */
@@ -371,7 +381,9 @@ done:
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		tsk->thread.bad_cause = cause;
 		mm_fault_error(regs, addr, fault);
-		return;
 	}
+
+out:
+	mark_trap_exit(regs->cause, regs);
 	return;
 }

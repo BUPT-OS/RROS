@@ -46,7 +46,8 @@ void __init smp_setup_processor_id(void)
 }
 
 static DEFINE_PER_CPU_READ_MOSTLY(int, ipi_dummy_dev);
-static int ipi_virq_base __ro_after_init;
+// TODO: ipi_virq_base 和 ipi_irq_base有什么区别
+int ipi_virq_base __ro_after_init;
 static int nr_ipi __ro_after_init = IPI_MAX;
 static struct irq_desc *ipi_desc[IPI_MAX] __read_mostly;
 
@@ -77,7 +78,7 @@ static inline void ipi_cpu_crash_stop(unsigned int cpu, struct pt_regs *regs)
 
 	atomic_dec(&waiting_for_crash_ipi);
 
-	local_irq_disable();
+	local_irq_disable_full();
 
 #ifdef CONFIG_HOTPLUG_CPU
 	if (cpu_has_hotplug(cpu))
@@ -94,24 +95,17 @@ static inline void ipi_cpu_crash_stop(unsigned int cpu, struct pt_regs *regs)
 }
 #endif
 
-static void send_ipi_mask(const struct cpumask *mask, enum ipi_message_type op)
+static void __send_ipi_mask(const struct cpumask *mask, enum ipi_message_type op)
 {
 	__ipi_send_mask(ipi_desc[op], mask);
 }
 
-static void send_ipi_single(int cpu, enum ipi_message_type op)
+static void __send_ipi_single(int cpu, enum ipi_message_type op)
 {
 	__ipi_send_mask(ipi_desc[op], cpumask_of(cpu));
 }
 
-#ifdef CONFIG_IRQ_WORK
-void arch_irq_work_raise(void)
-{
-	send_ipi_single(smp_processor_id(), IPI_IRQ_WORK);
-}
-#endif
-
-static irqreturn_t handle_IPI(int irq, void *data)
+static void __handle_IPI(int irq, void *data)
 {
 	int ipi = irq - ipi_virq_base;
 
@@ -140,9 +134,101 @@ static irqreturn_t handle_IPI(int irq, void *data)
 		pr_warn("CPU%d: unhandled IPI%d\n", smp_processor_id(), ipi);
 		break;
 	}
+}
+
+
+#ifdef CONFIG_IRQ_PIPELINE
+
+static DEFINE_PER_CPU(unsigned long, ipi_messages);
+
+static DEFINE_PER_CPU(unsigned int [IPI_MAX], ipi_counts);
+
+static irqreturn_t handle_IPI(int irq, void *data)
+{
+	unsigned long *pmsg;
+	unsigned int ipinr;
+
+	/*
+	 * Decode in-band IPIs (0..NR_IPI - 1) multiplexed over
+	 * SGI0. Out-of-band IPIs (SGI1, SGI2) have their own
+	 * individual handler.
+	 */
+
+	pmsg = raw_cpu_ptr(&ipi_messages);
+	while (*pmsg) {
+		ipinr = ffs(*pmsg) - 1;
+		clear_bit(ipinr, pmsg);
+		__this_cpu_inc(ipi_counts[ipinr]);
+		__handle_IPI(ipinr, data);
+	}
 
 	return IRQ_HANDLED;
 }
+
+
+static void send_ipi_mask(const struct cpumask *mask, enum ipi_message_type op)
+{
+	unsigned int cpu;
+
+	/* regular in-band IPI (multiplexed over SGI0). */
+	for_each_cpu(cpu, mask)
+		set_bit(op, &per_cpu(ipi_messages, cpu));
+
+	// TODO: maybe arch specific
+	wmb();
+	__send_ipi_mask(mask, 0);
+}
+
+static void send_ipi_single(int cpu, enum ipi_message_type op)
+{
+	set_bit(op, &per_cpu(ipi_messages, cpu));
+
+	// TODO: maybe arch specific
+	wmb();
+	__send_ipi_single(cpu, 0);
+}
+
+void irq_send_oob_ipi(unsigned int irq,
+		const struct cpumask *cpumask)
+{
+	unsigned int op = irq - ipi_virq_base;
+
+	if (WARN_ON(irq_pipeline_debug() &&
+		    (op < OOB_IPI_OFFSET ||
+		     op >= OOB_IPI_OFFSET + OOB_NR_IPI)))
+		return;
+
+	/* Out-of-band IPI (OP1-2). */
+	__send_ipi_mask(cpumask, op);
+}
+
+#else
+static irqreturn_t handle_IPI(int irq, void *data)
+{
+	__handle_IPI(irq, data);
+	return IRQ_HANDLED;
+}
+
+
+static void send_ipi_mask(const struct cpumask *mask, enum ipi_message_type op)
+{
+	__send_ipi_mask(mask, op);
+}
+
+static void send_ipi_single(int cpu, enum ipi_message_type op)
+{
+	__send_ipi_single(cpu, op);
+}
+
+#endif /* CONFIG_IRQ_PIPELINE */
+
+#ifdef CONFIG_IRQ_WORK
+void arch_irq_work_raise(void)
+{
+	send_ipi_single(smp_processor_id(), IPI_IRQ_WORK);
+}
+#endif
+
 
 void riscv_ipi_enable(void)
 {
@@ -174,9 +260,10 @@ bool riscv_ipi_have_virq_range(void)
 DEFINE_STATIC_KEY_FALSE(riscv_ipi_for_rfence);
 EXPORT_SYMBOL_GPL(riscv_ipi_for_rfence);
 
+
 void riscv_ipi_set_virq_range(int virq, int nr, bool use_for_rfence)
 {
-	int i, err;
+	int i, err, inband_nr_ipi;
 
 	if (WARN_ON(ipi_virq_base))
 		return;
@@ -185,11 +272,16 @@ void riscv_ipi_set_virq_range(int virq, int nr, bool use_for_rfence)
 	nr_ipi = min(nr, IPI_MAX);
 	ipi_virq_base = virq;
 
+	inband_nr_ipi = irqs_pipelined() ? 1 : nr_ipi;
+
 	/* Request IPIs */
 	for (i = 0; i < nr_ipi; i++) {
-		err = request_percpu_irq(ipi_virq_base + i, handle_IPI,
-					 "IPI", &ipi_dummy_dev);
-		WARN_ON(err);
+		if(i < inband_nr_ipi) {
+			// TODO: ipi_dummy_dev在这里可能不太正确
+			err = request_percpu_irq(ipi_virq_base + i, handle_IPI,
+						"IPI", &ipi_dummy_dev);
+			WARN_ON(err);
+		}
 
 		ipi_desc[i] = irq_to_desc(ipi_virq_base + i);
 		irq_set_status_flags(ipi_virq_base + i, IRQ_HIDDEN);
@@ -213,6 +305,13 @@ static const char * const ipi_names[] = {
 	[IPI_IRQ_WORK]		= "IRQ work interrupts",
 	[IPI_TIMER]		= "Timer broadcast interrupts",
 };
+
+// TODO: unused, should use in show_ipi_stats
+// static unsigned int get_ipi_count(struct irq_desc *desc, unsigned int cpu)
+// {
+// 	unsigned int irq = irq_desc_get_irq(desc);
+// 	return per_cpu(ipi_counts[irq - ipi_virq_base], cpu);
+// }
 
 void show_ipi_stats(struct seq_file *p, int prec)
 {

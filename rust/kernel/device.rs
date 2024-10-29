@@ -121,6 +121,14 @@ impl Device {
             }
         }
     }
+
+    /// Unregister the device using bindings::device_unregister
+    pub fn unregister(&mut self) {
+        // SAFETY: When we call unregister, dev is always valid.
+        unsafe {
+            bindings::device_unregister(self.0);
+        }
+    }
 }
 
 /// Class dev_node call back wrapper

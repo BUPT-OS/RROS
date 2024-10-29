@@ -1131,7 +1131,7 @@ pub static mut RROS_POLL_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
         dispose: None,
         attrs: None,
         flags: factory::RrosFactoryType::SINGLE,
-        inside: Some(factory::RrosFactoryInside {
+        inside: factory::RrosFactoryInside {
             type_: DeviceType::new(),
             class: None,
             cdev: None,
@@ -1144,6 +1144,6 @@ pub static mut RROS_POLL_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };

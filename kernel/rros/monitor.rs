@@ -313,7 +313,7 @@ pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
         dispose: Some(monitor_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
         flags: factory::RrosFactoryType::CLONE,
-        inside: Some(factory::RrosFactoryInside {
+        inside: factory::RrosFactoryInside {
             type_: DeviceType::new(),
             class: None,
             cdev: None,
@@ -326,12 +326,12 @@ pub static mut RROS_MONITOR_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };
 
 #[allow(dead_code)]
-pub fn monitor_factory_dispose(_ele: factory::RrosElement) {}
+pub fn monitor_factory_dispose(_ele: &mut factory::RrosElement) {}
 
 struct MonitorOps;
 

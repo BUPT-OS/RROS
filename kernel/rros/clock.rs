@@ -546,7 +546,7 @@ pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
         dispose: Some(clock_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
         flags: factory::RrosFactoryType::Invalid,
-        inside: Some(factory::RrosFactoryInside {
+        inside: factory::RrosFactoryInside {
             type_: DeviceType::new(),
             class: None,
             cdev: None,
@@ -559,7 +559,7 @@ pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };
 
@@ -1028,7 +1028,7 @@ impl FileOperations for ClockOps {
     }
 }
 
-pub fn clock_factory_dispose(ele: factory::RrosElement) {}
+pub fn clock_factory_dispose(ele: &mut factory::RrosElement) {}
 
 fn timer_needs_enqueuing(timer: *mut RrosTimer) -> bool {
     unsafe {

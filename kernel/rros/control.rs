@@ -28,7 +28,7 @@ pub static mut RROS_CONTROL_FACTORY: SpinLock<RrosFactory> = unsafe {
         dispose: None,
         attrs: None,
         flags: crate::factory::RrosFactoryType::SINGLE,
-        inside: Some(RrosFactoryInside {
+        inside: RrosFactoryInside {
             type_: DeviceType::new(),
             class: None,
             cdev: None,
@@ -41,7 +41,7 @@ pub static mut RROS_CONTROL_FACTORY: SpinLock<RrosFactory> = unsafe {
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };
 

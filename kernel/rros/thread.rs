@@ -168,7 +168,7 @@ pub static mut RROS_THREAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
         attrs: None, //sysfs::attribute_group::new(),
         // TODO: rename this flags to the bit level variable RROS_FACTORY_CLONE and RROS_FACTORY_SINGLE
         flags: factory::RrosFactoryType::CLONE,
-        inside: Some(factory::RrosFactoryInside {
+        inside: factory::RrosFactoryInside {
             type_: DeviceType::new(),
             class: None,
             cdev: None,
@@ -181,7 +181,7 @@ pub static mut RROS_THREAD_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };
 
@@ -1386,7 +1386,7 @@ unsafe extern "C" fn rust_handle_inband_event(
         // 	handle_cleanup_event(data);
         // 	break;
         _ => {
-            pr_warn!("unknown inband event");
+            pr_debug!("unknown inband event");
         }
     }
 }

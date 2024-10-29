@@ -802,16 +802,8 @@ impl FileOpener<u8> for ObservableOps {
             let b = KgidT::from_inode_ptr(shared as *const u8);
             // let a = KuidT((*(shared as *const u8 as *const bindings::inode)).i_uid);
             // let b = KgidT((*(shared as *const u8 as *const bindings::inode)).i_gid);
-            (*RROS_OBSERVABLE_FACTORY.locked_data().get())
-                .inside
-                .as_mut()
-                .unwrap()
-                .kuid = Some(a);
-            (*RROS_OBSERVABLE_FACTORY.locked_data().get())
-                .inside
-                .as_mut()
-                .unwrap()
-                .kgid = Some(b);
+            (*RROS_OBSERVABLE_FACTORY.locked_data().get()).inside.kuid = Some(a);
+            (*RROS_OBSERVABLE_FACTORY.locked_data().get()).inside.kgid = Some(b);
         }
         // bindings::stream_open();
         Ok(Box::try_new(data)?)
@@ -949,7 +941,7 @@ pub fn observable_factory_build(
     unsafe { (*observable_ptr).element.clone() }
 }
 
-pub fn observable_factory_dispose(_ele: RrosElement) {
+pub fn observable_factory_dispose(_ele: &mut RrosElement) {
     pr_debug!("[observable] observable_factory_dispose");
 }
 
@@ -961,7 +953,7 @@ pub static mut RROS_OBSERVABLE_FACTORY: SpinLock<factory::RrosFactory> = unsafe 
         dispose: Some(observable_factory_dispose),
         attrs: None,
         flags: factory::RrosFactoryType::CLONE,
-        inside: Some(RrosFactoryInside {
+        inside: RrosFactoryInside {
             type_: device::DeviceType::new(),
             class: None,
             cdev: None,
@@ -974,6 +966,6 @@ pub static mut RROS_OBSERVABLE_FACTORY: SpinLock<factory::RrosFactory> = unsafe 
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };

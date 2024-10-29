@@ -848,7 +848,7 @@ pub static mut RROS_PROXY_FACTORY: SpinLock<RrosFactory> = unsafe {
         dispose: Some(proxy_factory_dispose),
         attrs: None, //sysfs::attribute_group::new(),
         flags: crate::factory::RrosFactoryType::CLONE,
-        inside: Some(RrosFactoryInside {
+        inside: RrosFactoryInside {
             type_: DeviceType::new(),
             class: None,
             cdev: None,
@@ -861,7 +861,7 @@ pub static mut RROS_PROXY_FACTORY: SpinLock<RrosFactory> = unsafe {
             name_hash: None,
             hash_lock: None,
             register: None,
-        }),
+        },
     })
 };
 pub struct ProxyOps;
@@ -940,4 +940,4 @@ impl FileOperations for ProxyOps {
     }
 }
 
-pub fn proxy_factory_dispose(_ele: RrosElement) {}
+pub fn proxy_factory_dispose(_ele: &mut RrosElement) {}

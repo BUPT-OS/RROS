@@ -313,14 +313,16 @@ impl HlistNode {
     pub fn new() -> Self {
         Self(bindings::hlist_node::default())
     }
-    // pub fn hash_del(&mut self){
-    //     extern "C"{
-    //         fn rust_helper_hash_del(node: *mut bindings::hlist_node);
-    //     }
-    //     unsafe{
-    //         rust_helper_hash_del(&mut self.0 as *mut bindings::hlist_node);
-    //     }
-    // }
+
+    /// Wrapper function rust_helper_hash_del
+    pub fn hash_del(&mut self) {
+        extern "C" {
+            fn rust_helper_hash_del(node: *mut bindings::hlist_node);
+        }
+        unsafe {
+            rust_helper_hash_del(&mut self.0 as *mut bindings::hlist_node);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -12,7 +12,7 @@ use kernel::{
     ptrace::{IrqStage, PtRegs},
     sync::{Lock, SpinLock},
     task::Task,
-    uapi::time_types::{KernelOldTimespec, KernelTimespec},
+    time_types::{KernelOldTimespec, KernelTimespec},
     user_ptr::UserSlicePtr,
 };
 

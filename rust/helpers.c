@@ -551,13 +551,6 @@ refcount_t rust_helper_REFCOUNT_INIT(int n)
 }
 EXPORT_SYMBOL_GPL(rust_helper_REFCOUNT_INIT);
 
-struct class *rust_helper_class_create(const char *name)
-{
-	struct class *res = class_create(name);
-	return res;
-}
-EXPORT_SYMBOL_GPL(rust_helper_class_create);
-
 const char *rust_helper_dev_name(const struct device *dev)
 {
 	return dev_name(dev);

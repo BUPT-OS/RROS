@@ -23,9 +23,4 @@
     unsafe_op_in_unsafe_fn
 )]
 
-extern crate bindings;
-
 include!(concat!(env!("OBJTREE"), "/rust/uapi/uapi_generated.rs"));
-
-#[cfg(CONFIG_RROS)]
-pub mod time_types;

@@ -142,6 +142,8 @@ impl<T, B: Backend> Lock<T, B> {
     }
 }
 
+
+
 #[cfg(not(CONFIG_RROS_SPINLOCK))]
 impl<T: ?Sized, B: Backend> Lock<T, B> {
     /// Acquires the lock and gives the caller access to the data protected by it.
@@ -153,11 +155,20 @@ impl<T: ?Sized, B: Backend> Lock<T, B> {
         unsafe { Guard::new(self, state) }
     }
 
-    pub fn unlock(&self) {
+    pub fn lock_noguard(&self) {
+        // SAFETY: `spin_lock` points to valid memory.
+        // unsafe { rust_helper_spin_lock(self.spin_lock.get()) };
+        unsafe { B::lock(self.state.get()) };
+        // unsafe { rust_helper_hard_spin_lock((*self.spin_lock.get()).rlock()
+        // as *mut bindings::raw_spinlock) };
+    }
+
+    pub fn unlock(&self, guard_state: &B::GuardState) {
         // SAFETY: `spin_lock` points to valid memory.
         // unsafe { rust_helper_spin_unlock(self.spin_lock.get()) };
+        //TODO: 
         unsafe {
-            rust_helper_hard_spin_unlock(self.lock().lock as *const Lock<_, _>  as *mut bindings::raw_spinlock)
+            B::unlock(self.state.get(),guard_state);
         };
         // unsafe { rust_helper_hard_spin_unlock((*self.spin_lock.get()).rlock()
         // as *mut bindings::raw_spinlock) };
@@ -168,14 +179,6 @@ impl<T: ?Sized, B: Backend> Lock<T, B> {
         &self.data
     }
 
-    pub fn lock_noguard(&self) {
-        // SAFETY: `spin_lock` points to valid memory.
-        // unsafe { rust_helper_spin_lock(self.spin_lock.get()) };
-        unsafe { rust_helper_hard_spin_lock(self.lock().lock as *const Lock<_, _> as *mut bindings::raw_spinlock) };
-        // unsafe { rust_helper_hard_spin_lock((*self.spin_lock.get()).rlock()
-        // as *mut bindings::raw_spinlock) };
-    }
-
     /// The `irq_lock_noguard` method acquires the lock and disables interrupts, but does not return a `Guard`. Instead, it returns a `u64` that represents the previous interrupt state. This method is unsafe because it does not provide any guarantees about the lifetime of the lock.
     // FIXME: use this to enable the smp function
     pub fn irq_lock_noguard(&self) -> u64 {
@@ -183,6 +186,7 @@ impl<T: ?Sized, B: Backend> Lock<T, B> {
         unsafe {
 
             rust_helper_raw_spin_lock_irqsave(self.lock().lock as *const Lock<_, _> as *mut bindings::hard_spinlock_t)
+        
         }
     }
 

@@ -1218,7 +1218,6 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
         clocklist_lock_init();
         CLOCKLIST_LOCK.get().unwrap().lock();
         CLOCK_LIST.add_head(clock);
-        CLOCKLIST_LOCK.get().unwrap().unlock(&());
     }
 
     Ok(0)

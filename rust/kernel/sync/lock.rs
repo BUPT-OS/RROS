@@ -163,16 +163,6 @@ impl<T: ?Sized, B: Backend> Lock<T, B> {
         // as *mut bindings::raw_spinlock) };
     }
 
-    pub fn unlock(&self, guard_state: &B::GuardState) {
-        // SAFETY: `spin_lock` points to valid memory.
-        // unsafe { rust_helper_spin_unlock(self.spin_lock.get()) };
-        //TODO: 
-        unsafe {
-            B::unlock(self.state.get(),guard_state);
-        };
-        // unsafe { rust_helper_hard_spin_unlock((*self.spin_lock.get()).rlock()
-        // as *mut bindings::raw_spinlock) };
-    }
 
     pub fn locked_data(&self) -> &UnsafeCell<T> {
         // SAFETY: The caller guarantees that self is initialised.

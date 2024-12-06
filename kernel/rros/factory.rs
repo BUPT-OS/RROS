@@ -350,11 +350,7 @@ fn create_element_device(
             //     goto fail_hash;
             // }
 
-            // hash_add(fac->name_hash, &e->hash, hlen);
-
-            unsafe {
-                inside.hash_lock.as_ref().unwrap().unlock(&());
-            }
+            // hash_add(fac->name_hash, &e->hash, hlen)
 
             0
         }
@@ -725,9 +721,7 @@ pub fn rros_init_element(
         }
         None => 1,
     };
-    unsafe {
-        fac.unlock(&());
-    }
+
     drop(fac_lock);
     let e_clone = e.clone();
     let mut e_mut = e_clone.borrow_mut();
@@ -941,7 +935,6 @@ fn rros_create_factory(
         None => 1,
     };
 
-    unsafe { fac.unlock(&()) };
     match res {
         1 => Err(kernel::Error::EINVAL),
         _ => Ok(0),

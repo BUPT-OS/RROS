@@ -104,7 +104,7 @@ impl RrosNetProto for EthernetRrosNetProto {
             queue.lock.lock_noguard();
             unsafe { rust_helper_list_add(&mut sock.next_sub, &mut queue.subscribers) }
             // rros_spin_unlock
-            unsafe { queue.lock.unlock() };
+            unsafe { queue.lock.unlock(&()) };
             rros_enable_preempt();
             // drop q_guard here
         } else {
@@ -204,7 +204,7 @@ impl RrosNetProto for EthernetRrosNetProto {
             self.detach(sock);
             let ret = self.attach(sock, be16::new(sll.get_mut().sll_protocol));
             if ret != 0 {
-                unsafe { sock.oob_lock.unlock() };
+                unsafe { sock.oob_lock.unlock(&()) };
                 if dev.is_some() {
                     let mut dev = dev.unwrap();
                     dev.put_dev();
@@ -219,7 +219,7 @@ impl RrosNetProto for EthernetRrosNetProto {
             sock.binding.vlan_ifindex = new_ifindex;
         }
         sock.oob_lock.irq_unlock_noguard(flags);
-        unsafe { sock.oob_lock.unlock() };
+        unsafe { sock.oob_lock.unlock(&()) };
         if dev.is_some() {
             let mut dev = dev.unwrap();
             dev.put_dev();
@@ -570,7 +570,7 @@ fn __packet_deliver(rxq: &mut RrosNetRxqueue, skb: &mut RrosSkBuff, protocol: be
 
         rsk = list_next_entry!(rsk, RrosSocket, next_sub);
     }
-    unsafe { rxq.lock.unlock() };
+    unsafe { rxq.lock.unlock(&()) };
 
     delivered
 }

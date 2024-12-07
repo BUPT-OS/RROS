@@ -926,7 +926,7 @@ fn rros_create_factory(
                 [types::HlistHead::new(); NAME_HASH_TABLE_SIZE as usize];
             types::hash_init(hashname[0].as_list_head(), NAME_HASH_TABLE_SIZE);
             inside.name_hash = Some(hashname);
-            let mut hash_lock = unsafe { Box::pin_init(new_spinlock!(0,"value")).unwrap() };
+            let mut hash_lock = unsafe { Box::pin_init(new_spinlock!(0,"device_name_hash_lock")).unwrap() };
             // let pinned = unsafe { Pin::new_unchecked(&mut hash_lock) };
             // spinlock_init!(pinned, "device_name_hash_lock");
             inside.hash_lock = Some(hash_lock);

@@ -1481,6 +1481,7 @@ config CC_HAVE_SHADOW_CALL_STACK
 
 source "kernel/Kconfig.dovetail"
 source "kernel/Kconfig.rros"
+source "kernel/Kconfig.rros_spinlock"
 
 config PARAVIRT
 	bool "Enable paravirtualization code"

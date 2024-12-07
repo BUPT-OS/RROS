@@ -12,7 +12,7 @@ use crate::{
     sched::{rros_disable_preempt, rros_enable_preempt},
     timeout::{RrosTmode, RROS_INFINITE, RROS_NONBLOCK},
 };
-use core::{convert::TryInto, default::Default, mem::transmute, ops::DerefMut, ptr::NonNull, u16};
+use core::{convert::TryInto, default::Default, mem::transmute, ops::DerefMut, ops::Deref,ptr::NonNull, u16};
 use kernel::{
     bindings, c_types,
     endian::be16,
@@ -22,14 +22,25 @@ use kernel::{
     prelude::*,
     skbuff,
     socket::Sockaddr,
-    sync::Lock,
+    sync::Lock,sync::SpinLock,
     types::*,
     Error, Result,
+    new_spinlock,
 };
+use core::cell::OnceCell;
 
 // protocol hash table
-init_static_sync! {
-    static PROTOCOL_HASHTABLE: kernel::sync::SpinLock<Hashtable::<8>> = Hashtable::<8>::new();
+// init_static_sync! {
+//     static PROTOCOL_HASHTABLE: kernel::sync::SpinLock<Hashtable::<8>> = Hashtable::<8>::new();
+// }
+pub static mut PROTOCOL_HASHTABLE: OnceCell<Pin<Box<SpinLock<Hashtable<8>>>>> = OnceCell::new();
+
+pub fn protocol_hashtable_init() {
+    unsafe {
+        PROTOCOL_HASHTABLE.get_or_init(|| {
+            Box::pin_init(new_spinlock!(Hashtable::<8>::new())).unwrap()
+        });
+    }
 }
 
 fn get_protol_hash(protocol: be16) -> u32 {
@@ -41,7 +52,8 @@ fn get_protol_hash(protocol: be16) -> u32 {
 }
 
 fn find_rxqueue(hkey: u32) -> Option<NonNull<RrosNetRxqueue>> {
-    let head = unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).head(hkey) };
+    protocol_hashtable_init();
+    let head = unsafe { (*PROTOCOL_HASHTABLE.get().unwrap().locked_data().get()).head(hkey) };
     hash_for_each_possible!(rxq, head, RrosNetRxqueue, hash, {
         if unsafe { (*rxq).hkey } == hkey {
             return NonNull::new(rxq as *mut RrosNetRxqueue);
@@ -76,7 +88,9 @@ impl RrosNetProto for EthernetRrosNetProto {
         }
         let mut rxq = rxq.unwrap();
         let mut redundant_rxq = false;
-        let flags = PROTOCOL_HASHTABLE.irq_lock_noguard();
+
+        protocol_hashtable_init();
+        let flags = unsafe { PROTOCOL_HASHTABLE.get().unwrap().irq_lock_noguard() };
         sock.proto = Some(&ETHERNET_NET_PROTO);
         sock.binding.proto_hash = hkey;
         sock.protocol = protocol;
@@ -90,15 +104,14 @@ impl RrosNetProto for EthernetRrosNetProto {
             queue.lock.lock_noguard();
             unsafe { rust_helper_list_add(&mut sock.next_sub, &mut queue.subscribers) }
             // rros_spin_unlock
-            unsafe { queue.lock.unlock() };
             rros_enable_preempt();
             // drop q_guard here
         } else {
             let queue = unsafe { &mut *rxq.as_ptr() };
-            unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).add(&mut queue.hash.0, hkey) };
+            unsafe { (*PROTOCOL_HASHTABLE.get().unwrap().locked_data().get()).add(&mut queue.hash.0, hkey) };
             unsafe { rust_helper_list_add(&mut sock.next_sub, &mut queue.subscribers) }
         }
-        PROTOCOL_HASHTABLE.irq_unlock_noguard(flags);
+        unsafe { PROTOCOL_HASHTABLE.get().unwrap().irq_unlock_noguard(flags) };
 
         if redundant_rxq {
             unsafe { rxq.as_mut().free() };
@@ -116,17 +129,18 @@ impl RrosNetProto for EthernetRrosNetProto {
         let mut tmp = bindings::list_head::default();
         init_list_head!(&mut tmp);
 
-        let flags = PROTOCOL_HASHTABLE.irq_lock_noguard();
+        protocol_hashtable_init();
+        let flags = unsafe { PROTOCOL_HASHTABLE.get().unwrap().irq_lock_noguard() };
 
         let rxq = unsafe { find_rxqueue(sock.binding.proto_hash).unwrap().as_mut() };
 
         list_del_init!(&mut sock.next_sub);
         if unsafe { rust_helper_list_empty(&rxq.subscribers) } {
-            unsafe { (*PROTOCOL_HASHTABLE.locked_data().get()).del(&mut rxq.hash.0) };
+            unsafe { (*PROTOCOL_HASHTABLE.get().unwrap().locked_data().get()).del(&mut rxq.hash.0) };
             list_add!(&mut rxq.next, &mut tmp);
         }
 
-        PROTOCOL_HASHTABLE.irq_unlock_noguard(flags);
+        unsafe { PROTOCOL_HASHTABLE.get().unwrap().irq_unlock_noguard(flags) };
 
         list_for_each_entry_safe!(
             rxq,
@@ -189,7 +203,6 @@ impl RrosNetProto for EthernetRrosNetProto {
             self.detach(sock);
             let ret = self.attach(sock, be16::new(sll.get_mut().sll_protocol));
             if ret != 0 {
-                unsafe { sock.oob_lock.unlock() };
                 if dev.is_some() {
                     let mut dev = dev.unwrap();
                     dev.put_dev();
@@ -204,7 +217,6 @@ impl RrosNetProto for EthernetRrosNetProto {
             sock.binding.vlan_ifindex = new_ifindex;
         }
         sock.oob_lock.irq_unlock_noguard(flags);
-        unsafe { sock.oob_lock.unlock() };
         if dev.is_some() {
             let mut dev = dev.unwrap();
             dev.put_dev();
@@ -555,8 +567,6 @@ fn __packet_deliver(rxq: &mut RrosNetRxqueue, skb: &mut RrosSkBuff, protocol: be
 
         rsk = list_next_entry!(rsk, RrosSocket, next_sub);
     }
-    unsafe { rxq.lock.unlock() };
-
     delivered
 }
 
@@ -564,13 +574,14 @@ fn packet_deliver(skb: &mut RrosSkBuff, protocol: be16) -> bool {
     let hkey = get_protol_hash(protocol);
 
     let mut ret = false;
-    let flags = PROTOCOL_HASHTABLE.irq_lock_noguard();
+    protocol_hashtable_init();
+    let flags = unsafe { PROTOCOL_HASHTABLE.get().unwrap().irq_lock_noguard() };
 
     if let Some(mut rxq) = find_rxqueue(hkey) {
         ret = __packet_deliver(unsafe { rxq.as_mut() }, skb, protocol);
     }
 
-    PROTOCOL_HASHTABLE.irq_unlock_noguard(flags);
+    unsafe { PROTOCOL_HASHTABLE.get().unwrap().irq_unlock_noguard(flags) };
     ret
 }
 

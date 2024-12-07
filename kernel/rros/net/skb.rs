@@ -21,7 +21,12 @@ use kernel::{
     pr_debug, skbuff,
     sync::{Lock, SpinLock},
     Result,
+    new_spinlock,
 };
+use core::pin::Pin;
+use alloc::boxed::Box;
+use kernel::init::InPlaceInit;
+use core::cell::OnceCell;
 
 struct CloneControl {
     pub(crate) queue: bindings::list_head,
@@ -39,22 +44,54 @@ struct RecyclingWork {
 unsafe impl Sync for RecyclingWork {}
 unsafe impl Send for RecyclingWork {}
 
-init_static_sync! {
-    static CLONE_QUEUE: SpinLock<CloneControl> = CloneControl{
-        queue: bindings::list_head{
-            next: core::ptr::null_mut() as *mut bindings::list_head,
-            prev: core::ptr::null_mut() as *mut bindings::list_head,
-        },
-        count: 0,
-    };
-    static RECYCLER_WORK : SpinLock<RecyclingWork> = RecyclingWork{
-        work : RrosWork::new(),
-        count : 0,
-        queue : bindings::list_head{
-            next: core::ptr::null_mut() as *mut bindings::list_head,
-            prev: core::ptr::null_mut() as *mut bindings::list_head,
-        },
-    };
+// init_static_sync! {
+//     static CLONE_QUEUE: SpinLock<CloneControl> = CloneControl{
+//         queue: bindings::list_head{
+//             next: core::ptr::null_mut() as *mut bindings::list_head,
+//             prev: core::ptr::null_mut() as *mut bindings::list_head,
+//         },
+//         count: 0,
+//     };
+//     static RECYCLER_WORK : SpinLock<RecyclingWork> = RecyclingWork{
+//         work : RrosWork::new(),
+//         count : 0,
+//         queue : bindings::list_head{
+//             next: core::ptr::null_mut() as *mut bindings::list_head,
+//             prev: core::ptr::null_mut() as *mut bindings::list_head,
+//         },
+//     };
+// }
+static mut CLONE_QUEUE: OnceCell<Pin<Box<SpinLock<CloneControl>>>> = OnceCell::new();
+
+pub fn clone_queue_init() {
+    unsafe {
+        CLONE_QUEUE.get_or_init(|| {
+            Box::pin_init(new_spinlock!(CloneControl {
+                queue: bindings::list_head {
+                    next: core::ptr::null_mut() as *mut bindings::list_head,
+                    prev: core::ptr::null_mut() as *mut bindings::list_head,
+                },
+                count: 0,
+            })).unwrap()
+        });
+    }
+}
+
+static mut RECYCLER_WORK: OnceCell<Pin<Box<SpinLock<RecyclingWork>>>> = OnceCell::new();
+
+pub fn recycler_work_init() {
+    unsafe {
+        RECYCLER_WORK.get_or_init(|| {
+            Box::pin_init(new_spinlock!(RecyclingWork {
+                work: RrosWork::new(),
+                count: 0,
+                queue: bindings::list_head {
+                    next: core::ptr::null_mut() as *mut bindings::list_head,
+                    prev: core::ptr::null_mut() as *mut bindings::list_head,
+                },
+            })).unwrap()
+        });
+    }
 }
 
 const SKB_RECYCLING_THRESHOLD: usize = 64;
@@ -67,9 +104,10 @@ pub struct RrosNetCb {
 }
 
 fn maybe_kick_recycler() {
+    recycler_work_init();
     unsafe {
-        if (*RECYCLER_WORK.locked_data().get()).count > SKB_RECYCLING_THRESHOLD as i32 {
-            (*RECYCLER_WORK.locked_data().get()).work.call_inband();
+        if (*RECYCLER_WORK.get().unwrap().locked_data().get()).count > SKB_RECYCLING_THRESHOLD as i32 {
+            (*RECYCLER_WORK.get().unwrap().locked_data().get()).work.call_inband();
         }
     }
 }
@@ -109,8 +147,9 @@ impl RrosSkBuff {
                 skb: *mut bindings::sk_buff,
             );
         }
-        let flags = CLONE_QUEUE.irq_lock_noguard();
-        let clone_data_control = unsafe { &mut *CLONE_QUEUE.locked_data().get() };
+        clone_queue_init();
+        let flags = unsafe { CLONE_QUEUE.get().unwrap().irq_lock_noguard() };
+        let clone_data_control = unsafe { &mut *CLONE_QUEUE.get().unwrap().locked_data().get() };
         let clone: *mut bindings::sk_buff =
             if unsafe { !rust_helper_list_empty(&clone_data_control.queue) } {
                 clone_data_control.count -= 1;
@@ -123,7 +162,7 @@ impl RrosSkBuff {
             } else {
                 panic!("No more skb to clone");
             };
-        CLONE_QUEUE.irq_unlock_noguard(flags);
+        unsafe { CLONE_QUEUE.get().unwrap().irq_unlock_noguard(flags) };
 
         unsafe {
             rust_helper_skb_morph_oob_skb(clone, self.0.as_ptr());
@@ -303,15 +342,16 @@ impl RrosSkBuff {
         extern "C" {
             fn rust_helper_list_add(new: *mut bindings::list_head, head: *mut bindings::list_head);
         }
-        let flags = RECYCLER_WORK.irq_lock_noguard();
+        recycler_work_init();
+        let flags = unsafe { RECYCLER_WORK.get().unwrap().irq_lock_noguard() };
         unsafe {
             rust_helper_list_add(
                 self.list_mut(),
-                &mut (*RECYCLER_WORK.locked_data().get()).queue,
+                &mut (*RECYCLER_WORK.get().unwrap().locked_data().get()).queue,
             );
         }
-        unsafe { (*RECYCLER_WORK.locked_data().get()).count += 1 };
-        RECYCLER_WORK.irq_unlock_noguard(flags);
+        unsafe { (*RECYCLER_WORK.get().unwrap().locked_data().get()).count += 1 };
+        unsafe { RECYCLER_WORK.get().unwrap().irq_unlock_noguard(flags) };
     }
 
     fn free_clone(&mut self) {
@@ -319,21 +359,22 @@ impl RrosSkBuff {
         extern "C" {
             fn rust_helper_list_add(new: *mut bindings::list_head, head: *mut bindings::list_head);
         }
-        let flags = CLONE_QUEUE.irq_lock_noguard();
+        clone_queue_init();
+        let flags = unsafe { CLONE_QUEUE.get().unwrap().irq_lock_noguard() };
         unsafe {
             rust_helper_list_add(
                 self.list_mut() as *mut bindings::list_head,
-                &mut (*CLONE_QUEUE.locked_data().get()).queue,
+                &mut (*CLONE_QUEUE.get().unwrap().locked_data().get()).queue,
             )
         };
-        unsafe { (*CLONE_QUEUE.locked_data().get()).count += 1 };
+        unsafe { (*CLONE_QUEUE.get().unwrap().locked_data().get()).count += 1 };
         unsafe {
             pr_debug!(
                 "free skb count:{}",
-                (*CLONE_QUEUE.locked_data().get()).count
+                (*CLONE_QUEUE.get().unwrap().locked_data().get()).count
             )
         };
-        CLONE_QUEUE.irq_unlock_noguard(flags);
+        unsafe { CLONE_QUEUE.get().unwrap().irq_unlock_noguard(flags) };
     }
 
     fn free_to_dev(&mut self) {
@@ -526,7 +567,7 @@ pub struct RrosSkbQueueInner {
 unsafe impl Send for RrosSkbQueueInner {}
 unsafe impl Sync for RrosSkbQueueInner {}
 
-pub type RrosSkbQueue = SpinLock<RrosSkbQueueInner>;
+pub type RrosSkbQueue = Pin<Box<SpinLock<RrosSkbQueueInner>>>;
 
 impl RrosSkbQueueInner {
     #[inline]
@@ -669,9 +710,10 @@ fn skb_recycler(_work: &mut RrosWork) -> i32 {
     let mut list = bindings::list_head::default();
     init_list_head!(&mut list);
 
-    let flags = RECYCLER_WORK.irq_lock_noguard();
+    recycler_work_init();
+    let flags = unsafe { RECYCLER_WORK.get().unwrap().irq_lock_noguard() };
     unsafe {
-        rust_helper_list_splice_init(&mut (*RECYCLER_WORK.locked_data().get()).queue, &mut list);
+        rust_helper_list_splice_init(&mut (*RECYCLER_WORK.get().unwrap().locked_data().get()).queue, &mut list);
     }
     list_for_each_entry_safe!(
         skb,
@@ -686,7 +728,7 @@ fn skb_recycler(_work: &mut RrosWork) -> i32 {
         },
         __bindgen_anon_1.list
     );
-    RECYCLER_WORK.irq_unlock_noguard(flags);
+    unsafe { RECYCLER_WORK.get().unwrap().irq_unlock_noguard(flags) };
     0
 }
 
@@ -695,9 +737,10 @@ pub fn rros_net_init_pools() -> Result<()> {
         fn rust_helper_list_add(new: *mut bindings::list_head, head: *mut bindings::list_head);
         fn rust_helper_INIT_LIST_HEAD(list: *mut bindings::list_head);
     }
-    unsafe { rust_helper_INIT_LIST_HEAD(&mut (*(*CLONE_QUEUE.locked_data()).get()).queue) };
-    unsafe { (*(*CLONE_QUEUE.locked_data()).get()).count = NET_CLONES as i32 };
-    let head = unsafe { &mut (*(*CLONE_QUEUE.locked_data()).get()).queue };
+    clone_queue_init();
+    unsafe { rust_helper_INIT_LIST_HEAD(&mut (*CLONE_QUEUE.get().unwrap().locked_data().get()).queue) };
+    unsafe { (*CLONE_QUEUE.get().unwrap().locked_data().get()).count = NET_CLONES as i32 };
+    let head = unsafe { &mut (*CLONE_QUEUE.get().unwrap().locked_data().get()).queue };
     // CLONE_QUEUE.
     for _n in 0..NET_CLONES {
         let clone = skbuff::skb_alloc_oob_head(bindings::GFP_KERNEL);
@@ -710,13 +753,14 @@ pub fn rros_net_init_pools() -> Result<()> {
         }
     }
 
+    recycler_work_init();
     unsafe {
-        (&mut *RECYCLER_WORK.locked_data().get())
+        (&mut *RECYCLER_WORK.get().unwrap().locked_data().get())
             .work
             .init(skb_recycler)
     };
     unsafe {
-        rust_helper_INIT_LIST_HEAD(&mut (*(*RECYCLER_WORK.locked_data()).get()).queue);
+        rust_helper_INIT_LIST_HEAD(&mut (*RECYCLER_WORK.get().unwrap().locked_data().get()).queue);
     }
 
     Ok(())

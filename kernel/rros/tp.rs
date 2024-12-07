@@ -7,10 +7,11 @@ use kernel::{
     ktime::{ktime_to_timespec64, timespec64_to_ktime, Timespec64},
     memory_rros::*,
     prelude::*,
-    spinlock_init,
+    new_spinlock,
     sync::{Lock, SpinLock},
     types::Atomic,
 };
+use core::ops::Deref;
 
 pub static mut RROS_SCHED_TP: RrosSchedClass = RrosSchedClass {
     sched_init: Some(tp_init),
@@ -73,11 +74,11 @@ pub struct RrosSchedTp {
     pub partitions: Option<[RrosTpRq; CONFIG_RROS_SCHED_TP_NR_PART as usize]>,
     pub idle: RrosTpRq,
     pub tps: *mut RrosTpRq,
-    pub tf_timer: Option<Arc<SpinLock<RrosTimer>>>,
+    pub tf_timer: Option<Arc<Pin<Box<SpinLock<RrosTimer>>>>>,
     pub gps: *mut RrosTpSchedule,
     pub wnext: i32,
     pub tf_start: KtimeT,
-    pub threads: Option<List<Arc<SpinLock<RrosThread>>>>,
+    pub threads: Option<List<Arc<Pin<Box<SpinLock<RrosThread>>>>>>,
 }
 impl RrosSchedTp {
     pub fn new() -> Result<Self> {
@@ -160,13 +161,14 @@ pub fn tp_init(rq: *mut rros_rq) -> Result<usize> {
         let mut temp: [RrosTpRq; CONFIG_RROS_SCHED_TP_NR_PART as usize] = [r1, r2, r3, r4, r5];
         for n in 0..CONFIG_RROS_SCHED_TP_NR_PART {
             // temp[n as usize].runnable.head = Some(List::new(Arc::try_new(SpinLock::new(RrosThread::new()?))?));
-            let mut tmp = Arc::<SpinLock<RrosThread>>::try_new_uninit()?;
+            let mut tmp = Arc::<Pin<Box<SpinLock<RrosThread>>>>::try_new_uninit()?;
+            let mut tmp_spinlock = Box::pin_init(new_spinlock!(RrosThread::new().unwrap(),"tp kthread")).unwrap();
             let mut tmp = {
-                core::ptr::write_bytes(Arc::get_mut_unchecked(&mut tmp), 0, 1);
+                Arc::get_mut(&mut tmp).unwrap().write(tmp_spinlock);
                 tmp.assume_init()
             };
-            let pinned = Pin::new_unchecked(Arc::get_mut_unchecked(&mut tmp));
-            spinlock_init!(pinned, "tp kthread");
+            // let pinned = Pin::new_unchecked(Arc::get_mut_unchecked(&mut tmp));
+            // spinlock_init!(pinned, "tp kthread");
 
             // let mut thread = SpinLock::new(RrosThread::new()?);
             // let pinned = Pin::new_unchecked(&mut thread);
@@ -190,11 +192,11 @@ pub fn tp_init(rq: *mut rros_rq) -> Result<usize> {
         tp.partitions = Some(temp);
         tp.tps = 0 as *mut RrosTpRq;
         tp.gps = 0 as *mut RrosTpSchedule;
-        tp.tf_timer = Some(Arc::try_new(SpinLock::new(RrosTimer::new(0)))?);
+        // tp.tf_timer = Some(Arc::try_new(SpinLock::new(RrosTimer::new(0)))?);
 
-        let mut tf_timer = SpinLock::new(RrosTimer::new(2));
-        let pinned_p = Pin::new_unchecked(&mut tf_timer);
-        spinlock_init!(pinned_p, "ptimer");
+        let mut tf_timer = Box::pin_init(new_spinlock!(RrosTimer::new(2),"ptimer")).unwrap();
+        // let pinned_p = Pin::new_unchecked(&mut tf_timer);
+        // spinlock_init!(pinned_p, "ptimer");
         tp.tf_timer = Some(Arc::try_new(tf_timer)?);
 
         rros_init_timer_on_rq(
@@ -212,8 +214,8 @@ pub fn tp_init(rq: *mut rros_rq) -> Result<usize> {
 }
 
 pub fn tp_setparam(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    p: Option<Arc<SpinLock<RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<RrosSchedParam>>>>>,
 ) -> Result<usize> {
     unsafe {
         let thread_clone = thread.clone();
@@ -230,8 +232,8 @@ pub fn tp_setparam(
 }
 
 pub fn tp_getparam(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    p: Option<Arc<SpinLock<RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<RrosSchedParam>>>>>,
 ) {
     let thread = thread.unwrap();
     let p = p.unwrap();
@@ -248,8 +250,8 @@ pub fn tp_getparam(
 }
 
 pub fn tp_trackprio(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    p: Option<Arc<SpinLock<RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<RrosSchedParam>>>>>,
 ) {
     let thread = thread.unwrap();
     unsafe {
@@ -266,7 +268,7 @@ pub fn tp_trackprio(
     }
 }
 
-pub fn tp_ceilprio(thread: Arc<SpinLock<RrosThread>>, mut prio: i32) {
+pub fn tp_ceilprio(thread: Arc<Pin<Box<SpinLock<RrosThread>>>>, mut prio: i32) {
     if prio > RROS_TP_MAX_PRIO {
         prio = RROS_TP_MAX_PRIO;
     }
@@ -275,8 +277,8 @@ pub fn tp_ceilprio(thread: Arc<SpinLock<RrosThread>>, mut prio: i32) {
 }
 
 pub fn tp_chkparam(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    p: Option<Arc<SpinLock<RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<RrosSchedParam>>>>>,
 ) -> Result<i32> {
     unsafe {
         let thread = thread.unwrap();
@@ -308,17 +310,17 @@ pub fn tp_chkparam(
 }
 
 pub fn tp_declare(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    _p: Option<Arc<SpinLock<RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    _p: Option<Arc<Pin<Box<SpinLock<RrosSchedParam>>>>>,
 ) -> Result<i32> {
     let thread = thread.unwrap();
     // let p = p.unwrap();
     unsafe {
         let rq = (*thread.locked_data().get()).rq.unwrap();
         (*thread.locked_data().get()).tp_link =
-            Some(Node::new(Arc::try_new(SpinLock::new(RrosThread::new()?))?));
+            Some(Node::new(Arc::try_new(Box::pin_init(new_spinlock!(RrosThread::new()?)).unwrap())?));
         let tp_link = (*thread.locked_data().get()).tp_link.clone();
-        (*rq).tp.threads = Some(List::new(Arc::try_new(SpinLock::new(RrosThread::new()?))?));
+        (*rq).tp.threads = Some(List::new(Arc::try_new(Box::pin_init(new_spinlock!(RrosThread::new()?)).unwrap())?));
         if (*rq).tp.threads.clone().as_mut().unwrap().is_empty() {
             pr_debug!("tp.threads is empty!");
         }
@@ -334,7 +336,7 @@ pub fn tp_declare(
     Ok(0)
 }
 
-pub fn tp_forget(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
+pub fn tp_forget(thread: Arc<Pin<Box<SpinLock<RrosThread>>>>) -> Result<usize> {
     unsafe {
         (*thread.locked_data().get())
             .tp_link
@@ -347,7 +349,7 @@ pub fn tp_forget(thread: Arc<SpinLock<RrosThread>>) -> Result<usize> {
     Ok(0)
 }
 
-pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
+pub fn tp_enqueue(thread: Arc<Pin<Box<SpinLock<RrosThread>>>>) -> Result<i32> {
     unsafe {
         let head = (*((*thread.locked_data().get()).tps))
             .runnable
@@ -355,7 +357,7 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
             .as_mut()
             .unwrap();
         if head.is_empty() {
-            let node = Node::new(Arc::try_new(SpinLock::new(RrosThread::new()?))?);
+            let node = Node::new(Arc::try_new(Box::pin_init(new_spinlock!(RrosThread::new()?)).unwrap())?);
             let box_node = Box::try_new(node).unwrap();
             let ptr = Box::into_raw(box_node);
             (*thread.locked_data().get()).rq_next = Some(NonNull::new(ptr).unwrap());
@@ -370,8 +372,8 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
                     .unwrap()
                     .value
                     .clone()
-                    .locked_data()
-                    .get())
+                    .lock()
+                    .deref())
                 .cprio;
                 if thread_cprio <= cprio_in_list {
                     flag = 0;
@@ -392,7 +394,7 @@ pub fn tp_enqueue(thread: Arc<SpinLock<RrosThread>>) -> Result<i32> {
     }
 }
 
-pub fn tp_dequeue(thread: Arc<SpinLock<RrosThread>>) {
+pub fn tp_dequeue(thread: Arc<Pin<Box<SpinLock<RrosThread>>>>) {
     unsafe {
         (*thread.locked_data().get())
             .rq_next
@@ -403,7 +405,7 @@ pub fn tp_dequeue(thread: Arc<SpinLock<RrosThread>>) {
     }
 }
 
-pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
+pub fn tp_requeue(thread: Arc<Pin<Box<SpinLock<RrosThread>>>>) {
     unsafe {
         let head = (*((*thread.locked_data().get()).tps))
             .runnable
@@ -422,8 +424,8 @@ pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
                     .unwrap()
                     .value
                     .clone()
-                    .locked_data()
-                    .get())
+                    .lock()
+                    .deref())
                 .cprio;
                 if thread_cprio < cprio_in_list {
                     flag = 0;
@@ -443,11 +445,11 @@ pub fn tp_requeue(thread: Arc<SpinLock<RrosThread>>) {
     }
 }
 
-pub fn tp_pick(rq: Option<*mut rros_rq>) -> Result<Arc<SpinLock<RrosThread>>> {
+pub fn tp_pick(rq: Option<*mut rros_rq>) -> Result<Arc<Pin<Box<SpinLock<RrosThread>>>>> {
     let rq = rq.unwrap();
     unsafe {
         let timer = Arc::into_raw((*rq).tp.tf_timer.as_mut().unwrap().clone())
-            as *mut SpinLock<RrosTimer> as *mut RrosTimer;
+            as *mut Pin<Box<SpinLock<RrosTimer>>> as *mut RrosTimer;
         if rros_timer_is_running(timer) == false {
             return Err(kernel::Error::EINVAL);
         }
@@ -467,14 +469,14 @@ pub fn tp_pick(rq: Option<*mut rros_rq>) -> Result<Arc<SpinLock<RrosThread>>> {
     }
 }
 
-pub fn tp_migrate(thread: Arc<SpinLock<RrosThread>>, _rq: *mut rros_rq) -> Result<usize> {
+pub fn tp_migrate(thread: Arc<Pin<Box<SpinLock<RrosThread>>>>, _rq: *mut rros_rq) -> Result<usize> {
     let mut param = RrosSchedParam::new();
     unsafe {
         param.fifo.prio = (*thread.locked_data().get()).cprio;
         rros_set_thread_schedparam_locked(
             thread.clone(),
             Some(&RROS_SCHED_FIFO),
-            Some(Arc::try_new(SpinLock::new(param))?),
+            Some(Arc::try_new(Box::pin_init(new_spinlock!(param)).unwrap())?),
         )?;
     }
     Ok(0)
@@ -551,7 +553,7 @@ pub fn set_tp_schedule(rq: *mut rros_rq, gps: *mut RrosTpSchedule) -> Result<*mu
             rros_set_thread_schedparam_locked(
                 thread.clone(),
                 Some(&RROS_SCHED_FIFO),
-                Some(Arc::try_new(SpinLock::new(param))?),
+                Some(Arc::try_new(Box::pin_init(new_spinlock!(param)).unwrap())?),
             )?;
         }
         old_gps = tp.gps;

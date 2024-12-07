@@ -1,9 +1,9 @@
-use kernel::{c_types, prelude::*, spinlock_init, sync::SpinLock};
+use kernel::{c_types, prelude::*, new_spinlock, sync::SpinLock};
 
-pub fn raw_spin_lock_init(lock: &mut SpinLock<i32>) {
-    *lock = unsafe { SpinLock::new(1) };
-    let pinned = unsafe { Pin::new_unchecked(lock) };
-    spinlock_init!(pinned, "timerbase");
+pub fn raw_spin_lock_init(lock: &mut Pin<Box<SpinLock<i32>>>) {
+    *lock = unsafe { Box::pin_init(new_spinlock!(1,"timerbase")).unwrap() };
+    // let pinned = unsafe { Pin::new_unchecked(lock) };
+    // spinlock_init!(pinned, "timerbase");
 }
 
 extern "C" {

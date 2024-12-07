@@ -5,6 +5,7 @@ use kernel::{
     prelude::*,
     sync::{Lock, SpinLock},
 };
+use core::ops::Deref;
 
 pub static mut RROS_SCHED_FIFO: sched::RrosSchedClass = sched::RrosSchedClass {
     sched_init: Some(rros_fifo_init),
@@ -93,34 +94,34 @@ fn rros_fifo_tick(rq: Option<*mut sched::rros_rq>) -> Result<usize> {
 }
 
 fn rros_fifo_setparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) -> Result<usize> {
     return __rros_set_fifo_schedparam(thread.clone(), p.clone());
 }
 
 fn rros_fifo_getparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     __rros_get_fifo_schedparam(thread.clone(), p.clone());
 }
 
 fn rros_fifo_chkparam(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) -> Result<i32> {
     return __rros_chk_fifo_schedparam(thread.clone(), p.clone());
 }
 
 fn rros_fifo_trackprio(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     __rros_track_fifo_priority(thread.clone(), p.clone());
 }
 
-fn rros_fifo_ceilprio(thread: Arc<SpinLock<sched::RrosThread>>, prio: i32) {
+fn rros_fifo_ceilprio(thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>, prio: i32) {
     __rros_ceil_fifo_priority(thread.clone(), prio);
 }
 
@@ -140,8 +141,8 @@ fn rros_fifo_show(
 }
 
 fn __rros_set_fifo_schedparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) -> Result<usize> {
     let thread_clone = thread.clone();
     let p_unwrap = p.unwrap();
@@ -158,16 +159,16 @@ fn __rros_set_fifo_schedparam(
 }
 
 fn __rros_get_fifo_schedparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     p.unwrap().lock().fifo.prio = thread.unwrap().lock().cprio;
 }
 
 // The logic is complete, but haven't been tested.
 fn __rros_chk_fifo_schedparam(
-    thread: Option<Arc<SpinLock<RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) -> Result<i32> {
     let thread_unwrap = thread.unwrap();
     let mut min = RROS_FIFO_MIN_PRIO;
@@ -188,8 +189,8 @@ fn __rros_chk_fifo_schedparam(
 }
 
 fn __rros_track_fifo_priority(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     let thread_unwrap = thread.unwrap();
     if p.is_some() {
@@ -200,11 +201,11 @@ fn __rros_track_fifo_priority(
     }
 }
 
-fn __rros_ceil_fifo_priority(thread: Arc<SpinLock<sched::RrosThread>>, prio: i32) {
+fn __rros_ceil_fifo_priority(thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>, prio: i32) {
     unsafe { (*thread.locked_data().get()).cprio = prio };
 }
 
-pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
+pub fn __rros_dequeue_fifo_thread(thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>) -> Result<usize> {
     let rq_next = thread.lock().rq_next.clone();
     if rq_next.is_none() {
         return Err(kernel::Error::EINVAL);
@@ -219,7 +220,7 @@ pub fn __rros_dequeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
 }
 
 // Enter the queue according to the priority. Note that rq_next must be assigned here---this variable is used when dequeuing.
-pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
+pub fn __rros_enqueue_fifo_thread(thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>) -> Result<usize> {
     let rq_ptr;
     match thread.lock().rq.clone() {
         Some(rq) => rq_ptr = rq,
@@ -238,7 +239,7 @@ pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
         loop {
             unsafe {
                 let pos_cprio = p.unwrap().as_ref().value.lock().cprio;
-                if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
+                if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>
                     || new_cprio <= pos_cprio
                 {
                     p.unwrap()
@@ -259,7 +260,7 @@ pub fn __rros_enqueue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
     Ok(0)
 }
 
-pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> Result<usize> {
+pub fn __rros_requeue_fifo_thread(thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>) -> Result<usize> {
     unsafe {
         let rq_ptr;
         match (*thread.locked_data().get()).rq.clone() {
@@ -278,7 +279,7 @@ pub fn __rros_requeue_fifo_thread(thread: Arc<SpinLock<sched::RrosThread>>) -> R
             // Traverse in reverse order.
             loop {
                 let pos_cprio = (*(p.unwrap().as_ref().value).locked_data().get()).cprio;
-                if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<SpinLock<sched::RrosThread>>>
+                if p.unwrap().as_ptr() == &mut q.head as *mut Node<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>
                     || new_cprio < pos_cprio
                 {
                     p.unwrap()

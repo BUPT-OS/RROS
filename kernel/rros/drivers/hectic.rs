@@ -30,7 +30,7 @@ use kernel::{
     ktime::KtimeT,
     mutex_init,
     prelude::*,
-    spinlock_init,
+    new_spinlock,
     str::CStr,
     sync::{Lock, Mutex, Semaphore, SpinLock},
     task::Task,
@@ -115,14 +115,14 @@ pub struct RtswitchContext {
     switches_count: u32,
     pause_us: u64,
     next_task: u32,
-    wake_up_delay: Arc<SpinLock<RrosTimer>>,
+    wake_up_delay: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
     failed: bool,
     error: HecticError,
     utask: u32,
     wake_utask: IrqWork,
     stax: Pin<Box<Stax<()>>>,
-    o_guard: SpinLock<Vec<usize>>,
-    i_guard: SpinLock<Vec<usize>>,
+    o_guard: Pin<Box<SpinLock<Vec<usize>>>>,
+    i_guard: Pin<Box<SpinLock<Vec<usize>>>>,
     rfile: RrosFile,
 }
 
@@ -152,7 +152,7 @@ impl RtswitchContext {
             switches_count: 0,
             pause_us: 0,
             next_task: 0,
-            wake_up_delay: Arc::try_new(unsafe { SpinLock::new(RrosTimer::new(0)) })?,
+            wake_up_delay: Arc::try_new(unsafe { Box::pin_init(new_spinlock!(RrosTimer::new(0),"wake_up_delay")).unwrap() })?,
             failed: false,
             error: HecticError {
                 last_switch: HecticSwitchReq {
@@ -164,8 +164,8 @@ impl RtswitchContext {
             utask: u32::MAX,
             wake_utask: IrqWork::new(),
             stax: unsafe { Pin::from(Box::try_new(Stax::new(()))?) },
-            o_guard: unsafe { SpinLock::new(Vec::new()) },
-            i_guard: unsafe { SpinLock::new(Vec::new()) },
+            o_guard: unsafe { Box::pin_init(new_spinlock!(Vec::new(),"o_guard")).unwrap() },
+            i_guard: unsafe { Box::pin_init(new_spinlock!(Vec::new(),"i_guard")).unwrap() },
             rfile: RrosFile::new(),
         };
         Ok(ctx)
@@ -186,8 +186,8 @@ impl RtswitchContext {
                 return Err(Error::EINVAL);
             }
             (*timer.locked_data().get()).pointer = this as *mut u8;
-            let t_pinned = Pin::new_unchecked(timer);
-            spinlock_init!(t_pinned, "wake_up_delay");
+            // let t_pinned = Pin::new_unchecked(timer);
+            // spinlock_init!(t_pinned, "wake_up_delay");
 
             rros_init_timer_on_rq(
                 self.wake_up_delay.clone(),
@@ -200,10 +200,10 @@ impl RtswitchContext {
         }
 
         Stax::init((&mut self.stax).as_mut())?;
-        let o_pinned = unsafe { Pin::new_unchecked(&mut self.o_guard) };
-        spinlock_init!(o_pinned, "o_guard");
-        let i_pinned = unsafe { Pin::new_unchecked(&mut self.i_guard) };
-        spinlock_init!(i_pinned, "i_guard");
+        // let o_pinned = unsafe { Pin::new_unchecked(&mut self.o_guard) };
+        // spinlock_init!(o_pinned, "o_guard");
+        // let i_pinned = unsafe { Pin::new_unchecked(&mut self.i_guard) };
+        // spinlock_init!(i_pinned, "i_guard");
 
         Ok(())
     }

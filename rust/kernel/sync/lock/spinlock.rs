@@ -23,7 +23,7 @@ use crate::str::CStr;
 ///
 /// It uses the name if one is given, otherwise it generates one based on the file name and line
 /// number.
-#[cfg(not(CONFIG_RROS))]
+#[cfg(not(CONFIG_RROS_SPINLOCK))]
 #[macro_export]
 macro_rules! new_spinlock {
     ($inner:expr $(, $name:literal)? $(,)?) => {
@@ -97,7 +97,7 @@ macro_rules! new_spinlock {
 /// ```
 ///
 /// [`spinlock_t`]: ../../../../include/linux/spinlock.h
-#[cfg(not(CONFIG_RROS))]
+#[cfg(not(CONFIG_RROS_SPINLOCK))]
 pub type SpinLock<T> = super::Lock<T, SpinLockBackend>;
 
 /// A kernel `spinlock_t` lock backend.
@@ -176,7 +176,7 @@ macro_rules! spinlock_init {
 /// handlers (in which case it is ok for interrupts to be enabled).
 ///
 /// [`spinlock_t`]: ../../../include/linux/spinlock.h
-#[cfg(CONFIG_RROS)]
+#[cfg(CONFIG_RROS_SPINLOCK)]
 pub struct SpinLock<T: ?Sized> {
     spin_lock: Opaque<bindings::spinlock>,
 
@@ -188,15 +188,15 @@ pub struct SpinLock<T: ?Sized> {
 }
 
 // SAFETY: `SpinLock` can be transferred across thread boundaries iff the data it protects can.
-#[cfg(CONFIG_RROS)]
+#[cfg(CONFIG_RROS_SPINLOCK)]
 unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
 
 // SAFETY: `SpinLock` serialises the interior mutability it provides, so it is `Sync` as long as the
 // data it protects is `Send`.
-#[cfg(CONFIG_RROS)]
+#[cfg(CONFIG_RROS_SPINLOCK)]
 unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
 
-#[cfg(CONFIG_RROS)]
+#[cfg(CONFIG_RROS_SPINLOCK)]
 impl<T> SpinLock<T> {
     /// Constructs a new spinlock.
     ///
@@ -212,30 +212,17 @@ impl<T> SpinLock<T> {
     }
 }
 
-#[cfg(CONFIG_RROS)]
+#[cfg(not (CONFIG_RROS_SPINLOCK))]
 impl<T: ?Sized> SpinLock<T> {
-    /// Locks the spinlock and gives the caller access to the data protected by it. Only one thread
-    /// at a time is allowed to access the protected data.
-    pub fn lock(&self) -> Guard<'_, Self> {
-        self.lock_noguard();
-        // SAFETY: The spinlock was just acquired.
-        unsafe { Guard::new(self) }
-    }
-
-    /// The `irq_lock` method is similar to `lock`, but it also disables interrupts before acquiring the lock. This can be used to prevent race conditions between interrupt handlers and normal code.
-    pub fn irq_lock(&self) -> Guard<'_, Self> {
-        self.lock_noguard();
-
-        // SAFETY: The spinlock was just acquired.
-        unsafe { Guard::new(self) }
-    }
-
+   
     /// The `irq_lock_noguard` method acquires the lock and disables interrupts, but does not return a `Guard`. Instead, it returns a `u64` that represents the previous interrupt state. This method is unsafe because it does not provide any guarantees about the lifetime of the lock.
     // FIXME: use this to enable the smp function
     pub fn irq_lock_noguard(&self) -> u64 {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
         unsafe {
-            rust_helper_raw_spin_lock_irqsave(self.spin_lock.get() as *mut bindings::hard_spinlock_t)
+
+            rust_helper_raw_spin_lock_irqsave(self.state.get()  as *mut bindings::hard_spinlock_t)
+        
         }
     }
 
@@ -245,7 +232,7 @@ impl<T: ?Sized> SpinLock<T> {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
         unsafe {
             rust_helper_raw_spin_unlock_irqrestore(
-                self.spin_lock.get() as *mut bindings::hard_spinlock_t,
+                self.state.get()  as *mut bindings::hard_spinlock_t,
                 flags,
             );
         }
@@ -254,15 +241,15 @@ impl<T: ?Sized> SpinLock<T> {
     /// The `raw_spin_lock` method acquires the lock.
     pub fn raw_spin_lock(&self) {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
-        unsafe { rust_helper_raw_spin_lock(self.spin_lock.get() as *mut bindings::hard_spinlock_t) }
+        unsafe { rust_helper_raw_spin_lock(self.state.get()  as *mut bindings::hard_spinlock_t) }
     }
 
-    /// The `raw_spin_lock_nested` method acquires the lock nestly.
+        /// The `raw_spin_lock_nested` method acquires the lock nestly.
     pub fn raw_spin_lock_nested(&self, depth: u32) {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
         unsafe {
             rust_helper_raw_spin_lock_nested(
-                self.spin_lock.get() as *mut bindings::hard_spinlock_t,
+                self.state.get()  as *mut bindings::hard_spinlock_t,
                 depth,
             )
         }
@@ -272,12 +259,12 @@ impl<T: ?Sized> SpinLock<T> {
     pub fn raw_spin_unlock(&self) {
         // SAFETY: The caller guarantees that self is initialised. So the pointer is valid.
         unsafe {
-            rust_helper_raw_spin_unlock(self.spin_lock.get() as *mut bindings::hard_spinlock_t)
+            rust_helper_raw_spin_unlock(self.state.get()  as *mut bindings::hard_spinlock_t)
         }
     }
 }
 
-#[cfg(CONFIG_RROS)]
+#[cfg(CONFIG_RROS_SPINLOCK)]
 impl<T: ?Sized> NeedsLockClass for SpinLock<T> {
     unsafe fn init(self: Pin<&mut Self>, name: &'static CStr, key: *mut bindings::lock_class_key) {
         // SAFETY: The caller guarantees that `name` and `key` are initialised. So the pointers are valid.
@@ -285,14 +272,14 @@ impl<T: ?Sized> NeedsLockClass for SpinLock<T> {
     }
 }
 
-#[cfg(CONFIG_RROS)]
+#[cfg(not (CONFIG_RROS_SPINLOCK))]
 impl<T: ?Sized> Lock for SpinLock<T> {
     type Inner = T;
 
     fn lock_noguard(&self) {
         // SAFETY: `spin_lock` points to valid memory.
         // unsafe { rust_helper_spin_lock(self.spin_lock.get()) };
-        unsafe { rust_helper_hard_spin_lock(self.spin_lock.get() as *mut bindings::raw_spinlock) };
+        unsafe { rust_helper_hard_spin_lock(self.state.get() as *mut bindings::raw_spinlock) };
         // unsafe { rust_helper_hard_spin_lock((*self.spin_lock.get()).rlock()
         // as *mut bindings::raw_spinlock) };
     }
@@ -301,7 +288,7 @@ impl<T: ?Sized> Lock for SpinLock<T> {
         // SAFETY: `spin_lock` points to valid memory.
         // unsafe { rust_helper_spin_unlock(self.spin_lock.get()) };
         unsafe {
-            rust_helper_hard_spin_unlock(self.spin_lock.get() as *mut bindings::raw_spinlock)
+            rust_helper_hard_spin_unlock(self.state.get() as *mut bindings::raw_spinlock)
         };
         // unsafe { rust_helper_hard_spin_unlock((*self.spin_lock.get()).rlock()
         // as *mut bindings::raw_spinlock) };

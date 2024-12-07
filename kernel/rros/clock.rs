@@ -20,6 +20,8 @@ use crate::{
     RROS_OOB_CPUS,
 };
 
+use core::cell::OnceCell;
+
 use alloc::rc::Rc;
 
 use core::{
@@ -46,7 +48,7 @@ use kernel::{
     ktime::*,
     percpu,
     prelude::*,
-    premmpt, spinlock_init,
+    premmpt, new_spinlock,
     str::CStr,
     sync::{Lock, SpinLock},
     sysfs,
@@ -56,8 +58,15 @@ use kernel::{
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
 };
 
-static mut CLOCKLIST_LOCK: SpinLock<i32> = unsafe { SpinLock::new(1) };
+pub static mut CLOCKLIST_LOCK: OnceCell<Pin<Box<SpinLock<i32>>>> = OnceCell::new();
 
+pub fn clocklist_lock_init() {
+    unsafe {
+        CLOCKLIST_LOCK.get_or_init(|| {
+            Box::pin_init(new_spinlock!(1, "CLOCKLIST_LOCK")).unwrap()
+        });
+    }
+}
 // Define it as a constant here first, and then read it from /dev/rros.
 const CONFIG_RROS_LATENCY_USER: KtimeT = 0;
 const CONFIG_RROS_LATENCY_KERNEL: KtimeT = 0;
@@ -293,8 +302,8 @@ impl RrosClock {
 
 pub fn adjust_timer(
     clock: &RrosClock,
-    timer: Arc<SpinLock<RrosTimer>>,
-    tq: &mut List<Arc<SpinLock<RrosTimer>>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
+    tq: &mut List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>,
     delta: KtimeT,
 ) {
     let date = timer.lock().get_date();
@@ -350,7 +359,7 @@ pub fn rros_adjust_timers(clock: &mut RrosClock, delta: KtimeT) -> Result {
 
         let flags: u64 = unsafe { (*tmb).lock.irq_lock_noguard() };
 
-        let mut timers_adjust: Vec<Arc<SpinLock<RrosTimer>>> =
+        let mut timers_adjust: Vec<Arc<Pin<Box<SpinLock<RrosTimer>>>>> =
             Vec::try_with_capacity(tq.len() as usize)?;
 
         while !tq.is_empty() {
@@ -538,33 +547,40 @@ pub static mut CLOCK_LIST: List<*mut RrosClock> = List::<*mut RrosClock> {
     },
 };
 
-pub static mut RROS_CLOCK_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
-    SpinLock::new(factory::RrosFactory {
-        name: unsafe { CStr::from_bytes_with_nul_unchecked("clock\0".as_bytes()) },
-        nrdev: CONFIG_RROS_NR_CLOCKS,
-        build: None,
-        dispose: Some(clock_factory_dispose),
-        attrs: None, //sysfs::attribute_group::new(),
-        flags: factory::RrosFactoryType::Invalid,
-        inside: Some(factory::RrosFactoryInside {
-            type_: DeviceType::new(),
-            class: None,
-            cdev: None,
-            device: None,
-            sub_rdev: None,
-            kuid: None,
-            kgid: None,
-            minor_map: None,
-            index: None,
-            name_hash: None,
-            hash_lock: None,
-            register: None,
-        }),
-    })
-};
+pub static mut RROS_CLOCK_FACTORY: OnceCell<Pin<Box<SpinLock<factory::RrosFactory>>>> = OnceCell::new();
+
+pub fn rros_clock_factory_init() {
+    unsafe {
+        RROS_CLOCK_FACTORY.get_or_init(|| {
+            Box::pin_init(new_spinlock!(factory::RrosFactory {
+                name: CStr::from_bytes_with_nul_unchecked("clock\0".as_bytes()),
+                nrdev: CONFIG_RROS_NR_CLOCKS,
+                build: None,
+                dispose: Some(clock_factory_dispose),
+                attrs: None, // sysfs::attribute_group::new(),
+                flags: factory::RrosFactoryType::Invalid,
+                inside: Some(factory::RrosFactoryInside {
+                    type_: DeviceType::new(),
+                    class: None,
+                    cdev: None,
+                    device: None,
+                    sub_rdev: None,
+                    kuid: None,
+                    kgid: None,
+                    minor_map: None,
+                    index: None,
+                    name_hash: None,
+                    hash_lock: None,
+                    register: None,
+                }),
+            }))
+            .unwrap()
+        });
+    }
+}
 
 pub struct RrosTimerFd {
-    timer: Arc<SpinLock<RrosTimer>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
     readers: RrosWaitQueue,
     poll_head: RrosPollHead,
     efile: RrosFile,
@@ -574,7 +590,7 @@ pub struct RrosTimerFd {
 impl RrosTimerFd {
     fn new() -> Self {
         Self {
-            timer: Arc::try_new(unsafe { SpinLock::new(RrosTimer::new(0)) }).unwrap(),
+            timer: Arc::try_new(unsafe { Box::pin_init(new_spinlock!(RrosTimer::new(0))).unwrap() }).unwrap(),
             //FIXME: readers initiation is not sure
             readers: RrosWaitQueue::new(core::ptr::null_mut(), 0),
             poll_head: RrosPollHead::new(),
@@ -584,7 +600,7 @@ impl RrosTimerFd {
     }
 }
 
-fn get_timer_value(timer: Arc<SpinLock<RrosTimer>>, value: &mut Itimerspec64) {
+fn get_timer_value(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, value: &mut Itimerspec64) {
     let mut inner_timer_lock = timer.lock();
     let inner_timer: &mut RrosTimer = inner_timer_lock.deref_mut();
     value.it_interval = ktime_to_timespec64(inner_timer.interval);
@@ -596,7 +612,7 @@ fn get_timer_value(timer: Arc<SpinLock<RrosTimer>>, value: &mut Itimerspec64) {
     }
 }
 
-fn set_timer_value(timer: Arc<SpinLock<RrosTimer>>, value: &Itimerspec64) -> Result<i32> {
+fn set_timer_value(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, value: &Itimerspec64) -> Result<i32> {
     let start: KtimeT;
     let period: KtimeT;
 
@@ -648,7 +664,7 @@ pub fn double_timer_base_unlock(tb1: *mut RrosTimerbase, tb2: *mut RrosTimerbase
 // `RrosClock`, `RrosTimerbase`, `RrosRq`. Maybe we can use references to avoid so many raw pointers.
 // FYI: https://github.com/BUPT-OS/RROS/pull/41#discussion_r1680738528
 pub fn rros_move_timer(
-    timer: Arc<SpinLock<RrosTimer>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
     clock: *mut RrosClock,
     mut rq: *mut rros_rq,
 ) {
@@ -697,7 +713,7 @@ pub fn rros_move_timer(
 }
 
 #[cfg(CONFIG_SMP)]
-fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {
+fn pin_timer(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     let flags = hard_local_irq_save();
 
     let this_rq = rros_current_rq();
@@ -713,7 +729,7 @@ fn pin_timer(timer: Arc<SpinLock<RrosTimer>>) {
 }
 
 #[cfg(not(CONFIG_SMP))]
-fn pin_timer(_timer: Arc<SpinLock<RrosTimer>>) {}
+fn pin_timer(_timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {}
 
 fn set_timerfd(
     timerfd: &RrosTimerFd,
@@ -1079,7 +1095,7 @@ pub fn do_clock_tick(clock: &mut RrosClock, tmb: *mut RrosTimerbase) {
             let timer_addr = timer.locked_data().get();
 
             let inband_timer_addr = (*rq).get_inband_timer().locked_data().get();
-            if (timer_addr == inband_timer_addr) {
+            if (timer_addr as *const _ == inband_timer_addr as *const _) {
                 (*rq).add_local_flags(RQ_TPROXY);
                 (*rq).change_local_flags(!RQ_TDEFER);
                 continue;
@@ -1172,7 +1188,7 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
     unsafe {
         ret = factory::rros_init_element(
             (*clock).element.as_ref().unwrap().clone(),
-            &mut RROS_CLOCK_FACTORY,
+            RROS_CLOCK_FACTORY.get_mut().unwrap(),
             (*clock).flags & RROS_CLONE_PUBLIC,
         );
     }
@@ -1188,7 +1204,7 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
     unsafe {
         ret = factory::rros_create_core_element_device(
             (*clock).element.as_ref().unwrap().clone(),
-            &mut RROS_CLOCK_FACTORY,
+            RROS_CLOCK_FACTORY.get_mut().unwrap(),
             (*clock).name,
         );
     }
@@ -1199,9 +1215,9 @@ fn init_clock(clock: *mut RrosClock, master: *mut RrosClock) -> Result<usize> {
     }
 
     unsafe {
-        CLOCKLIST_LOCK.lock();
+        clocklist_lock_init();
+        CLOCKLIST_LOCK.get().unwrap().lock();
         CLOCK_LIST.add_head(clock);
-        CLOCKLIST_LOCK.unlock();
     }
 
     Ok(0)
@@ -1269,8 +1285,8 @@ fn rros_init_clock(clock: &mut RrosClock, affinity: &CpumaskT) -> Result<usize> 
 }
 
 pub fn rros_clock_init() -> Result<usize> {
-    let pinned = unsafe { Pin::new_unchecked(&mut CLOCKLIST_LOCK) };
-    spinlock_init!(pinned, "CLOCKLIST_LOCK");
+    // let pinned = unsafe { Pin::new_unchecked(&mut CLOCKLIST_LOCK) };
+    // spinlock_init!(pinned, "CLOCKLIST_LOCK");
     unsafe {
         RROS_MONO_CLOCK.reset_gravity();
         RROS_REALTIME_CLOCK.reset_gravity();

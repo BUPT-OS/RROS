@@ -369,7 +369,7 @@ impl RrosStax {
     }
     fn claim_stax_from_oob(&mut self, gateval: u32) -> Result<()> {
         let ptr = rros_current();
-        let curr: Arc<SpinLock<RrosThread>>;
+        let curr: Arc<Pin<Box<SpinLock<RrosThread>>>>;
         // Safety: rros_current() guarantees that the ptr is valid.
         unsafe {
             curr = Arc::from_raw(ptr);

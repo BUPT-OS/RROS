@@ -1,8 +1,11 @@
 use core::{
     cell::RefCell, clone::Clone, convert::TryInto, default::Default, mem::size_of, ptr,
     result::Result::Ok,
+    ops::Deref,
 };
 
+
+use core::cell::OnceCell;
 use crate::{clock, control, file::RrosFileBinding, observable, poll, proxy, thread, xbuf};
 
 use alloc::rc::Rc;
@@ -18,7 +21,7 @@ use kernel::{
     io_buffer::IoBufferWriter,
     irq_work, kernelh,
     prelude::*,
-    rbtree, spinlock_init,
+    rbtree, new_spinlock,
     str::CStr,
     sync::{Lock, SpinLock},
     sysfs, types,
@@ -75,7 +78,7 @@ const RROS_HANDLE_INDEX_MASK: FundleT = RROS_MUTEX_FLCEIL | RROS_MUTEX_FLCLAIM;
 
 pub struct RrosIndex {
     // #[allow(dead_code)]
-    rbtree: SpinLock<rbtree::RBTree<FundleT, Rc<RefCell<RrosElement>>>>, // TODO: modify the u32.
+    rbtree: Pin<Box<SpinLock<rbtree::RBTree<FundleT, Rc<RefCell<RrosElement>>>>>>, // TODO: modify the u32.
     // lock: SpinLock<i32>,
     // #[allow(dead_code)]
     generator: FundleT,
@@ -92,7 +95,7 @@ pub struct RrosFactoryInside {
     pub minor_map: Option<u64>,
     pub index: Option<RrosIndex>,
     pub name_hash: Option<[types::HlistHead; NAME_HASH_TABLE_SIZE as usize]>,
-    pub hash_lock: Option<SpinLock<i32>>,
+    pub hash_lock: Option<Pin<Box<SpinLock<i32>>>>,
     // FIXME: This const should not be limited to 256. But the rust compiler does not support it.
     pub register: Option<Pin<Box<chrdev::Registration<16>>>>,
 }
@@ -155,7 +158,7 @@ pub struct RrosFactory {
     pub nrdev: usize,
     pub build: Option<
         fn(
-            fac: &'static mut SpinLock<RrosFactory>,
+            fac: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
             uname: &'static CStr,
             u_attrs: Option<*mut u8>,
             clone_flags: i32,
@@ -169,31 +172,38 @@ pub struct RrosFactory {
     // pub fops: PhantomData<T>,
 }
 
-pub static mut RROS_FACTORY: SpinLock<RrosFactory> = unsafe {
-    SpinLock::new(RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("RROS_DEV\0".as_bytes()),
-        // fops: Some(&Tmpops),
-        nrdev: CONFIG_RROS,
-        build: None,
-        dispose: None,
-        attrs: None, //sysfs::attribute_group::new(),
-        flags: RrosFactoryType::Invalid,
-        inside: Some(RrosFactoryInside {
-            type_: DeviceType::new(),
-            class: None,
-            cdev: None,
-            device: None,
-            sub_rdev: None,
-            kuid: None,
-            kgid: None,
-            minor_map: None,
-            index: None,
-            name_hash: None,
-            hash_lock: None,
-            register: None,
-        }),
-    })
-};
+pub static mut RROS_FACTORY: OnceCell<Pin<Box<SpinLock<RrosFactory>>>> = OnceCell::new();
+
+pub fn rros_factory_init() {
+    unsafe {
+        RROS_FACTORY.get_or_init(|| {
+            Box::pin_init(new_spinlock!(RrosFactory {
+                name: CStr::from_bytes_with_nul_unchecked("RROS_DEV\0".as_bytes()),
+                // fops: Some(&Tmpops),
+                nrdev: CONFIG_RROS,
+                build: None,
+                dispose: None,
+                attrs: None, // sysfs::attribute_group::new(),
+                flags: RrosFactoryType::Invalid,
+                inside: Some(RrosFactoryInside {
+                    type_: DeviceType::new(),
+                    class: None,
+                    cdev: None,
+                    device: None,
+                    sub_rdev: None,
+                    kuid: None,
+                    kgid: None,
+                    minor_map: None,
+                    index: None,
+                    name_hash: None,
+                    hash_lock: None,
+                    register: None,
+                }),
+            }))
+            .unwrap()
+        });
+    }
+}
 
 struct Tmpops;
 
@@ -213,14 +223,14 @@ impl FileOperations for Tmpops {
 
 pub struct RrosElement {
     pub rcu_head: types::RcuHead,
-    pub factory: &'static mut SpinLock<RrosFactory>,
+    pub factory: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
     pub cdev: Option<chrdev::Cdev>,
     pub dev: Option<device::Device>,
     pub devname: Option<fs::Filename>,
     pub minor: u64,
     pub refs: i32,
     pub zombie: bool,
-    pub ref_lock: SpinLock<i32>,
+    pub ref_lock: Pin<Box<SpinLock<i32>>>,
     pub fundle: FundleT,
     pub clone_flags: i32,
     // pub struct rb_node index_node;// TODO: in rfl rb_node is not embedded in the struct.
@@ -233,16 +243,17 @@ pub struct RrosElement {
 
 impl RrosElement {
     pub fn new() -> Result<Self> {
+        rros_factory_init();
         Ok(Self {
             rcu_head: types::RcuHead::new(),
-            factory: unsafe { &mut RROS_FACTORY },
+            factory: unsafe { RROS_FACTORY.get_mut().unwrap() },
             cdev: None,
             dev: None,
             devname: None,
             minor: 0,
             refs: 0,
             zombie: false,
-            ref_lock: unsafe { kernel::sync::SpinLock::<i32>::new(0) },
+            ref_lock: unsafe { Box::pin_init(new_spinlock!(0,"value")).unwrap() },
             fundle: 0,
             clone_flags: 0,
             irq_work: irq_work::IrqWork::new(),
@@ -319,7 +330,7 @@ impl device::Devnode for FactoryTypeDevnode {
 
 fn create_element_device(
     e: Rc<RefCell<RrosElement>>,
-    fac: &'static mut SpinLock<RrosFactory>,
+    fac: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
 ) -> Result<usize> {
     let mut fac_lock = unsafe { (*fac.locked_data().get()).inside.as_mut() };
     let mut rdev: class::DevT = class::DevT::new(0);
@@ -339,11 +350,7 @@ fn create_element_device(
             //     goto fail_hash;
             // }
 
-            // hash_add(fac->name_hash, &e->hash, hlen);
-
-            unsafe {
-                inside.hash_lock.as_ref().unwrap().unlock();
-            }
+            // hash_add(fac->name_hash, &e->hash, hlen)
 
             0
         }
@@ -395,7 +402,7 @@ fn rros_element_has_coredev(e: Rc<RefCell<RrosElement>>) -> bool {
 
 fn do_element_visibility(
     e: Rc<RefCell<RrosElement>>,
-    fac: &'static mut SpinLock<RrosFactory>,
+    fac: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
     _rdev: &mut class::DevT,
 ) -> Result<usize> {
     // static int do_element_visibility(struct rros_element *e,
@@ -633,7 +640,7 @@ pub fn bind_file_to_element(
 
 pub fn rros_create_core_element_device(
     e: Rc<RefCell<RrosElement>>,
-    fac: &'static mut SpinLock<RrosFactory>,
+    fac: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
     name: &'static CStr,
 ) -> Result<usize> {
     let e_clone = e.clone();
@@ -682,7 +689,7 @@ pub fn rros_create_core_element_device(
 // TODO: The global variable should not use *mut to pass the value.
 pub fn rros_init_element(
     e: Rc<RefCell<RrosElement>>,
-    fac: &'static mut SpinLock<RrosFactory>,
+    fac: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
     clone_flags: i32,
 ) -> Result<usize> {
     let mut minor = 0;
@@ -714,9 +721,7 @@ pub fn rros_init_element(
         }
         None => 1,
     };
-    unsafe {
-        fac.unlock();
-    }
+
     drop(fac_lock);
     let e_clone = e.clone();
     let mut e_mut = e_clone.borrow_mut();
@@ -731,8 +736,8 @@ pub fn rros_init_element(
     e_mut.fundle = RROS_NO_HANDLE;
     e_mut.devname = None;
     e_mut.clone_flags = clone_flags;
-    let pinned = unsafe { Pin::new_unchecked(&mut e_mut.ref_lock) };
-    spinlock_init!(pinned, "value");
+    // let pinned = unsafe { Pin::new_unchecked(&mut e_mut.ref_lock) };
+    // spinlock_init!(pinned, "value");
     Ok(0)
 }
 
@@ -761,7 +766,7 @@ fn create_sys_device<T>(
 }
 
 fn rros_create_factory(
-    fac: &mut SpinLock<RrosFactory>,
+    fac: &mut Pin<Box<SpinLock<RrosFactory>>>,
     rros_class: Arc<class::Class>,
     chrdev_reg: &mut Pin<Box<chrdev::Registration<NR_FACTORIES>>>,
     this_module: &'static ThisModule,
@@ -910,27 +915,26 @@ fn rros_create_factory(
             }
 
             let mut index = RrosIndex {
-                rbtree: unsafe { SpinLock::new(rbtree::RBTree::new()) },
+                rbtree: unsafe { Box::pin_init(new_spinlock!(rbtree::RBTree::new(),"value")).unwrap() },
                 generator: RROS_NO_HANDLE,
             };
-            let pinned = unsafe { Pin::new_unchecked(&mut index.rbtree) };
-            spinlock_init!(pinned, "value");
+            // let pinned = unsafe { Pin::new_unchecked(&mut index.rbtree) };
+            // spinlock_init!(pinned, "value");
             inside.index = Some(index);
 
             let mut hashname: [types::HlistHead; NAME_HASH_TABLE_SIZE as usize] =
                 [types::HlistHead::new(); NAME_HASH_TABLE_SIZE as usize];
             types::hash_init(hashname[0].as_list_head(), NAME_HASH_TABLE_SIZE);
             inside.name_hash = Some(hashname);
-            let mut hash_lock = unsafe { SpinLock::new(0) };
-            let pinned = unsafe { Pin::new_unchecked(&mut hash_lock) };
-            spinlock_init!(pinned, "device_name_hash_lock");
+            let mut hash_lock = unsafe { Box::pin_init(new_spinlock!(0,"device_name_hash_lock")).unwrap() };
+            // let pinned = unsafe { Pin::new_unchecked(&mut hash_lock) };
+            // spinlock_init!(pinned, "device_name_hash_lock");
             inside.hash_lock = Some(hash_lock);
             0
         }
         None => 1,
     };
 
-    unsafe { fac.unlock() };
     match res {
         1 => Err(kernel::Error::EINVAL),
         _ => Ok(0),
@@ -955,17 +959,18 @@ pub struct CloneOps;
 
 impl FileOpener<u8> for CloneOps {
     fn open(shared: &u8, _fileref: &File) -> Result<Self::Wrapper> {
+        thread::rros_thread_factory_init();
         let mut data = CloneData::default();
         unsafe {
             data.ptr = shared as *const u8 as *mut u8;
             let a = KuidT::from_inode_ptr(shared as *const u8);
             let b = KgidT::from_inode_ptr(shared as *const u8);
-            (*thread::RROS_THREAD_FACTORY.locked_data().get())
+            (*thread::RROS_THREAD_FACTORY.get_mut().unwrap().locked_data().get())
                 .inside
                 .as_mut()
                 .unwrap()
                 .kuid = Some(a);
-            (*thread::RROS_THREAD_FACTORY.locked_data().get())
+            (*thread::RROS_THREAD_FACTORY.get_mut().unwrap().locked_data().get())
                 .inside
                 .as_mut()
                 .unwrap()
@@ -1021,7 +1026,7 @@ impl FileOperations for CloneOps {
 }
 
 fn create_core_factories(
-    factories: &mut [&mut SpinLock<RrosFactory>],
+    factories: &mut [&mut Pin<Box<SpinLock<RrosFactory>>>],
     nr: usize,
     rros_class: Arc<class::Class>,
     chrdev_reg: &mut Pin<Box<chrdev::Registration<NR_FACTORIES>>>,
@@ -1041,16 +1046,26 @@ fn create_core_factories(
 pub fn rros_early_init_factories(
     this_module: &'static ThisModule,
 ) -> Result<Pin<Box<chrdev::Registration<NR_FACTORIES>>>> {
+    //init
+    clock::rros_clock_factory_init();
+    thread::rros_thread_factory_init();
+    xbuf::rros_xbuf_factory_init();
+    proxy::rros_proxy_factory_init();
+    control::rros_control_factory_init();
+    poll::rros_poll_factory_init();
+    observable::rros_observable_factory_init();
+
+    
     // TODO: move the number of factories to a variable
-    let mut early_factories: [&mut SpinLock<RrosFactory>; 7] = unsafe {
+    let mut early_factories: [&mut Pin<Box<SpinLock<RrosFactory>>>; 7] = unsafe {
         [
-            &mut clock::RROS_CLOCK_FACTORY,
-            &mut thread::RROS_THREAD_FACTORY,
-            &mut xbuf::RROS_XBUF_FACTORY,
-            &mut proxy::RROS_PROXY_FACTORY,
-            &mut control::RROS_CONTROL_FACTORY,
-            &mut poll::RROS_POLL_FACTORY,
-            &mut observable::RROS_OBSERVABLE_FACTORY,
+            clock::RROS_CLOCK_FACTORY.get_mut().unwrap(),
+            thread::RROS_THREAD_FACTORY.get_mut().unwrap(),
+            xbuf::RROS_XBUF_FACTORY.get_mut().unwrap(),
+            proxy::RROS_PROXY_FACTORY.get_mut().unwrap(),
+            control::RROS_CONTROL_FACTORY.get_mut().unwrap(),
+            poll::RROS_POLL_FACTORY.get_mut().unwrap(),
+            observable::RROS_OBSERVABLE_FACTORY.get_mut().unwrap(),
         ]
     };
     // static struct rros_factory *early_factories[] = {
@@ -1311,10 +1326,11 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     let e: Rc<RefCell<RrosElement>> = if fdname == "xbuf" {
         pr_debug!("ioctl_clone_device: xbuf clone");
         unsafe {
-            (*xbuf::RROS_XBUF_FACTORY.locked_data().get())
+            xbuf::rros_xbuf_factory_init();
+            (*xbuf::RROS_XBUF_FACTORY.get_mut().unwrap().locked_data().get())
                 .build
                 .unwrap()(
-                &mut xbuf::RROS_XBUF_FACTORY,
+                xbuf::RROS_XBUF_FACTORY.get_mut().unwrap(),
                 cstr_u_name,
                 Some(u_attrs),
                 real_req.clone_flags.try_into().unwrap(),
@@ -1324,10 +1340,11 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     } else if fdname == "proxy" {
         pr_debug!("ioctl_clone_device: proxy clone");
         unsafe {
-            (*proxy::RROS_PROXY_FACTORY.locked_data().get())
+            proxy::rros_proxy_factory_init();
+            (*proxy::RROS_PROXY_FACTORY.get_mut().unwrap().locked_data().get())
                 .build
                 .unwrap()(
-                &mut proxy::RROS_PROXY_FACTORY,
+                proxy::RROS_PROXY_FACTORY.get_mut().unwrap(),
                 cstr_u_name,
                 Some(u_attrs),
                 real_req.clone_flags.try_into().unwrap(),
@@ -1337,10 +1354,11 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     } else if fdname == "observable" {
         pr_debug!("ioctl_clone_device: observable clone");
         unsafe {
-            (*observable::RROS_OBSERVABLE_FACTORY.locked_data().get())
+            observable::rros_observable_factory_init();
+            (*observable::RROS_OBSERVABLE_FACTORY.get_mut().unwrap().locked_data().get())
                 .build
                 .unwrap()(
-                &mut observable::RROS_OBSERVABLE_FACTORY,
+                observable::RROS_OBSERVABLE_FACTORY.get_mut().unwrap(),
                 cstr_u_name,
                 Some(u_attrs),
                 real_req.clone_flags.try_into().unwrap(),
@@ -1350,10 +1368,11 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     } else {
         pr_debug!("maybe a thread");
         unsafe {
-            (*thread::RROS_THREAD_FACTORY.locked_data().get())
+            thread::rros_thread_factory_init();
+            (*thread::RROS_THREAD_FACTORY.get_mut().unwrap().locked_data().get())
                 .build
                 .unwrap()(
-                &mut thread::RROS_THREAD_FACTORY,
+                thread::RROS_THREAD_FACTORY.get_mut().unwrap(),
                 cstr_u_name,
                 Some(u_attrs),
                 0,
@@ -1377,18 +1396,20 @@ pub fn ioctl_clone_device(file: &File, _cmd: u32, arg: usize) -> Result<usize> {
     // TODO: create the element device
     let _ret = if fdname == "xbuf" {
         pr_debug!("ioctl_clone_device: xbuf element create");
-        create_element_device(e.clone(), unsafe { &mut xbuf::RROS_XBUF_FACTORY })
+        create_element_device(e.clone(), unsafe { xbuf::RROS_XBUF_FACTORY.get_mut().unwrap() })
     } else if fdname == "proxy" {
         pr_debug!("ioctl_clone_device: proxy element create");
-        create_element_device(e.clone(), unsafe { &mut proxy::RROS_PROXY_FACTORY })
+        proxy::rros_proxy_factory_init();
+        create_element_device(e.clone(), unsafe { proxy::RROS_PROXY_FACTORY.get_mut().unwrap() })
     } else if fdname == "observable" {
         pr_debug!("ioctl_clone_device: observable element create");
+        observable::rros_observable_factory_init();
         create_element_device(e.clone(), unsafe {
-            &mut observable::RROS_OBSERVABLE_FACTORY
+            observable::RROS_OBSERVABLE_FACTORY.get_mut().unwrap()
         })
     } else {
         pr_debug!("maybe a thread");
-        create_element_device(e.clone(), unsafe { &mut thread::RROS_THREAD_FACTORY })
+        create_element_device(e.clone(), unsafe { thread::RROS_THREAD_FACTORY.get_mut().unwrap() })
     };
     let e_clone = e.clone();
     let mut e_mut = e_clone.borrow_mut();

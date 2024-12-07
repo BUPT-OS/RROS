@@ -9,11 +9,12 @@ use kernel::{
     c_types::c_void,
     endian::be16,
     prelude::*,
-    spinlock_init,
+    new_spinlock,
     sync::{Lock, SpinLock},
     types::HlistNode,
     vmalloc,
 };
+use core::ops::Deref;
 
 // pub struct RROSNetHandler{
 //     ingress : fn(skb : *mut bindings::sk_buff),
@@ -23,7 +24,7 @@ pub struct RrosNetRxqueue {
     pub hkey: u32,
     pub hash: HlistNode,
     pub subscribers: bindings::list_head,
-    pub lock: SpinLock<()>,
+    pub lock: Pin<Box<SpinLock<()>>>,
     pub next: bindings::list_head,
 }
 
@@ -40,8 +41,9 @@ impl RrosNetRxqueue {
         let ptr = unsafe { &mut *(ptr.unwrap() as *const _ as *mut RrosNetRxqueue) };
         ptr.hkey = hkey;
         unsafe { rust_helper_INIT_LIST_HEAD(&mut ptr.subscribers) };
-        let pinned = unsafe { core::pin::Pin::new_unchecked(&mut ptr.lock) };
-        spinlock_init!(pinned, "RrosNetRxqueue");
+        ptr.lock = Box::pin_init(new_spinlock!((),"RrosNetRxqueue")).unwrap();
+        // let pinned = unsafe { core::pin::Pin::new_unchecked(&mut ptr.lock) };
+        // spinlock_init!(pinned, "RrosNetRxqueue");
         NonNull::new(ptr)
     }
 

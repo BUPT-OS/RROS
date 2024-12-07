@@ -5,6 +5,7 @@ use core::{
     ops::DerefMut,
     ptr::NonNull,
     usize,
+    ops::Deref
 };
 
 use crate::{
@@ -43,13 +44,14 @@ use kernel::{
     ktime::{self, timespec64_to_ktime, Timespec64},
     linked_list::{GetLinks, Links, List},
     prelude::*,
-    rbtree, spinlock_init,
+    rbtree, new_spinlock,
     str::CStr,
     sync::Lock,
     sync::SpinLock,
     user_ptr::UserSlicePtr,
     Error,
 };
+use core::cell::OnceCell;
 
 const POLLER_NEST_MAX: i32 = 4;
 const RROS_POLL_NR_CONNECTORS: usize = 4;
@@ -67,7 +69,7 @@ pub const RROS_POLIOC_WAIT: u32 = kernel::ioctl::_IOWR::<(i64, i64, i64)>(RROS_P
 pub struct RrosPollGroup {
     pub item_index: rbtree::RBTree<u32, Arc<RrosPollItem>>,
     pub item_list: List<Arc<RrosPollItem>>,
-    pub waiter_list: SpinLock<List<Arc<RrosPollWaiter>>>,
+    pub waiter_list: Pin<Box<SpinLock<List<Arc<RrosPollWaiter>>>>>,
     pub rfile: RrosFile,
     // pub item_lock: mutex::RrosKMutex,
     pub nr_items: i32,
@@ -79,7 +81,7 @@ impl RrosPollGroup {
         Self {
             item_index: rbtree::RBTree::new(),
             item_list: List::new(),
-            waiter_list: unsafe { SpinLock::new(List::new()) },
+            waiter_list: Box::pin_init(new_spinlock!(List::new(),"RrosPollGroup::waiter_list")).unwrap(),
             rfile: RrosFile::new(),
             // item_lock: mutex::RrosKMutex::new(),
             nr_items: 0,
@@ -88,8 +90,8 @@ impl RrosPollGroup {
     }
 
     pub fn init(&mut self) {
-        let pinned = unsafe { Pin::new_unchecked(&mut self.waiter_list) };
-        spinlock_init!(pinned, "RrosPollGroup::waiter_list");
+        // let pinned = unsafe { Pin::new_unchecked(&mut self.waiter_list) };
+        // spinlock_init!(pinned, "RrosPollGroup::waiter_list");
         //FIXME: init kmutex fail
         // rros_init_kmutex(&mut item_lock as *mut RrosKMutex);
     }
@@ -155,22 +157,22 @@ impl RrosPollWaiter {
 }
 
 pub struct RrosPollHead {
-    pub watchpoints: SpinLock<list_head>,
+    pub watchpoints: Pin<Box<SpinLock<list_head>>>,
 }
 
 impl RrosPollHead {
     pub fn new() -> Self {
         Self {
-            watchpoints: unsafe { SpinLock::new(list_head::default()) },
+            watchpoints:  Box::pin_init(new_spinlock!(list_head::default(),"RrosPollHead")).unwrap() ,
         }
     }
 
     pub fn init(&mut self) {
         init_list_head!(self.watchpoints.locked_data().get());
-        spinlock_init!(
-            unsafe { Pin::new_unchecked(&mut self.watchpoints) },
-            "RrosPollHead"
-        );
+        // spinlock_init!(
+        //     unsafe { Pin::new_unchecked(&mut self.watchpoints) },
+        //     "RrosPollHead"
+        // );
     }
 }
 pub struct RrosPollConnector {
@@ -1123,28 +1125,36 @@ impl FileOperations for PollOps {
     }
 }
 
-pub static mut RROS_POLL_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
-    SpinLock::new(factory::RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("poll\0".as_bytes()),
-        // fops: Some(&Pollops),
-        nrdev: 0,
-        build: None,
-        dispose: None,
-        attrs: None,
-        flags: factory::RrosFactoryType::SINGLE,
-        inside: Some(factory::RrosFactoryInside {
-            type_: DeviceType::new(),
-            class: None,
-            cdev: None,
-            device: None,
-            sub_rdev: None,
-            kuid: None,
-            kgid: None,
-            minor_map: None,
-            index: None,
-            name_hash: None,
-            hash_lock: None,
-            register: None,
-        }),
-    })
-};
+pub static mut RROS_POLL_FACTORY: OnceCell<Pin<Box<SpinLock<factory::RrosFactory>>>> = OnceCell::new();
+
+pub fn rros_poll_factory_init() {
+    unsafe {
+        RROS_POLL_FACTORY.get_or_init(|| {
+            Box::pin_init(
+                new_spinlock!(factory::RrosFactory {
+                    name: CStr::from_bytes_with_nul_unchecked("poll\0".as_bytes()),
+                    // fops: Some(&Pollops),
+                    nrdev: 0,
+                    build: None,
+                    dispose: None,
+                    attrs: None,
+                    flags: factory::RrosFactoryType::SINGLE,
+                    inside: Some(factory::RrosFactoryInside {
+                        type_: DeviceType::new(),
+                        class: None,
+                        cdev: None,
+                        device: None,
+                        sub_rdev: None,
+                        kuid: None,
+                        kgid: None,
+                        minor_map: None,
+                        index: None,
+                        name_hash: None,
+                        hash_lock: None,
+                        register: None,
+                    }),
+                })
+            ).unwrap()
+        });
+    }
+}

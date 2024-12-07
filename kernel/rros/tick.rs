@@ -20,6 +20,7 @@ use core::{
     cmp,
     mem::{align_of, size_of},
     ptr::null_mut,
+    ops::Deref,
 };
 
 extern "C" {
@@ -249,7 +250,7 @@ pub fn rros_program_proxy_tick(clock: &RrosClock) {
     let mut timer = unsafe { (*tmb).q.get_head().unwrap().value.clone() };
     let inband_timer_addr = unsafe { (*this_rq).get_inband_timer().locked_data().get() };
     let timer_addr = timer.locked_data().get();
-    if timer_addr == inband_timer_addr {
+    if timer_addr as *const _ == inband_timer_addr as *const _{
         unsafe {
             let state = (*(*this_rq).get_curr().locked_data().get()).state;
             if rros_need_resched(this_rq) || state & T_ROOT == 0x0 {

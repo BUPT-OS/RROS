@@ -11,7 +11,7 @@ use crate::{
 
 use alloc::sync::Arc;
 
-use core::{clone::Clone, ops::FnMut, ptr::NonNull, sync::atomic::AtomicBool};
+use core::{clone::Clone, ops::FnMut, ptr::NonNull, sync::atomic::AtomicBool,ops::Deref};
 
 use kernel::{
     bindings,
@@ -28,12 +28,12 @@ pub struct RrosWaitChannel {
     // pub name: &'static CStr,
     pub wait_list: List<Arc<RrosThreadWithLock>>,
     pub reorder_wait: Option<
-        fn(waiter: Arc<SpinLock<RrosThread>>, originator: Arc<SpinLock<RrosThread>>) -> Result<i32>,
+        fn(waiter: Arc<Pin<Box<SpinLock<RrosThread>>>>, originator: Arc<Pin<Box<SpinLock<RrosThread>>>>) -> Result<i32>,
     >,
     pub follow_depend: Option<
         fn(
-            wchan: Arc<SpinLock<RrosWaitChannel>>,
-            originator: Arc<SpinLock<RrosThread>>,
+            wchan: Arc<Pin<Box<SpinLock<RrosWaitChannel>>>>,
+            originator: Arc<Pin<Box<SpinLock<RrosThread>>>>,
         ) -> Result<i32>,
     >,
 }
@@ -100,7 +100,7 @@ impl RrosWaitQueue {
         &mut self,
         waiter: *mut RrosThread,
         reason: i32,
-    ) -> Option<Arc<SpinLock<RrosThread>>> {
+    ) -> Option<Arc<Pin<Box<SpinLock<RrosThread>>>>> {
         // trace_rros_wake_up(wq);
         // assert!(self.lock) //TODO:
         if self.wchan.wait_list.is_empty() {
@@ -181,7 +181,7 @@ impl RrosWaitQueue {
 
     pub fn wait_schedule(&mut self) -> i32 {
         // rros_wait_schedule
-        let _curr: *mut SpinLock<RrosThread> = rros_current();
+        let _curr: *mut Pin<Box<SpinLock<RrosThread>>> = rros_current();
 
         unsafe { rros_schedule() };
 
@@ -261,7 +261,7 @@ impl RrosWaitQueue {
         !self.wchan.wait_list.is_empty()
     }
 
-    pub fn wake_up_head(&mut self) -> Option<Arc<SpinLock<RrosThread>>> {
+    pub fn wake_up_head(&mut self) -> Option<Arc<Pin<Box<SpinLock<RrosThread>>>>> {
         self.wake_up(core::ptr::null_mut(), 0)
     }
 

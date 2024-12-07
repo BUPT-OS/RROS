@@ -3,7 +3,7 @@ use core::{mem::size_of, mem::zeroed};
 use kernel::{
     mm,
     prelude::*,
-    premmpt, rbtree, spinlock_init,
+    premmpt, rbtree, new_spinlock,
     sync::{self, SpinLock},
     vmalloc,
 };
@@ -61,7 +61,8 @@ struct RrosHeap {
     usable_size: usize,
     used_size: usize,
     buckets: [u32; RROS_HEAP_MAX_BUCKETS as usize],
-    lock: sync::SpinLock<i32>,
+    lock: Pin<Box<SpinLock<i32>>>
+,
     next: list::ListHead,
 }
 
@@ -76,7 +77,7 @@ impl RrosHeap {
             usable_size: 0,
             used_size: 0,
             buckets: [0; RROS_HEAP_MAX_BUCKETS as usize],
-            lock: unsafe { sync::SpinLock::<i32>::new(0) },
+            lock: unsafe { Box::pin_init(new_spinlock!(0)).unwrap() },
             next: list::ListHead::default(),
         })
     }
@@ -125,10 +126,10 @@ pub static mut RROS_SHM_SIZE: usize = 0;
 
 #[allow(dead_code)]
 pub fn init_memory(sysheap_size_arg: u32) -> Result<usize> {
-    let rros_system_heap: Arc<SpinLock<RrosHeap>> =
-        Arc::try_new(unsafe { SpinLock::new(RrosHeap::new()?) })?;
-    let rros_shared_heap: Arc<SpinLock<RrosHeap>> =
-        Arc::try_new(unsafe { SpinLock::new(RrosHeap::new()?) })?;
+    let rros_system_heap: Arc<Pin<Box<SpinLock<RrosHeap>>>> =
+        Arc::try_new(unsafe { Box::pin_init(new_spinlock!(RrosHeap::new()?)).unwrap() })?;
+    let rros_shared_heap: Arc<Pin<Box<SpinLock<RrosHeap>>>> =
+        Arc::try_new(unsafe { Box::pin_init(new_spinlock!(RrosHeap::new()?)).unwrap() })?;
     // let mut RrosHeapRangeManage: Arc<SpinLock<RrosHeapPgentry>> =
     //     Arc::try_new(unsafe{SpinLock::new(RrosHeapPgentry::new()?)})?;
 
@@ -139,8 +140,8 @@ pub fn init_memory(sysheap_size_arg: u32) -> Result<usize> {
 }
 
 #[allow(dead_code)]
-fn init_system_heap(heap: Arc<SpinLock<RrosHeap>>, sysheap_size_arg: u32) -> Result<usize> {
-    //hrm: Arc<SpinLock<RrosHeapRangeManage>>
+fn init_system_heap(heap: Arc<Pin<Box<SpinLock<RrosHeap>>>>, sysheap_size_arg: u32) -> Result<usize> {
+    //hrm: Arc<Pin<Box<SpinLock<RrosHeapRangeManage>>>>
     let mut size: usize = sysheap_size_arg as usize;
     if sysheap_size_arg == 0 {
         size = CONFIG_RROS_COREMEM_SIZE * 1024;
@@ -166,7 +167,7 @@ fn init_system_heap(heap: Arc<SpinLock<RrosHeap>>, sysheap_size_arg: u32) -> Res
 }
 
 #[allow(dead_code)]
-fn init_shared_heap(heap: Arc<SpinLock<RrosHeap>>) -> Result<usize> {
+fn init_shared_heap(heap: Arc<Pin<Box<SpinLock<RrosHeap>>>>) -> Result<usize> {
     //hrm: Arc<SpinLock<RrosHeapRangeManage>>
     let mut size: usize = CONFIG_RROS_NR_THREADS * size_of::<RrosUserWindow>()
         + CONFIG_RROS_NR_MONITORS * size_of::<monitor::RrosMonitorState>();
@@ -194,7 +195,7 @@ fn init_shared_heap(heap: Arc<SpinLock<RrosHeap>>) -> Result<usize> {
     Ok(0)
 }
 
-fn rros_init_heap(heap: Arc<SpinLock<RrosHeap>>, membase: *mut u8, size: usize) -> Result<usize> {
+fn rros_init_heap(heap: Arc<Pin<Box<SpinLock<RrosHeap>>>>, membase: *mut u8, size: usize) -> Result<usize> {
     let nrpages;
 
     premmpt::running_inband()?;
@@ -209,9 +210,9 @@ fn rros_init_heap(heap: Arc<SpinLock<RrosHeap>>, membase: *mut u8, size: usize) 
         *i = u32::MAX;
     }
 
-    op_lock.lock = unsafe { SpinLock::new(1) };
-    let pinned = unsafe { Pin::new_unchecked(&mut op_lock.lock) };
-    spinlock_init!(pinned, "value");
+    op_lock.lock = unsafe { Box::pin_init(new_spinlock!(1)).unwrap() };
+    // let pinned = unsafe { Pin::new_unchecked(&mut op_lock.lock) };
+    // spinlock_init!(pinned, "value");
 
     nrpages = size >> RROS_HEAP_PAGE_SHIFT;
     let a: u64 = size_of::<RrosHeapPgentry>() as u64;
@@ -236,14 +237,14 @@ fn rros_init_heap(heap: Arc<SpinLock<RrosHeap>>, membase: *mut u8, size: usize) 
 }
 
 #[allow(dead_code)]
-fn release_page_range(_heap: Arc<SpinLock<RrosHeap>>, _membase: *mut u8, _size: usize) {
+fn release_page_range(_heap: Arc<Pin<Box<SpinLock<RrosHeap>>>>, _membase: *mut u8, _size: usize) {
     // let freed: *mut RrosHeapRange = membase as *mut RrosHeapRange;
     // insert_range_byaddr(heap.clone(), freed);
     // insert_range_bysize(heap.clone(), freed);
 }
 
 #[allow(dead_code)]
-fn insert_range_byaddr(heap: Arc<SpinLock<RrosHeap>>, _freed: *mut RrosHeapRange) -> Result<usize> {
+fn insert_range_byaddr(heap: Arc<Pin<Box<SpinLock<RrosHeap>>>>, _freed: *mut RrosHeapRange) -> Result<usize> {
     let mut _op_lock = heap.lock();
     // unsafe {
     //     op_lock.addr_tree.try_insert(0, Arc::try_new(*freed)?);
@@ -252,7 +253,7 @@ fn insert_range_byaddr(heap: Arc<SpinLock<RrosHeap>>, _freed: *mut RrosHeapRange
 }
 
 #[allow(dead_code)]
-fn insert_range_bysize(heap: Arc<SpinLock<RrosHeap>>, _freed: *mut RrosHeapRange) -> Result<usize> {
+fn insert_range_bysize(heap: Arc<Pin<Box<SpinLock<RrosHeap>>>>, _freed: *mut RrosHeapRange) -> Result<usize> {
     let mut _op_lock = heap.lock();
     // unsafe {
     //     op_lock.size_tree.try_insert(0, Arc::try_new(*freed)?);

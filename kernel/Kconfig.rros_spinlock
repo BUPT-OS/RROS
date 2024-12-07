@@ -1,0 +1,9 @@
+config RROS_SPINLOCK
+    bool "Enable RROS Spinlock"
+    depends on RROS
+    help
+      Enable spinlock functionality for RROS. This option provides a
+      specialized spinlock mechanism designed for the Rust Real-time Core.
+
+      Note: This option is experimental and should only be enabled if
+      you understand the implications on system performance.

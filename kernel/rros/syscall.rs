@@ -1,4 +1,5 @@
 use core::mem::size_of;
+use core::ops::Deref;
 
 use kernel::{
     bindings,
@@ -11,7 +12,7 @@ use kernel::{
     ptrace::{IrqStage, PtRegs},
     sync::{Lock, SpinLock},
     task::Task,
-    uapi::time_types::{KernelOldTimespec, KernelTimespec},
+    time_types::{KernelOldTimespec, KernelTimespec},
     user_ptr::UserSlicePtr,
 };
 
@@ -157,8 +158,8 @@ fn invoke_syscall(nr: u32, regs: PtRegs) {
 }
 
 fn prepare_for_signal(
-    _p: *mut SpinLock<RrosThread>,
-    curr: *mut SpinLock<RrosThread>,
+    _p: *mut Pin<Box<SpinLock<RrosThread>>>,
+    curr: *mut Pin<Box<SpinLock<RrosThread>>>,
     regs: PtRegs,
 ) {
     let flags;
@@ -346,7 +347,7 @@ fn do_oob_syscall(stage: IrqStage, regs: PtRegs) -> i32 {
         bindings::CAP_SYS_NICE as i32,
     ) != 0);
     pr_debug!("curr is {:p} res is {}", curr, res1);
-    if curr == 0 as *mut SpinLock<RrosThread> || res1 {
+    if curr == 0 as *mut Pin<Box<SpinLock<RrosThread>>> || res1 {
         // [TODO: lack RROS_DEBUG]
         pr_err!("ERROR: syscall denied");
         // if (RROS_DEBUG(CORE))
@@ -422,7 +423,7 @@ fn do_inband_syscall(_stage: IrqStage, regs: PtRegs) -> i32 {
      * assume this is an in-band syscall which we need to
      * propagate downstream to the common handler.
      */
-    if curr == 0 as *mut SpinLock<RrosThread> {
+    if curr == 0 as *mut Pin<Box<SpinLock<RrosThread>>> {
         return SYSCALL_PROPAGATE;
     }
 

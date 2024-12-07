@@ -20,7 +20,7 @@ use kernel::{
     prelude::*,
     sock::Sock,
     socket::Sockaddr,
-    spinlock_init, static_init_net_proto_family,
+    new_spinlock, static_init_net_proto_family,
     sync::{Mutex, SpinLock},
     types::HlistNode,
     vmalloc::{c_kzalloc, c_kzfree},
@@ -110,7 +110,7 @@ pub struct RrosSocket {
     pub wmem_drain: RrosCrossing,
     pub protocol: be16,
     pub binding: Binding,
-    pub oob_lock: SpinLock<()>,
+    pub oob_lock: Pin<Box<SpinLock<()>>>,
 }
 
 const RROS_SOCKIOC_RECVMSG: u32 = 3226529285;
@@ -397,8 +397,9 @@ no_mangle_function_declaration! {
             rsk.wmem_wait.init(&mut RROS_MONO_CLOCK, 0);
         }
         // rros_init_poll_head(&esk->poll_head);
-        let pinned = unsafe { Pin::new_unchecked(&mut rsk.oob_lock) };
-        spinlock_init!(pinned, "net oob spinlock");
+        // let pinned = unsafe { Pin::new_unchecked(&mut rsk.oob_lock) };
+        // spinlock_init!(pinned, "net oob spinlock");
+        rsk.oob_lock = Box::pin_init(new_spinlock!((), "net oob spinlock")).unwrap();
 
         rsk.rmem_max = unsafe { (*sk).sk_rcvbuf };
         rsk.wmem_max = unsafe { (*sk).sk_sndbuf };

@@ -3,13 +3,14 @@ use kernel::{
     prelude::*,
     sync::{Lock, SpinLock},
 };
+use core::ops::Deref;
 
 pub static mut RROS_SCHED_IDLE: sched::RrosSchedClass = sched::RrosSchedClass {
-    sched_pick: Some(rros_idle_pick),
-    sched_setparam: Some(rros_idle_setparam),
-    sched_getparam: Some(rros_idle_getparam),
-    sched_trackprio: Some(rros_idle_trackprio),
-    sched_ceilprio: Some(rros_idle_ceilprio),
+    sched_pick: Some(rros_idle_pick as fn(Option<*mut sched::rros_rq>) -> Result<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>),
+    sched_setparam: Some(rros_idle_setparam as fn(Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>, Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>) -> Result<usize>),
+    sched_getparam: Some(rros_idle_getparam as fn(Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>, Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>) -> ()),
+    sched_trackprio: Some(rros_idle_trackprio as fn(Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>, Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>) -> ()),
+    sched_ceilprio: Some(rros_idle_ceilprio as fn(Arc<Pin<Box<SpinLock<sched::RrosThread>>>>, i32) -> ()),
     weight: 0 * sched::RROS_CLASS_WEIGHT_FACTOR,
     policy: sched::SCHED_IDLE,
     name: "idle",
@@ -63,7 +64,7 @@ pub const RROS_IDLE_PRIO: i32 = -1;
 //     return RROS_SCHED_IDLE.clone();
 // }
 
-fn rros_idle_pick(rq: Option<*mut sched::rros_rq>) -> Result<Arc<SpinLock<sched::RrosThread>>> {
+fn rros_idle_pick(rq: Option<*mut sched::rros_rq>) -> Result<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>> {
     match rq {
         Some(_) => (),
         None => return Err(kernel::Error::EINVAL),
@@ -79,49 +80,49 @@ fn rros_idle_pick(rq: Option<*mut sched::rros_rq>) -> Result<Arc<SpinLock<sched:
 }
 
 fn rros_idle_setparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) -> Result<usize> {
     return __rros_set_idle_schedparam(thread.clone(), p.clone());
 }
 
 fn __rros_set_idle_schedparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) -> Result<usize> {
     let thread_clone = thread.clone();
     let thread_unwrap = thread_clone.unwrap();
     // let mut thread_lock = thread_unwrap.lock();
     let p_unwrap = p.unwrap();
     thread_unwrap.lock().state &= !T_WEAK;
-    let prio = unsafe { (*p_unwrap.locked_data().get()).idle.prio };
+    let prio = unsafe { (*p_unwrap.lock().deref()).idle.prio };
     return sched::rros_set_effective_thread_priority(thread.clone(), prio);
 }
 
 fn rros_idle_getparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     __rros_get_idle_schedparam(thread.clone(), p.clone());
 }
 
 fn __rros_get_idle_schedparam(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     p.unwrap().lock().idle.prio = thread.unwrap().lock().cprio;
 }
 
 fn rros_idle_trackprio(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     __rros_track_idle_priority(thread.clone(), p.clone());
 }
 
 fn __rros_track_idle_priority(
-    thread: Option<Arc<SpinLock<sched::RrosThread>>>,
-    p: Option<Arc<SpinLock<sched::RrosSchedParam>>>,
+    thread: Option<Arc<Pin<Box<SpinLock<sched::RrosThread>>>>>,
+    p: Option<Arc<Pin<Box<SpinLock<sched::RrosSchedParam>>>>>,
 ) {
     if p.is_some() {
         pr_warn!("Inheriting a priority-less class makes no sense.");
@@ -130,10 +131,10 @@ fn __rros_track_idle_priority(
     }
 }
 
-fn rros_idle_ceilprio(thread: Arc<SpinLock<sched::RrosThread>>, prio: i32) {
+fn rros_idle_ceilprio(thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>, prio: i32) {
     __rros_ceil_idle_priority(thread.clone(), prio);
 }
 
-fn __rros_ceil_idle_priority(_thread: Arc<SpinLock<sched::RrosThread>>, _prio: i32) {
+fn __rros_ceil_idle_priority(_thread: Arc<Pin<Box<SpinLock<sched::RrosThread>>>>, _prio: i32) {
     pr_warn!("RROS_WARN_ON_ONCE(CORE, 1)");
 }

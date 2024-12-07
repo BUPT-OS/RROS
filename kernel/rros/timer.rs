@@ -2,6 +2,7 @@
 use crate::{clock::*, lock::*, sched::*, stat::*, tick::*, timeout::*};
 
 use core::ops::DerefMut;
+use core::ops::Deref;
 use kernel::{
     bindings, c_str, double_linked_list::*, ktime::*, percpu_defs, prelude::*, spinlock_init,
     str::CStr, sync::Lock, sync::SpinLock,
@@ -20,8 +21,8 @@ pub const RROS_TIMER_IGRAVITY: i32 = 0; /* most conservative */
 pub const RROS_TIMER_GRAVITY_MASK: i32 = (RROS_TIMER_KGRAVITY | RROS_TIMER_UGRAVITY);
 pub const RROS_TIMER_INIT_MASK: i32 = RROS_TIMER_GRAVITY_MASK;
 pub struct RrosTimerbase {
-    pub lock: SpinLock<i32>,
-    pub q: List<Arc<SpinLock<RrosTimer>>>,
+    pub lock: Pin<Box<SpinLock<i32>>>,
+    pub q: List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>,
 }
 
 pub fn rros_this_cpu_timers(clock: &RrosClock) -> *mut RrosTimerbase {
@@ -50,7 +51,7 @@ pub struct RrosTimer {
     fired: RrosCounter,
     #[cfg(CONFIG_SMP)]
     rq: *mut RrosRq,
-    pub thread: Option<Arc<SpinLock<RrosThread>>>,
+    pub thread: Option<Arc<Pin<Box<SpinLock<RrosThread>>>>>,
     // FIXME: In RROS, the timer is wrapped by various pointers, so container_of cannot be used. A raw pointer pointing to the structure referencing it has to be added.
     pub pointer: *mut u8,
 }
@@ -202,17 +203,17 @@ impl RrosTimer {
         (self.get_status() & RROS_TIMER_PERIODIC) != 0
     }
 
-    pub fn thread(&self) -> Option<Arc<SpinLock<RrosThread>>> {
+    pub fn thread(&self) -> Option<Arc<Pin<Box<SpinLock<RrosThread>>>>> {
         self.thread.clone()
     }
 }
 #[cfg(CONFIG_RROS_TIMER_SCALABLE)]
-pub fn rros_insert_tnode(tq: &mut List<Arc<SpinLock<RrosTimer>>>, timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_insert_tnode(tq: &mut List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>, timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     todo!();
 }
 
 #[cfg(not(CONFIG_RROS_TIMER_SCALABLE))]
-pub fn rros_insert_tnode(tq: &mut List<Arc<SpinLock<RrosTimer>>>, timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_insert_tnode(tq: &mut List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>, timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     let mut l = tq.len();
     while l >= 1 {
         let x = tq.get_by_index(l).unwrap().value.clone();
@@ -227,7 +228,7 @@ pub fn rros_insert_tnode(tq: &mut List<Arc<SpinLock<RrosTimer>>>, timer: Arc<Spi
     tq.add_head(timer.clone());
 }
 
-pub fn rros_get_timer_gravity(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn rros_get_timer_gravity(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let status = unsafe { (*timer.locked_data().get()).get_status() };
     if status & RROS_TIMER_KGRAVITY != 0 {
         return unsafe { (*(*timer.locked_data().get()).get_clock()).get_gravity_kernel() };
@@ -240,7 +241,7 @@ pub fn rros_get_timer_gravity(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
     return unsafe { (*(*timer.locked_data().get()).get_clock()).get_gravity_irq() };
 }
 
-pub fn rros_update_timer_date(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_update_timer_date(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     unsafe {
         let start_date = (*timer.locked_data().get()).get_start_date();
         let periodic_ticks = (*timer.locked_data().get()).get_periodic_ticks();
@@ -253,7 +254,7 @@ pub fn rros_update_timer_date(timer: Arc<SpinLock<RrosTimer>>) {
     }
 }
 
-pub fn rros_get_timer_next_date(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn rros_get_timer_next_date(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let start_date = unsafe { (*timer.locked_data().get()).get_start_date() };
     let periodic_ticks = unsafe { (*timer.locked_data().get()).get_periodic_ticks() };
     let interval = ktime_to_ns(unsafe { (*timer.locked_data().get()).get_interval() });
@@ -261,32 +262,32 @@ pub fn rros_get_timer_next_date(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
 }
 
 #[cfg(CONFIG_RROS_RUNSTATS)]
-pub fn rros_reset_timer_stats(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_reset_timer_stats(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     // Insufficient conditions, so no modification
     timer.lock().get_scheduled().set_counter(0);
     timer.lock().get_fired().set_counter(0);
 }
 
 #[cfg(CONFIG_RROS_RUNSTATS)]
-pub fn rros_account_timer_scheduled(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_account_timer_scheduled(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     timer.lock().get_scheduled().inc_counter();
 }
 
 #[cfg(CONFIG_RROS_RUNSTATS)]
-pub fn rros_account_timer_fired(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_account_timer_fired(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     timer.lock().get_fired().inc_counter();
 }
 
 #[cfg(not(CONFIG_RROS_RUNSTATS))]
-pub fn rros_reset_timer_stats(timer: Arc<SpinLock<RrosTimer>>) {} // Insufficient conditions, so no modification
+pub fn rros_reset_timer_stats(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {} // Insufficient conditions, so no modification
 
 #[cfg(not(CONFIG_RROS_RUNSTATS))]
-pub fn rros_account_timer_scheduled(timer: Arc<SpinLock<RrosTimer>>) {}
+pub fn rros_account_timer_scheduled(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {}
 
 #[cfg(not(CONFIG_RROS_RUNSTATS))]
-pub fn rros_account_timer_fired(timer: Arc<SpinLock<RrosTimer>>) {}
+pub fn rros_account_timer_fired(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {}
 
-pub fn rros_timer_deactivate(timer: Arc<SpinLock<RrosTimer>>) -> bool {
+pub fn rros_timer_deactivate(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> bool {
     let mut heading = true;
     let tmb = unsafe { (*timer.locked_data().get()).get_base() };
     let status = unsafe { (*timer.locked_data().get()).get_status() };
@@ -301,16 +302,16 @@ pub fn rros_timer_deactivate(timer: Arc<SpinLock<RrosTimer>>) -> bool {
 }
 
 #[cfg(CONFIG_SMP)]
-pub fn rros_timer_on_rq(timer: Arc<SpinLock<RrosTimer>>, rq: *mut RrosRq) -> bool {
+pub fn rros_timer_on_rq(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, rq: *mut RrosRq) -> bool {
     unsafe { (*timer.locked_data().get()).get_rq() == rq }
 }
 
 #[cfg(not(CONFIG_SMP))]
-pub fn rros_timer_on_rq(timer: Arc<SpinLock<RrosTimer>>, rq: *mut RrosRq) -> bool {
+pub fn rros_timer_on_rq(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, rq: *mut RrosRq) -> bool {
     return true;
 }
 
-pub fn stop_timer_locked(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn stop_timer_locked(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     // let timer_lock = timer.lock();
     let is_running = unsafe { (*timer.locked_data().get()).is_running() };
     if is_running {
@@ -322,14 +323,14 @@ pub fn stop_timer_locked(timer: Arc<SpinLock<RrosTimer>>) {
     }
 }
 
-pub fn __rros_stop_timer(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn __rros_stop_timer(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     let mut flags: u64 = 0;
     let base: *mut RrosTimerbase = lock_timer_base(timer.clone(), &mut flags);
     stop_timer_locked(timer);
     unlock_timer_base(base, flags);
 }
 
-pub fn rros_stop_timer(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_stop_timer(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     unsafe {
         let is_running = (*timer.locked_data().get()).is_running();
         if is_running {
@@ -339,7 +340,7 @@ pub fn rros_stop_timer(timer: Arc<SpinLock<RrosTimer>>) {
 }
 
 #[cfg(CONFIG_SMP)]
-pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut RrosTimerbase {
+pub fn lock_timer_base(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, flags: &mut u64) -> *mut RrosTimerbase {
     unsafe {
         let mut base = (*timer.locked_data().get()).get_base();
         while true {
@@ -358,7 +359,7 @@ pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut
 }
 
 #[cfg(not(CONFIG_SMP))]
-pub fn lock_timer_base(timer: Arc<SpinLock<RrosTimer>>, flags: &mut u64) -> *mut RrosTimerbase {
+pub fn lock_timer_base(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, flags: &mut u64) -> *mut RrosTimerbase {
     pr_err!("!!!!!!!!!!!! this is wrong. lock_timer_base");
     unsafe { (*timer.locked_data().get()).get_base() }
 }
@@ -376,8 +377,8 @@ pub fn unlock_timer_base(_base: *mut RrosTimerbase, _flags: u64) {
 }
 
 pub fn rros_dequeue_timer(
-    timer: Arc<SpinLock<RrosTimer>>,
-    tq: &mut List<Arc<SpinLock<RrosTimer>>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
+    tq: &mut List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>,
 ) {
     // pr_debug!("len tq is {}", tq.len());
     let timer_addr = unsafe { timer.clone().locked_data().get() };
@@ -386,7 +387,7 @@ pub fn rros_dequeue_timer(
         for i in 1..=tq.len() {
             let mut _x = tq.get_by_index(i).unwrap().value.clone();
             let x = _x.locked_data().get();
-            if x == timer_addr {
+            if x as *const _ == timer_addr as *const _{
                 tq.dequeue(i);
                 break;
             }
@@ -397,13 +398,13 @@ pub fn rros_dequeue_timer(
     }
 }
 
-pub fn rros_get_timer_expiry(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn rros_get_timer_expiry(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let date = unsafe { (*timer.locked_data().get()).get_date() };
     let gravity = rros_get_timer_gravity(timer.clone());
     return ktime_add(date, gravity);
 }
 
-pub fn __rros_get_timer_delta(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn __rros_get_timer_delta(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let expiry = rros_get_timer_expiry(timer.clone());
     let now = unsafe { (*timer.lock().get_clock()).read() };
     if expiry <= now {
@@ -413,7 +414,7 @@ pub fn __rros_get_timer_delta(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
     return ktime_sub(expiry, now);
 }
 
-pub fn rros_get_timer_delta(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn rros_get_timer_delta(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let timer_clone = timer.clone();
     let is_running = unsafe { (*timer_clone.locked_data().get()).is_running() };
     if is_running == false {
@@ -451,7 +452,7 @@ use core::borrow::BorrowMut;
 use core::cell::RefCell;
 
 pub fn rros_init_timer_on_rq(
-    timer: Arc<SpinLock<RrosTimer>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
     clock: &mut RrosClock,
     handler: Option<fn(*mut RrosTimer)>,
     rq: *mut RrosRq,
@@ -483,7 +484,7 @@ pub fn rros_init_timer_on_rq(
     rros_reset_timer_stats(timer.clone());
 }
 
-pub fn program_timer(timer: Arc<SpinLock<RrosTimer>>, tq: &mut List<Arc<SpinLock<RrosTimer>>>) {
+pub fn program_timer(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, tq: &mut List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>) {
     rros_enqueue_timer(timer.clone(), tq);
     let rq = unsafe { (*timer.locked_data().get()).get_rq() };
     let local_flags = unsafe { (*rq).local_flags };
@@ -498,7 +499,7 @@ pub fn program_timer(timer: Arc<SpinLock<RrosTimer>>, tq: &mut List<Arc<SpinLock
     }
 }
 
-pub fn rros_start_timer(timer: Arc<SpinLock<RrosTimer>>, value: KtimeT, interval: KtimeT) {
+pub fn rros_start_timer(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, value: KtimeT, interval: KtimeT) {
     // pr_debug!("yinyongcishu is {}",Arc::strong_count(&timer));
     // pr_debug!("rros_start_timer: 1");
     // pr_debug!("the start timer{:?} {:?}", value, interval);
@@ -532,7 +533,7 @@ pub fn rros_start_timer(timer: Arc<SpinLock<RrosTimer>>, value: KtimeT, interval
     }
 }
 
-pub fn timer_at_front(timer: Arc<SpinLock<RrosTimer>>) -> bool {
+pub fn timer_at_front(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> bool {
     unsafe {
         let tmb = (*timer.locked_data().get()).get_base();
         unsafe {
@@ -543,7 +544,7 @@ pub fn timer_at_front(timer: Arc<SpinLock<RrosTimer>>) -> bool {
         let mut _head = unsafe { (*tmb).q.get_head().unwrap().value.clone() };
         let head = _head.locked_data().get();
         let timer_addr = timer.clone().locked_data().get();
-        if head == timer_addr {
+        if head as *const _ == timer_addr as *const _{
             return true;
         }
         unsafe {
@@ -555,7 +556,7 @@ pub fn timer_at_front(timer: Arc<SpinLock<RrosTimer>>) -> bool {
         if (local_flags & RQ_TDEFER) != 0x0 {
             let _next = unsafe { (*tmb).q.get_by_index(2).unwrap().value.clone() };
             let next = _next.locked_data().get();
-            if next == timer_addr {
+            if next as *const _ == timer_addr as *const _ {
                 return true;
             }
         }
@@ -563,7 +564,7 @@ pub fn timer_at_front(timer: Arc<SpinLock<RrosTimer>>) -> bool {
     }
 }
 
-pub fn rros_get_timer_date(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn rros_get_timer_date(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let mut expiry = 0;
     let is_running = unsafe { (*timer.locked_data().get()).is_running() };
     if is_running == false {
@@ -574,11 +575,11 @@ pub fn rros_get_timer_date(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
     return expiry;
 }
 
-pub fn __rros_get_stopped_timer_delta(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn __rros_get_stopped_timer_delta(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     return __rros_get_timer_delta(timer.clone());
 }
 
-pub fn rros_get_stopped_timer_delta(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
+pub fn rros_get_stopped_timer_delta(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) -> KtimeT {
     let t = __rros_get_stopped_timer_delta(timer.clone());
 
     if ktime_to_ns(t) <= 1 {
@@ -589,8 +590,8 @@ pub fn rros_get_stopped_timer_delta(timer: Arc<SpinLock<RrosTimer>>) -> KtimeT {
 }
 
 pub fn rros_enqueue_timer(
-    timer: Arc<SpinLock<RrosTimer>>,
-    tq: &mut List<Arc<SpinLock<RrosTimer>>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
+    tq: &mut List<Arc<Pin<Box<SpinLock<RrosTimer>>>>>,
 ) {
     rros_insert_tnode(tq, timer.clone());
     unsafe {
@@ -599,7 +600,7 @@ pub fn rros_enqueue_timer(
     rros_account_timer_scheduled(timer.clone());
 }
 
-pub fn rros_destroy_timer(timer: Arc<SpinLock<RrosTimer>>) {
+pub fn rros_destroy_timer(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>) {
     rros_stop_timer(timer.clone());
     timer.lock().add_status(RROS_TIMER_KILLED);
     #[cfg(CONFIG_SMP)]
@@ -608,13 +609,13 @@ pub fn rros_destroy_timer(timer: Arc<SpinLock<RrosTimer>>) {
     timer.lock().set_base(0 as *mut RrosTimerbase);
 }
 
-pub fn rros_abs_timeout(timer: Arc<SpinLock<RrosTimer>>, delta: KtimeT) -> KtimeT {
+pub fn rros_abs_timeout(timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>, delta: KtimeT) -> KtimeT {
     unsafe { ktime_add((*(*timer.locked_data().get()).get_clock()).read(), delta) }
 }
 
 #[cfg(CONFIG_SMP)]
 pub fn rros_prepare_timed_wait(
-    timer: Arc<SpinLock<RrosTimer>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
     clock: &mut RrosClock,
     rq: *mut rros_rq,
 ) {
@@ -627,7 +628,7 @@ pub fn rros_prepare_timed_wait(
 
 #[cfg(not(CONFIG_SMP))]
 pub fn rros_prepare_timed_wait(
-    timer: Arc<SpinLock<RrosTimer>>,
+    timer: Arc<Pin<Box<SpinLock<RrosTimer>>>>,
     clock: &mut RrosClock,
     rq: *mut rros_rq,
 ) {

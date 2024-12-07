@@ -3,7 +3,7 @@
 //! Rros Memory.
 use crate::timekeeping::*;
 use crate::{bindings, Result};
-use crate::{c_types, mm, prelude::*, premmpt, spinlock_init, sync::SpinLock, vmalloc};
+use crate::{c_types, mm, prelude::*, premmpt, new_spinlock, sync::SpinLock, vmalloc};
 use core::{mem::size_of, ptr::addr_of_mut};
 
 const PAGE_SIZE: u32 = 4096 as u32;
@@ -175,7 +175,7 @@ pub struct RrosHeap {
     pub buckets: [u32; RROS_HEAP_MAX_BUCKETS as usize],
     /// `lock` is an optional SpinLock used for ensuring thread-safety in the `RrosHeap`.
     /// It is initialized in the `init` method of the `RrosHeap` struct.
-    pub lock: Option<SpinLock<i32>>,
+    pub lock: Option<Pin<Box<SpinLock<i32>>>>,
 }
 
 /// Implementation of the `RrosHeap` struct.
@@ -192,9 +192,7 @@ impl RrosHeap {
             return Err(crate::Error::EINVAL);
         }
 
-        let mut spinlock = unsafe { SpinLock::new(1) };
-        let pinned = unsafe { Pin::new_unchecked(&mut spinlock) };
-        spinlock_init!(pinned, "spinlock");
+        let mut spinlock = Box::pin_init(new_spinlock!(1 as i32,"spinlock",)).unwrap();
         self.lock = Some(spinlock);
 
         for i in self.buckets.iter_mut() {

@@ -28,6 +28,7 @@ impl<L: RrosLock + ?Sized> core::ops::Deref for Guard<'_, L> {
     }
 }
 
+
 impl<L: RrosLock + ?Sized> core::ops::DerefMut for Guard<'_, L> {
     fn deref_mut(&mut self) -> &mut L::Inner {
         // SAFETY: The caller owns the lock, so it is safe to deref the protected data.
@@ -35,12 +36,14 @@ impl<L: RrosLock + ?Sized> core::ops::DerefMut for Guard<'_, L> {
     }
 }
 
+
 impl<L: RrosLock + ?Sized> Drop for Guard<'_, L> {
     fn drop(&mut self) {
         // SAFETY: The caller owns the lock, so it is safe to unlock it.
         unsafe { self.lock.unlock() };
     }
 }
+
 
 impl<'a, L: RrosLock + ?Sized> Guard<'a, L> {
     /// Constructs a new lock guard.

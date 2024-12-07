@@ -12,7 +12,9 @@ use crate::{
     thread::{rros_init_user_element, CONFIG_RROS_NR_THREADS},
     wait::{RrosWaitQueue, RROS_WAIT_PRIO},
 };
-use core::{cell::RefCell, default::Default, mem::size_of};
+use core::{cell::RefCell, default::Default, mem::size_of,ops::Deref};
+use core::cell::OnceCell;
+
 use kernel::{
     c_types, device,
     dovetail::{self, DovetailSubscriber},
@@ -25,7 +27,7 @@ use kernel::{
     prelude::*,
     premmpt::running_inband,
     rbtree::RBTree,
-    spinlock_init,
+    new_spinlock,
     str::CStr,
     sync::{HardSpinlock, Lock, SpinLock},
     task,
@@ -80,18 +82,18 @@ impl RrosNotice {
 unsafe impl ReadableFromBytes for RrosNotice {}
 
 pub struct RrosSubscriber {
-    pub subscriptions: SpinLock<RBTree<u32, Arc<RrosObserver>>>,
+    pub subscriptions: Pin<Box<SpinLock<RBTree<u32, Arc<RrosObserver>>>>>,
 }
 
 impl RrosSubscriber {
     pub fn new_and_init() -> Self {
         let mut s = Self {
-            subscriptions: unsafe { SpinLock::new(RBTree::new()) },
+            subscriptions: Box::pin_init(new_spinlock!(RBTree::new(),"RrosSubscriber")).unwrap() ,
         };
-        spinlock_init!(
-            unsafe { Pin::new_unchecked(&mut s.subscriptions) },
-            "RrosSubscriber"
-        );
+        // spinlock_init!(
+        //     unsafe { Pin::new_unchecked(&mut s.subscriptions) },
+        //     "RrosSubscriber"
+        // );
         s
     }
 }
@@ -803,12 +805,13 @@ impl FileOpener<u8> for ObservableOps {
             let b = KgidT::from_inode_ptr(shared as *const u8);
             // let a = KuidT((*(shared as *const u8 as *const bindings::inode)).i_uid);
             // let b = KgidT((*(shared as *const u8 as *const bindings::inode)).i_gid);
-            (*RROS_OBSERVABLE_FACTORY.locked_data().get())
+            rros_observable_factory_init();
+            (*RROS_OBSERVABLE_FACTORY.get_mut().unwrap().locked_data().get())
                 .inside
                 .as_mut()
                 .unwrap()
                 .kuid = Some(a);
-            (*RROS_OBSERVABLE_FACTORY.locked_data().get())
+            (*RROS_OBSERVABLE_FACTORY.get_mut().unwrap().locked_data().get())
                 .inside
                 .as_mut()
                 .unwrap()
@@ -901,7 +904,7 @@ impl FileOperations for ObservableOps {
 }
 
 pub fn observable_factory_build(
-    fac: &'static mut SpinLock<RrosFactory>,
+    fac: &'static mut Pin<Box<SpinLock<RrosFactory>>>,
     uname: &'static CStr,
     _u_attrs: Option<*mut u8>,
     clone_flags: i32,
@@ -954,27 +957,36 @@ pub fn observable_factory_dispose(_ele: RrosElement) {
     pr_debug!("[observable] observable_factory_dispose");
 }
 
-pub static mut RROS_OBSERVABLE_FACTORY: SpinLock<factory::RrosFactory> = unsafe {
-    SpinLock::new(RrosFactory {
-        name: CStr::from_bytes_with_nul_unchecked("observable\0".as_bytes()),
-        nrdev: CONFIG_RROS_NR_OBSERVABLE + CONFIG_RROS_NR_THREADS,
-        build: Some(observable_factory_build),
-        dispose: Some(observable_factory_dispose),
-        attrs: None,
-        flags: factory::RrosFactoryType::CLONE,
-        inside: Some(RrosFactoryInside {
-            type_: device::DeviceType::new(),
-            class: None,
-            cdev: None,
-            device: None,
-            sub_rdev: None,
-            kuid: None,
-            kgid: None,
-            minor_map: None,
-            index: None,
-            name_hash: None,
-            hash_lock: None,
-            register: None,
-        }),
-    })
-};
+pub static mut RROS_OBSERVABLE_FACTORY: OnceCell<Pin<Box<SpinLock<factory::RrosFactory>>>> = OnceCell::new();
+
+pub fn rros_observable_factory_init() {
+    unsafe {
+        RROS_OBSERVABLE_FACTORY.get_or_init(|| {
+            Box::pin_init(
+                new_spinlock!(RrosFactory {
+                    name: CStr::from_bytes_with_nul_unchecked("observable\0".as_bytes()),
+                    nrdev: CONFIG_RROS_NR_OBSERVABLE + CONFIG_RROS_NR_THREADS,
+                    build: Some(observable_factory_build),
+                    dispose: Some(observable_factory_dispose),
+                    attrs: None,
+                    flags: factory::RrosFactoryType::CLONE,
+                    inside: Some(RrosFactoryInside {
+                        type_: device::DeviceType::new(),
+                        class: None,
+                        cdev: None,
+                        device: None,
+                        sub_rdev: None,
+                        kuid: None,
+                        kgid: None,
+                        minor_map: None,
+                        index: None,
+                        name_hash: None,
+                        hash_lock: None,
+                        register: None,
+                    }),
+                })
+            )
+            .unwrap()
+        });
+    }
+}

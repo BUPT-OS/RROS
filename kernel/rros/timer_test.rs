@@ -1,23 +1,23 @@
 use crate::{clock::*, sched::*, timer::*};
-use kernel::{prelude::*, spinlock_init, sync::SpinLock};
+use kernel::{prelude::*, new_spinlock, sync::SpinLock};
 
 #[allow(dead_code)]
 pub fn test_rros_insert_tnode() -> Result<usize> {
     pr_debug!("~~~test_rros_insert_tnode begin~~~");
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(12));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
-        let mut y = SpinLock::new(RrosTimer::new(2));
-        let pinned = Pin::new_unchecked(&mut y);
-        spinlock_init!(pinned, "y");
-        let mut z = SpinLock::new(RrosTimer::new(31));
-        let pinned = Pin::new_unchecked(&mut z);
-        spinlock_init!(pinned, "z");
-        let mut a = SpinLock::new(RrosTimer::new(14));
-        let pinned = Pin::new_unchecked(&mut a);
-        spinlock_init!(pinned, "a");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(12),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
+        let mut y = Box::pin_init(new_spinlock!(RrosTimer::new(2),"y")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut y);
+        // spinlock_init!(pinned, "y");
+        let mut z = Box::pin_init(new_spinlock!(RrosTimer::new(31),"z")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut z);
+        // spinlock_init!(pinned, "z");
+        let mut a = Box::pin_init(new_spinlock!(RrosTimer::new(14),"a")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut a);
+        // spinlock_init!(pinned, "a");
 
         let xx = Arc::try_new(x)?;
         let yy = Arc::try_new(y)?;
@@ -46,18 +46,18 @@ pub fn test_rros_enqueue_timer() -> Result<usize> {
     pr_debug!("~~~test_rros_insert_tnode begin~~~");
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(12));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
-        let mut y = SpinLock::new(RrosTimer::new(2));
-        let pinned = Pin::new_unchecked(&mut y);
-        spinlock_init!(pinned, "y");
-        let mut z = SpinLock::new(RrosTimer::new(31));
-        let pinned = Pin::new_unchecked(&mut z);
-        spinlock_init!(pinned, "z");
-        let mut a = SpinLock::new(RrosTimer::new(14));
-        let pinned = Pin::new_unchecked(&mut a);
-        spinlock_init!(pinned, "a");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(12),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
+        let mut y = Box::pin_init(new_spinlock!(RrosTimer::new(2),"y")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut y);
+        // spinlock_init!(pinned, "y");
+        let mut z = Box::pin_init(new_spinlock!(RrosTimer::new(31),"z")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut z);
+        // spinlock_init!(pinned, "z");
+        let mut a = Box::pin_init(new_spinlock!(RrosTimer::new(14),"a")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut a);
+        // spinlock_init!(pinned, "a");
 
         let xx = Arc::try_new(x)?;
         let yy = Arc::try_new(y)?;
@@ -86,9 +86,9 @@ pub fn test_rros_enqueue_timer() -> Result<usize> {
 pub fn test_rros_get_timer_gravity() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_gravity begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
         let xx = Arc::try_new(x)?;
         xx.lock().set_clock(&mut RROS_MONO_CLOCK as *mut RrosClock);
 
@@ -109,9 +109,9 @@ pub fn test_rros_get_timer_gravity() -> Result<usize> {
 pub fn test_rros_update_timer_date() -> Result<usize> {
     pr_debug!("~~~test_rros_update_timer_date begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
         let xx = Arc::try_new(x)?;
         xx.lock().set_clock(&mut RROS_MONO_CLOCK as *mut RrosClock);
 
@@ -131,9 +131,9 @@ pub fn test_rros_update_timer_date() -> Result<usize> {
 pub fn test_rros_get_timer_next_date() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_next_date begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
         let xx = Arc::try_new(x)?;
 
         xx.lock().set_start_date(2);
@@ -150,15 +150,15 @@ pub fn test_rros_get_timer_next_date() -> Result<usize> {
 pub fn test_timer_at_front() -> Result<usize> {
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
-        let mut y = SpinLock::new(RrosTimer::new(2));
-        let pinned = Pin::new_unchecked(&mut y);
-        spinlock_init!(pinned, "y");
-        let mut z = SpinLock::new(RrosTimer::new(3));
-        let pinned = Pin::new_unchecked(&mut z);
-        spinlock_init!(pinned, "z");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
+        let mut y = Box::pin_init(new_spinlock!(RrosTimer::new(2),"y")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut y);
+        // spinlock_init!(pinned, "y");
+        let mut z = Box::pin_init(new_spinlock!(RrosTimer::new(3),"z")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut z);
+        // spinlock_init!(pinned, "z");
 
         let xx = Arc::try_new(x)?;
         let yy = Arc::try_new(y)?;
@@ -198,15 +198,15 @@ pub fn test_timer_at_front() -> Result<usize> {
 pub fn test_rros_timer_deactivate() -> Result<usize> {
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
-        let mut y = SpinLock::new(RrosTimer::new(2));
-        let pinned = Pin::new_unchecked(&mut y);
-        spinlock_init!(pinned, "y");
-        let mut z = SpinLock::new(RrosTimer::new(3));
-        let pinned = Pin::new_unchecked(&mut z);
-        spinlock_init!(pinned, "z");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
+        let mut y = Box::pin_init(new_spinlock!(RrosTimer::new(2),"y")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut y);
+        // spinlock_init!(pinned, "y");
+        let mut z = Box::pin_init(new_spinlock!(RrosTimer::new(3),"z")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut z);
+        // spinlock_init!(pinned, "z");
 
         let xx = Arc::try_new(x)?;
         let yy = Arc::try_new(y)?;
@@ -246,9 +246,9 @@ pub fn test_rros_timer_deactivate() -> Result<usize> {
 pub fn test_rros_get_timer_expiry() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_expiry begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
         let xx = Arc::try_new(x)?;
         xx.lock().set_clock(&mut RROS_MONO_CLOCK as *mut RrosClock);
 
@@ -265,9 +265,9 @@ pub fn test_rros_get_timer_expiry() -> Result<usize> {
 pub fn test_rros_get_timer_delta() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_delta begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
         let xx = Arc::try_new(x)?;
         xx.lock().set_clock(&mut RROS_MONO_CLOCK as *mut RrosClock);
 
@@ -289,9 +289,9 @@ pub fn test_rros_get_timer_delta() -> Result<usize> {
 pub fn test_rros_get_timer_date() -> Result<usize> {
     pr_debug!("~~~test_rros_get_timer_date begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
         let xx = Arc::try_new(x)?;
         xx.lock().set_clock(&mut RROS_MONO_CLOCK as *mut RrosClock);
 
@@ -312,9 +312,9 @@ pub fn test_program_timer() -> Result<usize> {
     pr_debug!("~~~test_program_timer begin~~~");
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(1));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(1),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
 
         let xx = Arc::try_new(x)?;
 
@@ -339,9 +339,9 @@ pub fn test_rros_start_timer() -> Result<usize> {
     pr_debug!("~~~test_rros_start_timer begin~~~");
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(17));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(17),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
 
         let xx = Arc::try_new(x)?;
 
@@ -370,9 +370,9 @@ pub fn test_stop_timer_locked() -> Result<usize> {
     pr_debug!("~~~test_stop_timer_locked begin~~~");
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(17));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(17),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
 
         let xx = Arc::try_new(x)?;
 
@@ -396,9 +396,9 @@ pub fn test_rros_destroy_timer() -> Result<usize> {
     pr_debug!("~~~test_rros_destroy_timer begin~~~");
     unsafe {
         let tmb = rros_percpu_timers(&RROS_MONO_CLOCK, 0);
-        let mut x = SpinLock::new(RrosTimer::new(17));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(17),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
 
         let xx = Arc::try_new(x)?;
 
@@ -434,15 +434,15 @@ pub fn handler(_timer: &RrosTimer) {
 pub fn test_get_handler() -> Result<usize> {
     pr_debug!("~~~test_get_handler begin~~~");
     unsafe {
-        let mut x = SpinLock::new(RrosTimer::new(17));
-        let pinned = Pin::new_unchecked(&mut x);
-        spinlock_init!(pinned, "x");
+        let mut x = Box::pin_init(new_spinlock!(RrosTimer::new(17),"x")).unwrap();
+        // let pinned = Pin::new_unchecked(&mut x);
+        // spinlock_init!(pinned, "x");
 
         let mut _xx = Arc::try_new(x)?;
 
         //xx.lock().set_handler(Some(handler));
         //let handler = xx.lock().get_handler();
-        //handler(xx.lock().deref());
+        //handler(xx.locked_data().get());
     }
     pr_debug!("~~~test_get_handler end~~~");
     Ok(0)
